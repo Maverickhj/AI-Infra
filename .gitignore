@@ -11,6 +11,7 @@ desktop.ini
 
 # Local AI indexes
 .smart-env/
+.claudian/
 
 # Temporary files
 *.tmp
