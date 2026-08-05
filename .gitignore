@@ -1,0 +1,24 @@
+# Operating system
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Obsidian local state
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/cache/
+.trash/
+
+# Local AI indexes
+.smart-env/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# Secrets
+.env
+.env.*
+*.key
