@@ -518,4 +518,4 @@ $$
 
 ## 相关笔记
 
-- [[20_Knowledge/transformer_fundamentals/Positional Encoding/rope_long_context_extension|RoPE 长上下文外推方法综述]]
+- [[RoPE 长上下文外推方法综述|RoPE 长上下文外推方法综述]]
