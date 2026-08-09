@@ -1,0 +1,3 @@
+# Keep text files consistent across Windows and macOS.
+# Git normalizes detected text files to LF and leaves binary files untouched.
+* text=auto eol=lf
