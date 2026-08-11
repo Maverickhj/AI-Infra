@@ -1,4 +1,5 @@
 {
   "accentColor": "#a85cf5",
-  "cssTheme": "Moonlight"
+  "cssTheme": "Primary",
+  "theme": "system"
 }
