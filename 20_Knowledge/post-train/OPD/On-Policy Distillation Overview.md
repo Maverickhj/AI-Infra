@@ -2,7 +2,7 @@
 type: knowledge
 status: growing
 created: 2026-08-06
-updated: 2026-08-06
+updated: 2026-08-10
 domains:
   - post-training
   - knowledge-distillation
@@ -335,12 +335,44 @@ $$
 
 #### 关于“mode-covering”和“mode-seeking”的限定
 
-在经典变分推断图景中，当学生分布族无法完整表达教师多峰分布时：
+这里的 **mode** 指概率分布中的一个高概率区域，而不是 model（模型）。例如，教师认为两种不同的回答路径都合理时，教师的序列分布中就可能存在两个 mode。
+
+假设教师分布 $q$ 有两个相互分离的峰，而容量受限的学生分布 $\pi$ 只能表达一个较简单的峰：
+
+- **mode-covering（模态覆盖）**：学生尽量覆盖教师的多个高概率区域，即使因此需要在这些区域之间也分配一些概率；
+- **mode-seeking（模态寻找）**：学生选择其中一个高概率区域集中拟合，而放弃其他难以同时表示的峰。
+
+这种差异可以从 KL 散度的加权方向理解。对于 Forward KL：
+
+$$
+D_{\mathrm{KL}}(q\|\pi)
+=
+\sum_v q(v)\log\frac{q(v)}{\pi(v)},
+$$
+
+各位置由教师概率 $q(v)$ 加权。只要教师在某处具有明显概率，而学生给出的 $\pi(v)$ 接近零，损失就会很大。因此学生倾向于照顾教师分布中的各个高概率区域，即“教师认为可能的区域，我最好都覆盖”。当受限学生只能使用单峰分布逼近多峰教师时，折中结果有时会落在多个峰之间，因此 Forward KL 也常被称为 mean-seeking。
+
+对于 Reverse KL：
+
+$$
+D_{\mathrm{KL}}(\pi\|q)
+=
+\sum_v \pi(v)\log\frac{\pi(v)}{q(v)},
+$$
+
+各位置由学生概率 $\pi(v)$ 加权。学生没有覆盖的区域因为 $\pi(v)$ 很小，对当前损失和梯度的影响也很小；但如果学生把概率放在教师低概率区域，则会受到明显惩罚。因此学生可以选择教师的某一个峰集中拟合，即“只选择一个教师认可度高的区域，暂时不覆盖其他区域”。
+
+在语言模型中，可以将上述直觉分成两个尺度理解：
+
+- 在 token level，Forward KL 更倾向于保留教师给出的多个候选 token，包括具有非零概率的尾部 token；Reverse KL 更关注学生当前已经分配较高概率的候选；
+- 在 sequence level，不同的语义回答或推理路径可以形成不同 mode，mode-covering 对应保留多种合理生成路径，mode-seeking 对应集中于其中一种高概率路径。
+
+因此，在经典变分推断图景中，当学生分布族无法完整表达教师多峰分布时：
 
 - Forward KL 常表现为 mode-covering 或 mean-seeking；
 - Reverse KL 常表现为 mode-seeking。
 
-但这一描述不是所有 LLM token-level KD 训练动态的完整定理。Wu 等人在 2024 年指出，在可充分优化且目标最优点可达时，FKL 与 RKL 可以共享同一最优解；有限训练阶段更显著的差异可能是二者对 head/tail token 的梯度关注不同。因此，本文将“mode-covering/mode-seeking”作为经典直觉，而不是万能解释。
+但这一描述依赖于学生表达能力受限或优化尚未收敛等条件，不是所有 LLM token-level KD 训练动态的完整定理。如果学生能够精确表示教师分布，并且训练到达全局最优点，那么 FKL 与 RKL 都在 $\pi=q$ 时取到最小值。Wu 等人在 2024 年进一步指出，有限训练阶段更显著的差异可能是二者对 head/tail token 的梯度关注不同：FKL 的梯度 $\pi(j)-q(j)$ 会直接响应教师分配的概率，而 RKL 的梯度带有学生概率 $\pi(j)$ 的权重，学生当前几乎不选择的 token 很难得到显著更新。因此，本文将“mode-covering/mode-seeking”作为经典直觉，而不是万能解释。
 
 ---
 
@@ -587,6 +619,21 @@ J(\theta)
 \left[F_\theta(y)\right].
 $$
 
+本节符号说明如下：
+
+| 符号 | 含义 |
+|---|---|
+| $\theta$ | 当前学生模型的可训练参数 |
+| $\pi_\theta$ | 由参数 $\theta$ 决定的学生策略 |
+| $y=(y_1,\ldots,y_T)$ | 学生采样得到的完整输出轨迹，$y_t$ 是第 $t$ 个 token |
+| $y\sim\pi_\theta$ | 使用学生策略自回归采样轨迹 $y$ |
+| $F_\theta(y)$ | 在给定轨迹 $y$ 上计算的可微损失或 cost；在 OPD 中通常是沿轨迹累积的 token-level divergence |
+| $J(\theta)$ | 同时考虑轨迹采样分布和轨迹内损失的期望目标 |
+| $\mathbb E_{y\sim\pi_\theta}[\cdot]$ | 对学生可能采样到的轨迹求期望 |
+| $\nabla_\theta$ | 对学生参数 $\theta$ 求梯度 |
+| $\log\pi_\theta(y)$ | 学生生成整条轨迹的对数概率，等于 $\sum_t\log\pi_\theta(y_t\mid y_{<t},x)$ |
+| $\operatorname{stopgrad}(\cdot)$ 或 $\operatorname{sg}[\cdot]$ | 前向计算保持输入值不变，反向传播时将经过该算子的梯度置为零 |
+
 其完整梯度由 log-derivative trick 给出：
 
 $$
@@ -614,13 +661,23 @@ $$
    $$
    表示在当前固定轨迹上直接调整学生 logits。
 
-GKD 和标准 full-logit OPSD 通常对 rollout 执行 stop-gradient：
+一般地，stop-gradient 算子满足：
+
+$$
+\operatorname{sg}[u]=u,
+\qquad
+\frac{\partial\operatorname{sg}[u]}{\partial u}=0.
+$$
+
+它只改变反向传播，不改变前向值。GKD 和标准 full-logit OPSD 通常对 rollout 执行 stop-gradient：
 
 $$
 y\sim\operatorname{stopgrad}(\pi_\theta).
 $$
 
-实际优化只保留第二项：
+这里的记号表示：轨迹仍由当前学生 $\pi_\theta$ 生成，但采样完成后，将离散 token $y$ 及其形成的前缀状态视为固定训练数据，不计算“改变 $\theta$ 会改变轨迹采样概率”的 score-function 梯度。它不表示冻结学生模型；在固定轨迹上重新计算 $F_\theta(y)$ 时，学生 logits 到 $\theta$ 的梯度仍然保留。
+
+因此，实际优化丢弃 sampling-distribution gradient，只保留 direct loss gradient：
 
 $$
 \nabla_\theta J_{\mathrm{stop}}
@@ -631,7 +688,9 @@ $$
 \right].
 $$
 
-这不是完整序列目标的无偏梯度，但具有低方差、稳定、易实现的优点。
+其中，$J_{\mathrm{stop}}$ 表示将 rollout 视为常量后实际优化的 surrogate objective；$\approx$ 强调该梯度通常不等于原始 $J(\theta)$ 的完整梯度。工程上常见的过程是：先在无梯度环境中调用学生生成 $y$，再把固定的 $(x,y_{<t})$ 输入学生和教师，计算 full-vocabulary divergence，最后只对学生 logits 反向传播。
+
+这不是完整序列目标的无偏梯度，因为它忽略了参数变化对未来状态访问分布的影响；但它具有低方差、稳定、易实现的优点。
 
 ---
 
@@ -762,16 +821,77 @@ $$
 而其期望为：
 
 $$
+\begin{aligned}
 \mathbb E_{a_t\sim\pi_t}
 \left[
 \nabla_\theta\log\pi_t(a_t)
 \right]
-=
+&=
+\sum_a\pi_t(a)\nabla_\theta\log\pi_t(a)
+\\
+&=
+\sum_a\pi_t(a)
+\frac{\nabla_\theta\pi_t(a)}{\pi_t(a)}
+\\
+&=
 \nabla_\theta\sum_a\pi_t(a)
+\\
+&=
+\nabla_\theta 1
+=0.
+\end{aligned}
+$$
+
+这称为 score function 的零均值性质。单个样本上的 $\nabla_\theta\log\pi_t(a_t)$ 通常不为零；但动作按当前策略自身的概率反复采样后，这些更新会在期望上相互抵消。
+
+真正的 Reverse-KL 梯度并不为零。令：
+
+$$
+c_t(a)
+=
+\log\frac{\pi_t(a)}{q_t(a)},
+$$
+
+则 sampling distribution 和 $c_t(a)$ 都依赖于学生参数，完整梯度为：
+
+$$
+\begin{aligned}
+\nabla_\theta D_{\mathrm{KL}}(\pi_t\|q_t)
+&=
+\mathbb E_{a\sim\pi_t}
+\left[
+c_t(a)\nabla_\theta\log\pi_t(a)
++
+\nabla_\theta c_t(a)
+\right]
+\\
+&=
+\mathbb E_{a\sim\pi_t}
+\left[
+c_t(a)\nabla_\theta\log\pi_t(a)
+\right].
+\end{aligned}
+$$
+
+其中第二个等号使用了：
+
+$$
+\mathbb E_{a\sim\pi_t}
+\left[\nabla_\theta c_t(a)\right]
+=
+\mathbb E_{a\sim\pi_t}
+\left[\nabla_\theta\log\pi_t(a)\right]
 =0.
 $$
 
-因此，下面这种代码并不是 sampled Reverse-KL 的正确无偏优化：
+因此，真正携带学习信号的是由 sampled cost 调制的 score-function 项：
+
+$$
+\log\frac{\pi_t(a)}{q_t(a)}
+\nabla_\theta\log\pi_t(a).
+$$
+
+直接反向传播 sampled log-ratio 只得到期望为零的 direct loss gradient，却遗漏了上述由采样分布产生的梯度。因此，下面这种代码并不是 sampled Reverse-KL 的正确无偏优化：
 
 ```python
 loss = student_logp_sampled - teacher_logp_sampled
@@ -814,10 +934,40 @@ $$
 \rho_t(\theta)
 =
 \frac{\pi_\theta(y_t\mid s_t)}
-{\pi_{\mathrm{old}}(y_t\mid s_t)},
+{\pi_{\mathrm{old}}(y_t\mid s_t)}.
 $$
 
-以及 PPO clipping：
+为了最小化 Reverse KL，可以根据生成 token 在教师与旧学生下的相对概率定义固定 reward：
+
+$$
+r_t
+=
+\log q(y_t\mid s_t)
+-
+\log\pi_{\mathrm{old}}(y_t\mid s_t).
+$$
+
+如果 $r_t>0$，说明教师比旧学生更认可当前 token；如果 $r_t<0$，说明旧学生对该 token 分配了过高概率。最简单的 token-local advantage 为：
+
+$$
+A_t
+=
+r_t-b_t(s_t),
+$$
+
+其中 $b_t(s_t)$ 是不依赖当前动作的 baseline，用于降低方差。如果需要把后续偏差归因给当前 token，也可以使用：
+
+$$
+R_t
+=
+\sum_{k=t}^{T}r_k,
+\qquad
+A_t
+=
+R_t-b_t(s_t).
+$$
+
+在优化 PPO surrogate 时，$\pi_{\mathrm{old}}$、教师概率、$r_t$ 和 $A_t$ 都作为固定量执行 stop-gradient。当前学生只通过 importance ratio $\rho_t(\theta)$ 接收梯度。加入 PPO clipping 后：
 
 $$
 \mathcal L_{\mathrm{clip}}
@@ -832,7 +982,47 @@ $$
 \right].
 $$
 
-这是一种低方差但有偏的局部近似。
+在一次更新开始时，即使 $\pi_\theta=\pi_{\mathrm{old}}$ 使得 $\rho_t=1$，ratio 的梯度仍不为零：
+
+$$
+\nabla_\theta\rho_t
+=
+\rho_t\nabla_\theta
+\log\pi_\theta(y_t\mid s_t).
+$$
+
+未触发 clipping 时：
+
+$$
+\nabla_\theta(-\rho_t A_t)
+=
+-A_t\rho_t
+\nabla_\theta\log\pi_\theta(y_t\mid s_t).
+$$
+
+因此在 $\rho_t=1$ 处，它就是 $-A_t\nabla_\theta\log\pi_\theta(y_t\mid s_t)$ 形式的 policy gradient。与裸的 $\nabla_\theta\log\pi_t(a_t)$ 不同，动作相关的 $A_t$ 打破了零均值抵消：正 advantage token 的概率被提高，负 advantage token 的概率被降低。importance ratio 用旧策略样本近似当前策略更新，clipping 则限制同一批 rollout 上的策略变化幅度。
+
+对于单步目标，在 $\pi_\theta=\pi_{\mathrm{old}}$ 附近且 $A_t=r_t-b_t$ 时，这个更新与 Reverse-KL policy gradient 的局部方向一致；经过多轮更新并触发 clipping 后，它不再是原始完整目标的严格无偏梯度，而是一种低方差、有偏的局部近似。
+
+对应的简化伪代码为：
+
+```python
+# rollout 阶段：以下量全部 detach
+old_logp = log_pi_old.gather(dim=-1, index=sampled_token).detach()
+teacher_logp = log_q.gather(dim=-1, index=sampled_token).detach()
+reward = teacher_logp - old_logp
+advantage = (reward - baseline).detach()
+
+# update 阶段：只让 current_logp 接收梯度
+current_logp = log_pi_theta.gather(dim=-1, index=sampled_token)
+ratio = torch.exp(current_logp - old_logp)
+ratio_clipped = torch.clamp(ratio, 1.0 - eps, 1.0 + eps)
+loss = -torch.minimum(
+    ratio * advantage,
+    ratio_clipped * advantage,
+).mean()
+loss.backward()
+```
 
 ---
 
