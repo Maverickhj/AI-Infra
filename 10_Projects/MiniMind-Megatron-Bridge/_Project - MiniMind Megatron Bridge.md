@@ -2,7 +2,7 @@
 type: project
 status: active
 created: 2026-08-06
-updated: 2026-08-08
+updated: 2026-08-11
 domains:
   - multimodal-training
   - megatron
@@ -193,7 +193,8 @@ flowchart LR
 
 ## 补充材料
 
-- **相关笔记**：暂无。
+- **相关笔记**：
+  - [[Qwen3.5-VL SFT 的 Megatron 代码链路与观测指南]]：以固定版本的 Qwen3.5-VL SFT 为参照，梳理 Bridge/MCore 纵向调用链、模块职责、checkpoint 状态和分级观测方案。
 - **参考资料**：
   - [MiniMind-V 官方仓库](https://github.com/jingyaogong/minimind-v)
   - [Megatron Bridge 官方仓库](https://github.com/NVIDIA-NeMo/Megatron-Bridge)
