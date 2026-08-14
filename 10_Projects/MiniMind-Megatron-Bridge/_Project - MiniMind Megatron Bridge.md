@@ -90,7 +90,8 @@ flowchart LR
 - vision encoder、projector、LLM 的具体配置和冻结策略。
 - 一组固定的图文输入，以及 HF 基线的输入张量、关键中间张量、logits 和 loss。
 
-上游 MiniMind-V 仍在演进，当前公开仓库已经采用 Transformers 风格并提供原生 PyTorch/HF 两种加载路径，但目标分支、模型型号和 checkpoint 仍需在开发开始前锁定。[待核验]
+上游 MiniMind-V 仍在演进，当前公开仓库已经采用 Transformers 风格并提供原生 PyTorch/HF 两种加载路径，但目标分支、模型型号和 checkpoint 仍需在开发开始前锁定。[待.
+核验]
 
 ## 分阶段实施方案
 
