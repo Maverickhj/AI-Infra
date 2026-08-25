@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0002 · Multi-Head Attention：多个表示子空间</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] },
+      options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Lesson 0002 · 约 12 分钟</p>
+    <h1>Multi-Head Attention：多个表示子空间</h1>
+    <p class="lede">单头 attention 已能让一个 token 从全序列聚合信息。为什么 Transformer 还要把它拆成多个较窄的 heads？本课的答案是：并行建立多种 learned representation subspaces（经学习的表示子空间），而不是增加一份独立的全宽 attention。</p>
+    <p class="meta">前置：<a href="0001-transformer-sequential-bottleneck.html">课程 0001</a> · 术语：<a href="../reference/attention-glossary.html#core">Attention Glossary</a> · 主证据：<a href="https://arxiv.org/html/1706.03762v7">Vaswani et al. (2017), §3.2.2</a></p>
+
+    <section>
+      <h2>单个 head 留下了什么问题？</h2>
+      <p>单个 attention head 对位置 \(i\) 产生一个 attention weight 分布 \(A_{i,:}\)，再得到加权和 \(o_i=\sum_j A_{i,j}v_j\)。这把所有要读取的关系压进同一组 \(Q\)、\(K\)、\(V\) 投影和同一份 weights 中。</p>
+      <div class="callout">
+        <strong>论文的动机：</strong>Multi-Head Attention 让模型能共同保留来自不同 representation subspaces、不同 key positions 的信息；若只有一个 full-width head，单次加权平均会抑制这种并行的多视角读取。
+      </div>
+      <p>这不是“head 1 天生负责语法、head 2 天生负责指代”的保证。是否出现可解释的专门化是训练结果；论文此处保证的是 <strong>independent learned projections</strong> 与并行计算结构。</p>
+    </section>
+
+    <section>
+      <h2>论文中 “at different positions” 如何出现在公式里？</h2>
+      <p>对同一个 query position \(i\)，每个 head \(r\) 都有自己的 score 与 attention weight：</p>
+      <div class="equation">\[
+S_{i,j}^{(r)}=\frac{(q_i^{(r)})^\top k_j^{(r)}}{\sqrt{d_k}},
+\qquad
+A_{i,:}^{(r)}=\operatorname{softmax}(S_{i,:}^{(r)}).
+\]</div>
+      <p>这句话有两个并列维度：information 位于不同 key positions，也处在不同 heads 的 representation subspaces。一个可操作的理解是：因为 \(W_r^Q\)、\(W_r^K\) 不同，不同 heads 的 \(A_{i,:}^{(r)}\) 可以是不同分布；例如对同一位置 \(i\)，head 1 可主要关注相邻的 key position \(i-1\)，head 2 可主要关注较远的 key position \(j\)。所有 head outputs 在 Concat 后共同保留这些信息。</p>
+      <div class="callout caution">
+        <strong>不要额外推出：</strong>原文没有保证每个 head 绑定某一种固定位置关系，也没有保证 heads 互异。Multi-Head Attention 本身不提供位置坐标；token 的绝对或相对位置信息需要 positional encoding。多个 heads 只是在已经含有位置信息的 representation 上，学习不同的 attention patterns；它们也可能学到相似模式。
+      </div>
+    </section>
+
+    <section>
+      <h2>把一个 head 复制为 \(h\) 套投影</h2>
+      <p>令第 \(r\) 个 head 的 projection matrices 为 \(W_r^Q\)、\(W_r^K\)、\(W_r^V\)。它不直接复用另一 head 的 \(Q\)、\(K\)、\(V\)，而是从同一个输入 \(H\) 学出自己的投影：</p>
+      <div class="equation">\[
+\begin{aligned}
+\operatorname{head}_r&amp;=\operatorname{Attention}(HW_r^Q,HW_r^K,HW_r^V),\\
+\operatorname{MultiHead}(H)&amp;=\operatorname{Concat}(\operatorname{head}_1,\ldots,\operatorname{head}_h)W^O,
+\end{aligned}
+\]
+\[
+W_r^Q,W_r^K\in\mathbb{R}^{d_{\mathrm{model}}\times d_k},\quad
+W_r^V\in\mathbb{R}^{d_{\mathrm{model}}\times d_v},\quad
+W^O\in\mathbb{R}^{hd_v\times d_{\mathrm{model}}}.
+\]</div>
+      <p>每个 head 输出 \([n,d_v]\)；Concat 后是 \([n,hd_v]\)；最后 \(W^O\) 将它投影回 \([n,d_{\mathrm{model}}]\)，因此可以接 residual connection 或下一层。</p>
+    </section>
+
+    <section>
+      <h2>heads 不是对输入维度做固定切片</h2>
+      <p>每个 head 的输入都是完整的 \(H[n,d_{\mathrm{model}}]\)。原论文中 \(W_r^Q\) 的形状为 \([d_{\mathrm{model}},d_k]\)，因此：</p>
+      <div class="equation">\[
+q_i^{(r)}=h_iW_r^Q,
+\qquad
+h_i\in\mathbb{R}^{d_{\mathrm{model}}},
+\quad W_r^Q\in\mathbb{R}^{d_{\mathrm{model}}\times d_{\mathrm{head}}},
+\quad q_i^{(r)}\in\mathbb{R}^{d_{\mathrm{head}}}.
+\]</div>
+      <p>head 0 和 head 1 都会读取 \(h_i\) 的<strong>全部</strong> \(d_{\mathrm{model}}\) 个维度，只是分别用 \(W_0^Q\)、\(W_1^Q\) 做不同的 learned linear combination。并不存在“head 0 只读 \([0,d_{\mathrm{head}})\)、head 1 只读 \([d_{\mathrm{head}},2d_{\mathrm{head}})\)”的原始模型约束。</p>
+      <div class="callout">
+        <strong>实现层的容易误导之处：</strong>许多实现把全部 \(Q\) projection 打包成 \(W_{\mathrm{packed}}^Q[d_{\mathrm{model}},hd_{\mathrm{head}}]\)，再将输出 \(Q[n,hd_{\mathrm{head}}]\) reshape 为 \(Q[n,h,d_{\mathrm{head}}]\)。连续的输出 chunk 只是计算布局，等价于并列的 \(W_r^Q\)；它不表示每个 head 只接收输入 \(H\) 的一段维度。
+      </div>
+    </section>
+
+    <section>
+      <h2>positional encoding 对所有 heads 是共享输入</h2>
+      <p>原始 Transformer 在进入 attention stack 前把同一份 positional encoding 加到每个 token embedding 上：\(H_0[t,:]=\operatorname{embedding}[t,:]+PE[t,:]\)。随后每个 head 都从完整的 \(H_0\) 投影 \(Q/K/V\)。</p>
+      <p>PE 公式中的 \(i\) 是 embedding-dimension pair / frequency 的索引；attention matrix 中的 \(i\)、\(j\) 才是 query 与 key 的 token positions。它们都不是“给不同 head 分配不同 \(i\)”。不同 head 若学到不同的位置敏感模式，是因为独立 \(W_r^{Q/K/V}\) 对共享的 token 与 position signals 做了不同变换，而非各自获得不同的 positional encoding。</p>
+    </section>
+
+    <section>
+      <h2>为什么计算量近似不变？</h2>
+      <p>原论文的 base configuration 取 \(d_{\mathrm{model}}=512\)、\(h=8\)、\(d_k=d_v=64\)。每个 head 的 \(QK^\top\) 约为 \(O(n^2\cdot64)\)，八个 heads 合计为：</p>
+      <div class="equation">\[
+h\cdot O(n^2d_k)
+=8\cdot O(n^2\cdot64)
+=O(n^2\cdot512)
+=O(n^2d_{\mathrm{model}}).
+\]</div>
+      <p>也就是说，把宽度分给 \(h\) 个 heads 后，attention score 计算仍与一个 full-width head 同阶。各个 \(Q/K/V\) projection 和 output projection 的总尺寸也保持相近；论文因此描述其 total computational cost 与 single full-dimensional head 类似。</p>
+      <div class="callout caution">
+        <strong>边界：</strong>“近似相同计算量”说的是原始公式在固定 \(d_{\mathrm{model}}\) 下的理论量级与参数维度。实际 runtime 还受 kernel shape、memory layout、parallelism 和 implementation 影响，不能仅凭这个式子断言性能相同。
+      </div>
+    </section>
+
+    <section>
+      <h2>一个最小形状例子</h2>
+      <p>若 \(d_{\mathrm{model}}=4\)、\(h=2\)，取 \(d_k=d_v=2\)：</p>
+      <div class="equation">\[
+\begin{array}{c|c}
+H &amp; [n,4]\\
+\operatorname{head}_1 &amp; [n,2]\\
+\operatorname{head}_2 &amp; [n,2]\\
+\operatorname{Concat} &amp; [n,4]\\
+W^O &amp; [4,4]\\
+\text{output} &amp; [n,4]
+\end{array}
+\]</div>
+      <p>两个 heads 的 key matching 和 attention weights 可以不同；Concat 保留两组输出，\(W^O\) 再把它们组合成下一层使用的 token representation。这里的“不同”来自不同的 learned \(W_r^{Q/K/V}\)，不是人为给 head 分配语义标签。</p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：512 ÷ 8 = 64；每个 head 用较窄的 d_k、d_v。" data-incorrect-feedback="回到公式：固定 d_model 后，通常取 d_k = d_v = d_model / h。">
+      <h2>30 秒检索练习</h2>
+      <p>在原论文 base configuration 中，\(d_{\mathrm{model}}=512\)、\(h=8\)。每个 head 的 \(d_k\) 是多少？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">64维</button>
+        <button class="choice" type="button" data-correct="false">32维</button>
+        <button class="choice" type="button" data-correct="false">16维</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：多个独立 projection 产生多个 representation subspaces；Concat 后由 W^O 融合。" data-incorrect-feedback="再区分“为什么有多个 head”与“mask、softmax 分别做什么”。">
+      <h2>概念检索</h2>
+      <p>Multi-Head Attention 相对于单个 full-width head 的核心新增能力是什么？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">多个表示子空间</button>
+        <button class="choice" type="button" data-correct="false">移除因果掩码</button>
+        <button class="choice" type="button" data-correct="false">省略线性投影</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2>结束时应能说清</h2>
+      <p>请用自己的话回答：<strong>“为什么将 \(d_{\mathrm{model}}\) 分成 \(h\) 个较窄 heads 后，attention 的计算量仍近似不变；这些 heads 又带来了什么新的表示能力？”</strong> 我会据此决定下一步是否进入 Encoder、Decoder 与 cross-attention 的三种使用位置。</p>
+    </section>
+
+    <footer>
+      <p>速查：<a href="../reference/attention-causal-chain.html#multi-head">Multi-Head Attention 公式与形状</a> · 如果你想检查术语，回到 <a href="../reference/attention-glossary.html">Attention Glossary</a>。任何地方不清楚都可以直接问我。</p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0006 · Positional Encoding</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Lesson 0006 · 约 15 分钟</p>
+    <h1>Positional Encoding：移除 recurrence 后，顺序从哪里来？</h1>
+    <p class="lede">Self-attention 可以一次连接任意 positions，但其 Q/K/V 计算本身不会自动知道哪个 token 在前、哪个在后。原始 Transformer 因此把 Positional Encoding（位置编码）加到 token embeddings 上，在不恢复串行 recurrence 的前提下注入 sequence order。</p>
+    <p class="meta">前置：<a href="0005-residual-layernorm.html">课程 0005</a> · 数学：<a href="../reference/math-linear-algebra.html#permutation-matrix">Permutation matrix</a>、<a href="../reference/math-linear-algebra.html#equivariance">equivariance</a>、<a href="../reference/math-sequences-transforms.html#trigonometric-transform">trigonometric transform</a> · 术语：<a href="../reference/attention-glossary.html#positional-encoding">Attention Glossary</a> · 主证据：<a href="https://arxiv.org/html/1706.03762v7">Vaswani et al. (2017), §§3.4–3.5, 6.2</a></p>
+
+    <section>
+      <h2>设计起点：并行化也移除了顺序结构</h2>
+      <p>RNN 的 state 按 \(h_t=f(h_{t-1},x_t)\) 顺序传递，convolution 也通过固定的邻域结构携带 position relationship。Transformer 移除了两者后，attention 可以并行处理全部 tokens，但 token representation 中必须另有信号说明 sequence position。</p>
+      <div class="chain">
+        <div class="chain-step"><strong>已有机制</strong><br>self-attention 根据 token representations 产生 Q/K/V，并按 content compatibility 汇聚信息。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>缺失信息</strong><br>若 representations 只含 token identity / content，相同内容出现在不同 positions 时，没有显式 position coordinate。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>补充机制</strong><br>在 Encoder 与 Decoder stack 的底部，把 Positional Encoding 加到 token embedding。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>保留收益</strong><br>positions 仍可并行计算，同时 Q/K/V projections 能读取 content 与 position 的组合信号。</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>从 attention 公式看 permutation equivariance</h2>
+      <p>下面把 <a href="../reference/math-linear-algebra.html#permutation-matrix">permutation matrix（置换矩阵）</a>与 <a href="../reference/math-linear-algebra.html#equivariance">equivariance（等变性）</a>实例化到 self-attention；这是由公式得到的数学推论，不是论文中的逐字表述。设 \(P\) 重新排列 sequence rows。若没有 positional signal 与 mask：</p>
+      <div class="equation">\[
+\begin{aligned}
+Q'&amp;=(PH)W_Q=PQ,\\
+K'&amp;=(PH)W_K=PK,\\
+V'&amp;=(PH)W_V=PV,\\
+\operatorname{Attention}(PH)
+&amp;=P\operatorname{Attention}(H).
+\end{aligned}
+\]</div>
+      <p>也就是说，把 input rows 重新排序，attention outputs 只会跟着以相同方式重新排序；attention 本身没有获得“原来的第几个 position”这一额外信息。这称为 permutation equivariance（置换等变性）。</p>
+      <div class="callout caution">
+        <strong>边界：</strong>Decoder causal mask 本身规定了哪些 earlier positions 可见，因此 masked attention 不满足上面的无 mask 推导。但 mask 的职责是限制 information flow；原论文仍在 Encoder 与 Decoder 两侧都加入 Positional Encoding，以显式提供 relative / absolute position information。
+      </div>
+    </section>
+
+    <section>
+      <h2>原始 Transformer 如何注入 position？</h2>
+      <p>论文令 token embedding 与 Positional Encoding 都具有 \(d_{\text{model}}\) 维，并逐元素相加：</p>
+      <div class="equation">\[
+X_{\mathrm{pos}}
+=\sqrt{d_{\text{model}}}\,
+  E(\mathrm{token}_{\mathrm{pos}})
+ +PE_{\mathrm{pos}},
+\qquad
+X,PE\in\mathbb{R}^{N\times d_{\text{model}}}.
+\]</div>
+      <p>embedding scaling 来自论文 §3.4；training 时还会对 embedding 与 PE 的和应用 dropout。这里选择 addition 而非 concatenation，使输出 width 仍为 \(d_{\text{model}}\)，可直接进入后续 Transformer stack。</p>
+      <p>相加不表示 content 与 position 永远无法区分。后续 learned projections 可以从组合 representation 中学习有用的 content–position interactions。</p>
+    </section>
+
+    <section>
+      <h2>Sinusoidal Positional Encoding 的原始公式</h2>
+      <p>原论文对每个 token position \(\mathrm{pos}\) 和每组 feature pair \(i\) 定义：</p>
+      <div class="equation">\[
+\begin{aligned}
+PE_{(\mathrm{pos},2i)}
+&amp;=\sin\!\left(
+  \frac{\mathrm{pos}}
+  {10000^{2i/d_{\text{model}}}}
+\right),\\
+PE_{(\mathrm{pos},2i+1)}
+&amp;=\cos\!\left(
+  \frac{\mathrm{pos}}
+  {10000^{2i/d_{\text{model}}}}
+\right).
+\end{aligned}
+\]</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>符号</th><th>精确含义</th><th>不要混淆</th></tr></thead>
+          <tbody>
+            <tr><td>\(\mathrm{pos}\)</td><td>sequence 中的 token position。</td><td>不是 feature index，也不是 head index。</td></tr>
+            <tr><td>\(i\)</td><td>sin/cos frequency pair 的索引；对应 feature coordinates \(2i\) 与 \(2i+1\)。</td><td>不是 attention 中 query position \(i\) 的固定写法，也不分配给某个 head。</td></tr>
+            <tr><td>\(d_{\text{model}}\)</td><td>完整 token representation width。</td><td>不是单个 \(d_{\text{head}}\)。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>所有 heads 接收同一份 \(X=E+PE\)，然后分别用自己的 \(W_r^Q,W_r^K,W_r^V\) 从完整 \(d_{\text{model}}\) representation 投影。不存在“不同 head 分配不同 PE dimensions”的原始模型约束。</p>
+    </section>
+
+    <section>
+      <h2>为什么一对 sine / cosine 能表达固定 offset？</h2>
+      <p>令一组 frequency 为 \(\omega_i=10000^{-2i/d_{\text{model}}}\)，并把对应 feature pair 写成：</p>
+      <div class="equation">\[
+p_i(\mathrm{pos})=
+\begin{bmatrix}
+\sin(\omega_i\mathrm{pos})\\
+\cos(\omega_i\mathrm{pos})
+\end{bmatrix}.
+\]</div>
+      <p>对任意固定 offset \(k\)，三角加法公式给出：</p>
+      <div class="equation">\[
+p_i(\mathrm{pos}+k)
+=
+\begin{bmatrix}
+\cos(\omega_i k) &amp; \sin(\omega_i k)\\
+-\sin(\omega_i k) &amp; \cos(\omega_i k)
+\end{bmatrix}
+p_i(\mathrm{pos}).
+\]</div>
+      <p>因此，对于固定 \(k\)，从 \(PE_{\mathrm{pos}}\) 到 \(PE_{\mathrm{pos}+k}\) 存在一个只依赖 offset 的 linear transform。论文将这作为选择 sinusoidal functions 的动机：作者 hypothesized（假设）这会让模型更容易按 relative positions 做 attention；它不是“模型必然精确恢复任意距离”的证明。</p>
+    </section>
+
+    <section>
+      <h2>Fixed sinusoidal 与 learned positional embeddings</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>方案</th><th>参数与长度</th><th>论文证据</th></tr></thead>
+          <tbody>
+            <tr><td>sinusoidal PE</td><td>由公式生成，无 learned position table；可计算训练长度之外的 positions。</td><td>原始 base model 采用。</td></tr>
+            <tr><td>learned positional embeddings</td><td>每个训练范围内的 position 学一个 vector。</td><td>论文 ablation 中与 sinusoidal 结果近似。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>作者选择 sinusoidal version，是因为它<strong>可能</strong> extrapolate 到 training 中未见过的更长 sequence lengths。这里必须保留 “may”：公式允许计算更长 positions，不等于模型质量被保证能外推。</p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：pos 是 token position，i 是 sinusoidal frequency / feature pair index；都不是 head index。" data-incorrect-feedback="把公式的两条轴分开：sequence axis 用 pos，feature axis 用 2i 与 2i+1。">
+      <h2>30 秒索引检索</h2>
+      <p>在 \(PE_{(\mathrm{pos},2i)}\) 中，\(\mathrm{pos}\) 与 \(i\) 分别表示什么？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">token position；frequency / feature pair index</button>
+        <button class="choice" type="button" data-correct="false">head index；token position</button>
+        <button class="choice" type="button" data-correct="false">batch index；head index</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：Positional Encoding 提供 position signal；causal mask 单独约束 future target 的可见性。" data-incorrect-feedback="区分两种职责：PE 告诉模型 position，mask 决定哪些 connections 合法。">
+      <h2>职责边界检索</h2>
+      <p>哪项准确区分 Positional Encoding 与 causal mask？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">PE 注入 position information；mask 约束 information visibility</button>
+        <button class="choice" type="button" data-correct="false">PE 屏蔽 future target；mask 提供 sinusoidal coordinates</button>
+        <button class="choice" type="button" data-correct="false">二者承担完全相同的职责</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2>结束时应能说清</h2>
+      <p>请用自己的话回答：<strong>“移除 recurrence / convolution 为什么产生顺序信息缺口？sinusoidal PE 如何补入这个信号？公式中的 \(\mathrm{pos}\)、\(i\) 与 head index 有什么区别？PE 与 causal mask 的职责又如何区分？”</strong></p>
+    </section>
+
+    <footer>
+      <p>复习：<a href="0005-residual-layernorm.html">课程 0005</a> · 下一课：<a href="0007-output-softmax-weight-tying.html">课程 0007</a> · 数学：<a href="../reference/math-sequences-transforms.html#trigonometric-transform">Trigonometric addition 与 rotation</a> · 原始定义见 <a href="https://arxiv.org/html/1706.03762v7">论文 §3.5</a>。</p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

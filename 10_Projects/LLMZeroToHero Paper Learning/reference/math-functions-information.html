@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Math Foundations · Functions and Information</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] },
+      options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Math Foundations · Functions and Information</p>
+    <h1>Functions 与 Information Measures</h1>
+    <p class="lede">本页解释 exponential、logarithm、softmax、cross-entropy 与 KL divergence 的一般结构。Attention weights、next-token probabilities 和 label smoothing 属于 Lesson 中的应用。</p>
+
+    <section id="exp-log">
+      <h2>Exponential 与 logarithm</h2>
+      <p>Natural exponential function 与 natural logarithm 互为 inverse：</p>
+      <div class="equation">\[
+\exp(\log x)=x\quad(x&gt;0),
+\qquad
+\log(\exp z)=z.
+\]</div>
+      <p>它们满足：</p>
+      <div class="equation">\[
+\exp(a+b)=\exp(a)\exp(b),
+\qquad
+\log(ab)=\log a+\log b.
+\]</div>
+      <p>当 \(0&lt;p\leq1\) 时，\(\log p\leq0\)，所以 negative log-probability \(-\log p\) 非负；\(p\) 越接近 \(1\)，该值越接近 \(0\)。</p>
+    </section>
+
+    <section id="softmax">
+      <h2>Softmax：从 logits 到 categorical distribution</h2>
+      <p>对 logits vector \(z\in\mathbb{R}^{K}\)，softmax 定义为：</p>
+      <div class="equation">\[
+\operatorname{softmax}(z)_k
+=\frac{\exp(z_k)}{\sum_{j=1}^{K}\exp(z_j)},
+\qquad
+k=1,\ldots,K.
+\]</div>
+      <p>每个 output 非负且总和为 \(1\)，因此构成 \(K\) 个 categories 上的 probability distribution。Softmax 对整体平移 invariant：</p>
+      <div class="equation">\[
+\operatorname{softmax}(z+c\mathbf{1})
+=\operatorname{softmax}(z).
+\]</div>
+      <p>这允许数值实现先减去 \(\max_j z_j\)，降低 exponential overflow 风险而不改变结果。</p>
+      <div class="callout">
+        <strong>Normalization axis：</strong>对 matrix 或 tensor 使用 softmax 时，必须指定哪个 axis 的 entries 共同出现在 denominator 中。公式相同不表示不同应用的归一化对象相同。
+      </div>
+    </section>
+
+    <section id="constrained-softmax">
+      <h2>用 extended logits 表示不可选 category</h2>
+      <p>若某个 category 不允许被选择，可在 normalization 前把对应 logit 设为 \(-\infty\)。因为：</p>
+      <div class="equation">\[
+\exp(-\infty)=0,
+\]</div>
+      <p>它在 softmax 后获得 zero probability。实际 finite-precision implementation 通常使用足够小的 representable value；具体 mask semantics 由应用定义。</p>
+    </section>
+
+    <section id="entropy">
+      <h2>Entropy</h2>
+      <p>对 discrete distribution \(q=(q_1,\ldots,q_K)\)，entropy 定义为：</p>
+      <div class="equation">\[
+H(q)=-\sum_{k=1}^{K}q_k\log q_k.
+\]</div>
+      <p>它衡量 distribution 自身的不确定性。按连续延拓 convention，\(q_k=0\) 时对应 term 记为 \(0\log0=0\)。</p>
+    </section>
+
+    <section id="cross-entropy">
+      <h2>Cross-entropy</h2>
+      <p>给定 target distribution \(q\) 与 model distribution \(p\)，cross-entropy 为：</p>
+      <div class="equation">\[
+H(q,p)=-\sum_{k=1}^{K}q_k\log p_k.
+\]</div>
+      <p>\(q_k\) 决定每个 category 的 loss weight，\(p_k\) 是被评价的 predicted probability。若 \(q\) 是 category \(y\) 上的 one-hot distribution，则：</p>
+      <div class="equation">\[
+H(q,p)=-\log p_y.
+\]</div>
+    </section>
+
+    <section id="kl-divergence">
+      <h2>KL divergence 与 cross-entropy 的关系</h2>
+      <p>KL divergence 定义为：</p>
+      <div class="equation">\[
+D_{\mathrm{KL}}(q\Vert p)
+=\sum_{k=1}^{K}q_k\log\frac{q_k}{p_k}.
+\]</div>
+      <p>将 logarithm 展开可得：</p>
+      <div class="equation">\[
+H(q,p)=H(q)+D_{\mathrm{KL}}(q\Vert p).
+\]</div>
+      <p>当 target \(q\) 固定时，\(H(q)\) 对 model parameters 是常数，所以最小化 cross-entropy 等价于最小化 \(D_{\mathrm{KL}}(q\Vert p)\)。KL divergence 不对称，一般有 \(D_{\mathrm{KL}}(q\Vert p)\neq D_{\mathrm{KL}}(p\Vert q)\)。</p>
+    </section>
+
+    <section id="transfer-check">
+      <h2>进入 Lesson 前的 transfer check</h2>
+      <p>遇到 softmax 时指出 normalization axis；遇到 cross-entropy 时指出哪个 distribution 是 fixed target、哪个是 model output；遇到 KL 时保留 argument order。</p>
+    </section>
+
+    <footer>
+      <p>返回 <a href="math-foundations-for-attention.html">Math Foundations Index</a>。</p>
+    </footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0009A · Adam：从 Noisy SGD 到 Adaptive Moments</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Adam Paper · Lesson 0009A · 约 15 分钟</p>
+    <h1>Adam：从 Noisy SGD 到 Adaptive Moments</h1>
+    <p class="lede">Transformer 论文告诉我们它“使用 Adam”，但没有展开 Adam 为什么维护两组 moment estimates。本课回到 Adam 自己的问题设定：面对 minibatch noise、high-dimensional parameters 与不同 coordinate 的 gradient scales，如何只用 first-order gradients 构造 adaptive updates？</p>
+    <p class="meta">前置：<a href="0009-adam-warmup-lr-schedule.html">课程 0009</a> · 数学：<a href="../reference/math-foundations-for-attention.html#adam-and-schedule">Adam 数学起步</a> · 术语：<a href="../reference/attention-glossary.html#adam-paper">Adam terms</a> · 主证据：<a href="https://arxiv.org/abs/1412.6980">Kingma &amp; Ba, Adam: A Method for Stochastic Optimization</a>, §§1–2, Algorithm 1</p>
+
+    <section>
+      <h2>设计起点：gradient 为什么是 stochastic 的？</h2>
+      <p>设完整 training objective 是许多 data examples 的 aggregate。实际 training 通常不会在每次 update 前遍历全部数据，而是从 minibatch 构造 stochastic objective \(f_t(\theta)\)，并计算：</p>
+      <div class="equation">\[
+g_t
+=\nabla_\theta f_t(\theta_{t-1}).
+\]</div>
+      <p>因为 minibatch composition 会变化，连续 steps 的 \(g_t\) 可能在方向与 magnitude 上波动。Dropout 等 stochastic mechanisms 也可能增加这种 noise。Adam 论文特别关注 large parameter spaces，以及 noisy、sparse 或 non-stationary gradient settings。</p>
+      <div class="callout caution">
+        <strong>不要制造错误因果：</strong>这不表示 SGD 无法处理 stochastic gradients。Adam 的设计目标是在只使用 first-order gradients 的前提下，用历史 moments 为不同 parameter coordinates 构造 adaptive learning rates。
+      </div>
+    </section>
+
+    <section>
+      <h2>SGD baseline 留下了什么自由度？</h2>
+      <p>最小 SGD update 可以写成：</p>
+      <div class="equation">\[
+\theta_t
+=\theta_{t-1}
+-\alpha g_t.
+\]</div>
+      <p>同一个 global stepsize \(\alpha\) 乘到所有 coordinates；当前 minibatch gradient 直接决定这一步的方向和相对 magnitude。这个 baseline 没有在 optimizer state 中显式保存“近期方向是否一致”或“某个 coordinate 的 gradient 通常有多大”。</p>
+      <p>在 Adam 提出之前，momentum、AdaGrad 与 RMSProp 已经分别处理了这些问题的一部分。Adam 论文将自己的设计描述为结合 AdaGrad 对 sparse gradients 的适应能力与 RMSProp 对 online / non-stationary settings 的适应能力。</p>
+    </section>
+
+    <section>
+      <h2>First moment：平滑近期 gradient direction</h2>
+      <p>Adam 为每个 parameter coordinate 维护 gradient 的 exponential moving average：</p>
+      <div class="equation">\[
+m_t
+=\beta_1m_{t-1}
++(1-\beta_1)g_t,
+\qquad
+m_0=0.
+\]</div>
+      <p>把 recurrence 展开：</p>
+      <div class="equation">\[
+m_t
+=(1-\beta_1)
+\sum_{i=1}^{t}
+\beta_1^{\,t-i}g_i.
+\]</div>
+      <p>越近的 gradient 权重越大，越早的 gradient 按 \(\beta_1^{t-i}\) 衰减。若一个 coordinate 的 gradients 长期同向，\(m_t\) 会保留该方向；若频繁正负翻转，moving average 会发生抵消。</p>
+      <p>\(\beta_1\) 越接近 \(1\)，历史衰减越慢；越接近 \(0\)，\(m_t\) 越接近当前 gradient。它控制 history weighting，不是 learning rate 本身。</p>
+    </section>
+
+    <section>
+      <h2>Second raw moment：估计近期 squared magnitude</h2>
+      <p>Adam 同时维护：</p>
+      <div class="equation">\[
+v_t
+=\beta_2v_{t-1}
++(1-\beta_2)g_t^2,
+\qquad
+v_0=0,
+\]</div>
+      <p>其中 \(g_t^2=g_t\odot g_t\) 是 element-wise square。展开后：</p>
+      <div class="equation">\[
+v_t
+=(1-\beta_2)
+\sum_{i=1}^{t}
+\beta_2^{\,t-i}g_i^2.
+      \]</div>
+      <div class="callout">
+        <strong>术语边界：</strong>\(v_t\) 估计的是 second raw moment，即 \(\mathbb{E}[g^2]\)，不是 centered variance。两者关系为 \(\operatorname{Var}(g)=\mathbb{E}[g^2]-\mathbb{E}[g]^2\)。
+      </div>
+      <h3>为什么需要专门区分 raw moment 与 variance？</h3>
+      <p>比较的目的不是暗示两种计算应该相同，而是防止把 \(v_t\) 错读成“gradient 的波动程度”。考虑两个 idealized long-run gradient distributions：</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Gradient pattern</th><th>\(\mathbb{E}[g]\)</th><th>\(\mathbb{E}[g^2]\)</th><th>\(\operatorname{Var}(g)\)</th></tr></thead>
+          <tbody>
+            <tr><td>\(g=10\) 恒定不变</td><td>\(10\)</td><td>\(100\)</td><td>\(0\)</td></tr>
+            <tr><td>\(g\in\{-10,+10\}\)，等概率</td><td>\(0\)</td><td>\(100\)</td><td>\(100\)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>第一种 gradient 完全不波动，所以 centered variance 为 \(0\)；但它的 magnitude 始终为 \(10\)，因此 second raw moment 是 \(100\)。两种 pattern 的 \(\mathbb{E}[g^2]\) 相同，所以 \(v_t\) 会为它们记录相近的 squared scale；\(m_t\) 则区分“长期稳定同向”与“正负方向相互抵消”。</p>
+      <div class="callout">
+        <strong>为什么这个区别影响 Adam：</strong>如果误以为 \(v_t\) 是 variance，就会错误预测“恒定大 gradient 的 denominator 接近 \(0\)”。实际上 Adam 的 denominator 会看到其非零 squared magnitude。Adam 用 \(m_t\) 表示 signed direction consistency，用 \(v_t\) 表示 total squared scale。
+      </div>
+      <p>\(\beta_2\) 控制 squared-gradient history 的衰减。某个 coordinate 近期 gradient magnitude 经常较大时，对应 \(v_t\) 通常也较大。</p>
+    </section>
+
+    <section>
+      <h2>Algorithm 1：两组 moments 如何合成一次 update？</h2>
+      <p>因为 \(m_0=v_0=0\)，Adam 先构造 bias-corrected estimates：</p>
+      <div class="equation">\[
+\widehat{m}_t
+=\frac{m_t}{1-\beta_1^t},
+\qquad
+\widehat{v}_t
+=\frac{v_t}{1-\beta_2^t}.
+\]</div>
+      <p>然后按 coordinate 更新：</p>
+      <div class="equation">\[
+\theta_t
+=\theta_{t-1}
+-\alpha
+\frac{\widehat{m}_t}
+{\sqrt{\widehat{v}_t}+\epsilon}.
+\]</div>
+      <div class="chain">
+        <div class="chain-step"><strong>Current evidence</strong><br>由 stochastic objective 得到 \(g_t\)。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Direction estimate</strong><br>\(m_t\) 聚合近期 signed gradients。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Scale estimate</strong><br>\(v_t\) 聚合近期 squared gradients。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Normalized update</strong><br>用 \(\widehat{m}_t/(\sqrt{\widehat{v}_t}+\epsilon)\) 构造 per-coordinate update，再乘 global stepsize \(\alpha\)。</div>
+      </div>
+      <p>Bias correction 为什么恰好除以 \(1-\beta^t\)，留到 Lesson 0009B 从展开式推导；本课先掌握 producer-to-consumer data flow。</p>
+    </section>
+
+    <section>
+      <h2>\(t=0\) 只做初始化：第一次 update 从 \(t=1\) 开始</h2>
+      <p>Adam Algorithm 1 首先建立 initial state：</p>
+      <div class="equation">\[
+\theta_0=\text{initial parameters},
+\qquad
+m_0=0,
+\qquad
+v_0=0,
+\qquad
+t=0.
+\]</div>
+      <p>此时还没有根据 data 计算 gradient，因此不执行 parameter update。进入 optimization loop 后，算法先令 \(t\leftarrow t+1\)，再在 \(\theta_0\) 上计算第一次 stochastic gradient：</p>
+      <div class="equation">\[
+g_1
+=\nabla_\theta f_1(\theta_0).
+\]</div>
+      <p>代入 zero-initialized moment states：</p>
+      <div class="equation">\[
+\begin{aligned}
+m_1
+&amp;=\beta_1m_0+(1-\beta_1)g_1
+=(1-\beta_1)g_1,\\
+v_1
+&amp;=\beta_2v_0+(1-\beta_2)g_1^2
+=(1-\beta_2)g_1^2.
+\end{aligned}
+\]</div>
+      <p>第一次 bias correction 会恰好约去这两个 initialization factors：</p>
+      <div class="equation">\[
+\begin{aligned}
+\widehat{m}_1
+&amp;=\frac{m_1}{1-\beta_1}
+=g_1,\\
+\widehat{v}_1
+&amp;=\frac{v_1}{1-\beta_2}
+=g_1^2.
+\end{aligned}
+\]</div>
+      <p>所以第一次 parameter update 为：</p>
+      <div class="equation">\[
+\theta_1
+=\theta_0
+-\alpha
+\frac{g_1}
+{\sqrt{g_1^2}+\epsilon}.
+\]</div>
+      <p>对 scalar coordinate \(j\)，有 \(\sqrt{g_{1,j}^2}=|g_{1,j}|\)。当 \(g_{1,j}\neq0\) 且 \(\epsilon\) 相对很小时：</p>
+      <div class="equation">\[
+\theta_{1,j}-\theta_{0,j}
+\approx
+-\alpha\,\operatorname{sign}(g_{1,j}).
+\]</div>
+      <p>因此第一次 Adam update 的 normalized magnitude 通常接近 global stepsize \(\alpha\)，方向由该 coordinate 的 gradient sign 决定；若 \(g_{1,j}=0\)，其 update 为 \(0\)。若外部还使用 Transformer learning-rate schedule，这里的 \(\alpha\) 应替换为 first-step global learning rate \(\alpha_1\)。</p>
+      <div class="callout caution">
+        <strong>Indexing boundary：</strong>算法不会在 \(t=0\) 计算 \(\widehat{m}_0=m_0/(1-\beta_1^0)\) 或 \(\widehat{v}_0=v_0/(1-\beta_2^0)\)，因为 denominator 为 \(0\)。准确顺序是
+        \(t=0\rightarrow t=1\rightarrow g_1\rightarrow m_1,v_1\rightarrow\widehat{m}_1,\widehat{v}_1\rightarrow\theta_1\)。
+      </div>
+    </section>
+
+    <section>
+      <h2>一个 two-coordinate 例子</h2>
+      <p>忽略 \(\epsilon\)，假设 bias correction 后两个 coordinates 的 first moment 相同，但 second raw moment 不同：</p>
+      <div class="equation">\[
+\begin{aligned}
+\widehat{m}_{t,a}
+&amp;=0.1,
+&amp;\widehat{v}_{t,a}
+&amp;=0.01,\\
+\widehat{m}_{t,b}
+&amp;=0.1,
+&amp;\widehat{v}_{t,b}
+&amp;=1.
+\end{aligned}
+\]</div>
+      <p>则 normalized update factors 为：</p>
+      <div class="equation">\[
+\begin{aligned}
+\frac{\widehat{m}_{t,a}}
+{\sqrt{\widehat{v}_{t,a}}}
+&amp;=\frac{0.1}{0.1}=1,\\
+\frac{\widehat{m}_{t,b}}
+{\sqrt{\widehat{v}_{t,b}}}
+&amp;=\frac{0.1}{1}=0.1.
+\end{aligned}
+\]</div>
+      <p>即使两者的 smoothed direction 相同，recent squared-gradient scale 更大的 coordinate \(b\) 得到更小的 normalized factor。这里展示的是公式结果，不表示 Adam 永远会让“大 gradient coordinate”更新更慢；实际结果同时取决于 \(\widehat{m}_t\)、\(\widehat{v}_t\)、\(\epsilon\) 与 \(\alpha\)。</p>
+    </section>
+
+    <section>
+      <h2>为什么称为 adaptive learning rates？</h2>
+      <p>把 update 的第 \(j\) 个 coordinate 写开：</p>
+      <div class="equation">\[
+\theta_{t,j}
+=\theta_{t-1,j}
+-\underbrace{
+\frac{\alpha}
+{\sqrt{\widehat{v}_{t,j}}+\epsilon}
+}_{\text{coordinate-dependent scale}}
+\widehat{m}_{t,j}.
+\]</div>
+      <p>虽然 \(\alpha\) 是 global stepsize，但 denominator 随 coordinate \(j\) 的 squared-gradient history 改变，因此每个 coordinate 获得不同的 effective scale。这就是 adaptive moment estimation 中 “adaptive” 的直接数学位置。</p>
+      <p>当 \(\epsilon=0\) 且 gradient 被 positive constant \(c\) 按 coordinate rescale 时：</p>
+      <div class="equation">\[
+\frac{c\widehat{m}_t}
+{\sqrt{c^2\widehat{v}_t}}
+=
+\frac{\widehat{m}_t}
+{\sqrt{\widehat{v}_t}}.
+\]</div>
+      <p>这说明 normalized factor 对这种 gradient rescaling 不变。实际有 \(\epsilon&gt;0\) 时，在 denominator 与 \(\epsilon\) 同量级的区域，这个等式不再严格成立。</p>
+    </section>
+
+    <section>
+      <h2>State 与 memory boundary</h2>
+      <p>若 parameter vector 有 \(|\theta|\) 个 elements，Adam 至少维护与 parameters 同 shape 的 \(m_t\) 与 \(v_t\)：</p>
+      <div class="equation">\[
+M_{\text{moment state}}
+=2|\theta|b,
+\]</div>
+      <p>其中 \(b\) 是每个 moment element 的 byte width。因此 moment state 是 \(O(|\theta|)\) memory，而不是 zero overhead。Adam 论文所说的 “little memory requirements” 应理解为其 first-order algorithm context；mixed precision master weights、gradient buffers、distributed sharding 与 framework-specific states 不在原论文这句话的计数中。</p>
+    </section>
+
+    <section>
+      <h2>这一课暂时不能推出什么？</h2>
+      <div class="callout caution">
+        <strong>边界清单：</strong>Algorithm 1 不表示 Adam 不再需要 global learning rate；\(v_t\) 不是 Hessian 或完整 cross-coordinate covariance；一个 two-coordinate 例子不是 convergence proof；原论文的 theoretical claim 有特定 assumptions，其历史与后续修正留到 Lesson 0009C。
+      </div>
+      <p>回到 Transformer 时，还要再叠加 Lesson 9 的 warmup / decay schedule：Adam 决定 per-coordinate normalization，schedule 决定每个 optimizer step 的 global scale。</p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：second raw moment 是 squared gradient 的 moving average；它没有减去 first moment 的平方。" data-incorrect-feedback="检查定义：variance 还需要减去 mean 的平方，而 Adam 的 second state 直接累积 squared gradients。">
+      <h2>30 秒 moment 检索</h2>
+      <p>Adam 的 \(v_t\) 最准确地描述为什么？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">gradient second raw moment estimate</button>
+        <button class="choice" type="button" data-correct="false">centered gradient variance</button>
+        <button class="choice" type="button" data-correct="false">loss 的 Hessian matrix</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：global stepsize 仍存在；second-moment denominator 让 effective scale 随 parameter coordinate 改变。" data-incorrect-feedback="查看 update 的乘法结构：global stepsize 乘在 normalized per-coordinate factor 外面。">
+      <h2>Adaptive 边界检索</h2>
+      <p>Adam 使用 adaptive learning rates 是否表示不再需要 global stepsize？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">否，二者共同决定 update</button>
+        <button class="choice" type="button" data-correct="false">是，global stepsize 已被完全移除</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2>结束时应能说清</h2>
+      <p>请用自己的话回答：<strong>“SGD baseline 没有显式保存哪两类 gradient history？\(m_t\) 与 \(v_t\) 分别估计什么？为什么 denominator 会产生 per-coordinate adaptive scale？second raw moment 为什么不等于 variance？Adam 又为什么仍需要 global stepsize？”</strong></p>
+    </section>
+
+    <footer>
+      <p>来源：<a href="https://arxiv.org/abs/1412.6980">Adam 原论文</a> §§1–2、Algorithm 1 · 下一支线课：<a href="0009b-adam-bias-correction.html">Lesson 0009B</a>，推导 zero initialization bias 与 correction factors。</p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

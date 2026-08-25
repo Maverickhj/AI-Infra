@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Math Foundations · Linear Algebra</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] },
+      options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Math Foundations · Linear Algebra</p>
+    <h1>Linear Algebra 与 Symmetry</h1>
+    <p class="lede">本页只解释 vector、matrix、shape、linear map 与 symmetry 的一般性质。Q/K/V、attention score 和 Positional Encoding 属于 Lesson 中的实例化。</p>
+    <p class="meta">按需阅读：matrix multiplication → dot product → permutation matrix → equivariance / invariance。</p>
+
+    <section id="vectors-matrices">
+      <h2>Vector、matrix 与 tensor shape</h2>
+      <p>Vector（向量）是一维有序数组，matrix（矩阵）是二维数组。若：</p>
+      <div class="equation">\[
+x\in\mathbb{R}^{d},
+\qquad
+A\in\mathbb{R}^{m\times n},
+\]</div>
+      <p>则 \(x\) 有 \(d\) 个 coordinates；\(A\) 有 \(m\) 行、\(n\) 列。更高阶数组常称为 tensor，其 shape 记录每个 axis 的长度。Shape 是代数兼容性，不自动说明 axis 的业务语义；语义必须由应用场景另行定义。</p>
+    </section>
+
+    <section id="matrix-multiplication">
+      <h2>Matrix multiplication：收缩内侧维度</h2>
+      <p>若 \(A\in\mathbb{R}^{m\times n}\)、\(B\in\mathbb{R}^{n\times p}\)，则：</p>
+      <div class="equation">\[
+C=AB\in\mathbb{R}^{m\times p},
+\qquad
+C_{ij}=\sum_{k=1}^{n}A_{ik}B_{kj}.
+\]</div>
+      <p>相邻的两个 \(n\) dimensions 被求和收缩，输出保留外侧的 \(m\) 与 \(p\)。一般有 \(AB\neq BA\)，而且 \(BA\) 甚至可能因 shape 不兼容而不存在。</p>
+      <div class="callout">
+        <strong>Shape check：</strong>先检查内侧 dimensions 是否相等，再写出输出的外侧 dimensions；之后才解释每个 axis 的语义。
+      </div>
+    </section>
+
+    <section id="dot-product">
+      <h2>Dot product：两个 vectors 变成一个 scalar</h2>
+      <p>对 \(x,y\in\mathbb{R}^{d}\)，dot product（点积）定义为：</p>
+      <div class="equation">\[
+x^\top y
+=\sum_{k=1}^{d}x_k y_k
+\in\mathbb{R}.
+\]</div>
+      <p>它把两个相同长度的 vectors 映射为一个 scalar。其数值同时受 direction 与 magnitude 影响；只有在 vectors 已归一化时，才可直接把 dot product 解释成 cosine similarity。</p>
+    </section>
+
+    <section id="transpose">
+      <h2>Transpose 与乘积顺序</h2>
+      <p>若 \(A\in\mathbb{R}^{m\times n}\)，则 \(A^\top\in\mathbb{R}^{n\times m}\)，并满足：</p>
+      <div class="equation">\[
+(AB)^\top=B^\top A^\top.
+\]</div>
+      <p>Transpose 会交换 rows 与 columns；乘积整体转置时，factor 顺序也必须反转。</p>
+    </section>
+
+    <section id="permutation-matrix">
+      <h2>Permutation matrix：用 matrix 表示有限重排</h2>
+      <p>Permutation matrix（置换矩阵）\(P\in\mathbb{R}^{n\times n}\) 的每一行、每一列都恰好有一个 \(1\)，其余元素为 \(0\)。例如：</p>
+      <div class="equation">\[
+P=
+\begin{bmatrix}
+0 &amp; 1 &amp; 0\\
+1 &amp; 0 &amp; 0\\
+0 &amp; 0 &amp; 1
+\end{bmatrix}.
+\]</div>
+      <p>左乘 \(P\) 重排一个 matrix 的 rows；右乘 \(P^\top\) 重排 columns。Permutation matrix 满足：</p>
+      <div class="equation">\[
+P^\top P=PP^\top=I,
+\qquad
+P^{-1}=P^\top.
+\]</div>
+      <p>因此 \(P\) 也是 orthogonal matrix（正交矩阵），会保留 Euclidean norm 与 inner product。对 pairwise relation matrix \(S\in\mathbb{R}^{n\times n}\)，同步重排两个 axes 写作：</p>
+      <div class="equation">\[
+S'=PSP^\top.
+\]</div>
+    </section>
+
+    <section id="equivariance">
+      <h2>Equivariance 与 invariance</h2>
+      <p>设 \(T_g\) 表示某个 transformation。若 function \(f\) 满足：</p>
+      <div class="equation">\[
+f(T_gx)=T_gf(x),
+\]</div>
+      <p>则称 \(f\) 对该 transformation equivariant（等变）：input 怎样变，output 以对应方式变化。若满足：</p>
+      <div class="equation">\[
+f(T_gx)=f(x),
+\]</div>
+      <p>则称其 invariant（不变）：transformation 不改变 output。两者不是同义词，且都必须说明针对哪一类 transformations。</p>
+    </section>
+
+    <section id="transfer-check">
+      <h2>进入 Lesson 前的 transfer check</h2>
+      <p>看到一个应用公式时，先回答：哪些 dimensions 被收缩？哪些 axes 被保留？若同时重排两个 pairwise axes，为什么写成 \(PSP^\top\)？应用中的符号含义与结论由 Lesson 继续完成。</p>
+    </section>
+
+    <footer>
+      <p>返回 <a href="math-foundations-for-attention.html">Math Foundations Index</a>。</p>
+    </footer>
+  </main>
+</body>
+</html>

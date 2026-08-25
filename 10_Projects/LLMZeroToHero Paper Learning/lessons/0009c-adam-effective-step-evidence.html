@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0009C · Adam Effective Step and Evidence Boundaries</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Adam Paper · Lesson 0009C · 约 20 分钟</p>
+    <h1>Adam Effective Step：机制直觉、实验与理论边界</h1>
+    <p class="lede">Adam 不只是把 gradient 乘以一个 learning rate。它先用 gradient history 估计 direction 与 scale，再形成每个 coordinate 的实际更新。本课区分 algorithm mechanism、experimental evidence 与 convergence claim：三者相互支持，但不能彼此替代。</p>
+    <p class="meta">前置：<a href="0009b-adam-bias-correction.html">Adam 0009B</a> · 主证据：<a href="https://arxiv.org/abs/1412.6980">Kingma &amp; Ba, Adam</a>, §§2.1、4、6 · 后续修正：<a href="https://openreview.net/forum?id=ryQu7f-RZ">Reddi, Kale &amp; Kumar, On the Convergence of Adam and Beyond</a></p>
+
+    <section>
+      <h2>先拆开三个容易混淆的 quantities</h2>
+      <p>令 \(\eta_t\) 是 optimizer step \(t\) 的 global learning rate，\(j\) 是 parameter coordinate。Adam 的实际 parameter update 为：</p>
+      <div class="equation">\[
+\Delta\theta_{t,j}
+=\theta_{t,j}-\theta_{t-1,j}
+=-\eta_t
+\frac{\widehat{m}_{t,j}}
+{\sqrt{\widehat{v}_{t,j}}+\epsilon}.
+\]</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Quantity</th><th>作用范围</th><th>回答的问题</th></tr></thead>
+          <tbody>
+            <tr><td>Global learning rate \(\eta_t\)</td><td>通常由所有 coordinates 共享</td><td>整个 optimizer step 的基础尺度是多少？</td></tr>
+            <tr><td>Preconditioner \(\rho_{t,j}\)</td><td>每个 coordinate 不同</td><td>该 coordinate 应按历史 squared scale 缩放多少？</td></tr>
+            <tr><td>Realized update \(\Delta\theta_{t,j}\)</td><td>每个 coordinate 的最终结果</td><td>global scale、signed first-moment signal、preconditioner 与稳定项共同作用后，parameter 实际移动了多少？</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>其中可以定义 per-coordinate preconditioner：</p>
+      <div class="equation">\[
+\rho_{t,j}
+=\frac{1}{\sqrt{\widehat{v}_{t,j}}+\epsilon},
+\qquad
+\Delta\theta_{t,j}
+=-\eta_t\rho_{t,j}\widehat{m}_{t,j}.
+\]</div>
+      <div class="callout caution">
+        <strong>术语边界：</strong>Adam 原论文在 \(\epsilon=0\) 的讨论中把 \(\Delta_t\) 称为 effective step。工程语境里 effective learning rate 有时仅指 \(\eta_t/(\sqrt{\widehat{v}_{t,j}}+\epsilon)\)。阅读实现或论文时必须先确认作者指的是 preconditioner，还是包含 \(\widehat{m}_t\) 的 realized update。
+      </div>
+    </section>
+
+    <section>
+      <h2>为什么 moment ratio 能表达 direction confidence？</h2>
+      <p>在 gradient distribution 近似 stationary、EMA 已进入稳定阶段的直觉模型中：</p>
+      <div class="equation">\[
+\widehat{m}_{t,j}
+\approx\mathbb{E}[g_j],
+\qquad
+\widehat{v}_{t,j}
+\approx\mathbb{E}[g_j^2].
+\]</div>
+      <p>忽略 \(\epsilon\) 后，normalized ratio 近似：</p>
+      <div class="equation">\[
+r_j
+=\frac{\mathbb{E}[g_j]}
+{\sqrt{\mathbb{E}[g_j^2]}}.
+\]</div>
+      <p>由 \(\operatorname{Var}(g_j)=\mathbb{E}[g_j^2]-\mathbb{E}[g_j]^2\geq0\)，可得：</p>
+      <div class="equation">\[
+\left\lvert\mathbb{E}[g_j]\right\rvert
+\leq
+\sqrt{\mathbb{E}[g_j^2]},
+\qquad
+\lvert r_j\rvert\leq1.
+\]</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Gradient pattern</th><th>\(\widehat{m}_t\)</th><th>\(\widehat{v}_t\)</th><th>Update intuition</th></tr></thead>
+          <tbody>
+            <tr><td>长期稳定同向</td><td>signed mean 较大</td><td>squared scale 也较大</td><td>ratio 接近方向符号，保留有效更新</td></tr>
+            <tr><td>正负频繁抵消</td><td>接近 zero</td><td>仍记录较大 magnitude</td><td>ratio 变小，降低方向不确定时的更新</td></tr>
+            <tr><td>极稀疏、突然非零</td><td>由最新 observation 主导</td><td>由最新 squared observation 主导</td><td>属于论文单独讨论的 exceptional bound case</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>这里的 inequality 是 stationary-distribution intuition，不是对任意 finite-step EMA ratio 的无条件证明。不同 \(\beta_1,\beta_2\) 与 sparse history 会改变 transient behavior。</p>
+    </section>
+
+    <section>
+      <h2>Gradient scale invariance 的精确条件</h2>
+      <p>若所有 gradients 乘以正数 \(c&gt;0\)，则：</p>
+      <div class="equation">\[
+\widehat{m}'_t
+=c\widehat{m}_t,
+\qquad
+\widehat{v}'_t
+=c^2\widehat{v}_t.
+\]</div>
+      <p>当 \(\epsilon=0\) 时：</p>
+      <div class="equation">\[
+\frac{\widehat{m}'_t}{\sqrt{\widehat{v}'_t}}
+=
+\frac{c\widehat{m}_t}{\sqrt{c^2\widehat{v}_t}}
+=
+\frac{\widehat{m}_t}{\sqrt{\widehat{v}_t}}.
+\]</div>
+      <p>因此 normalized update 对正的 global gradient rescaling 不变。这解释了 Adam 为什么对 gradient magnitude 的变化相对不敏感。</p>
+      <div class="callout caution">
+        <strong>不是无条件 invariance：</strong>非零 \(\epsilon\) 会破坏精确抵消；gradient clipping、weight decay、mixed-precision scaling 的插入位置以及 coordinate-wise 非均匀缩放，也不能直接套用这条等式。
+      </div>
+    </section>
+
+    <section>
+      <h2>原论文的 experiments 实际支持了什么？</h2>
+      <p>Adam §6 把机制带到具体 workloads。作者保持相同 parameter initialization，并对 learning rate、momentum 等 hyperparameters 做 dense-grid search，报告各方法搜索到的最佳设置。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>实验范围</th><th>论文中的观察</th><th>不能推出</th></tr></thead>
+          <tbody>
+            <tr><td>MNIST multiclass logistic regression</td><td>在该 convex task 与调参范围内，Adam 表现出有竞争力的 optimization progress</td><td>所有 convex objectives 上 Adam 都收敛</td></tr>
+            <tr><td>IMDB 10,000-dimensional sparse BoW</td><td>Adam 与 AdaGrad 能利用 sparse features，优于该实验中的 Nesterov momentum baseline</td><td>所有 sparse workloads 都应选择 Adam</td></tr>
+            <tr><td>Two-hidden-layer ReLU network</td><td>在具体 non-convex neural-network experiment 中，Adam 的 iteration 与 wall-clock progress 有优势</td><td>convex regret theorem 已覆盖 neural-network training</td></tr>
+            <tr><td>论文还包括 deep convolutional network</td><td>扩展了 empirical workload diversity</td><td>已经证明 Transformer、LLM 或任意未来 architecture 的效果</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Dense-grid search 让 baseline comparison 更公平，但实验支持的仍是“这些配置、datasets、metrics 与搜索空间中的观察”。它不是 algorithm 的 universal guarantee，也不能替代 theorem。</p>
+    </section>
+
+    <section>
+      <h2>原论文的 convergence claim 指什么？它在哪个 setting 下提出？</h2>
+      <div class="callout">
+        <strong>先明确 claim：</strong>这里的 convergence claim 是论文作者提出并尝试通过 theorem 证明的 mathematical statement：在指定 assumptions 下，Adam 的 cumulative regret 是 sublinear，因此 average regret 逐渐趋近于 zero。它要表达的是 Adam 的长期平均 cost 不会持续落后于 hindsight best fixed parameter，而不是 parameter sequence 本身必然收敛。
+      </div>
+      <p>Adam §4 使用 online convex optimization（OCO）。这里的 online 不是“连接互联网”，而是一个逐轮 decision protocol：optimizer 必须先做当前决策，之后才看到这一轮的完整 cost。该框架来自 <a href="https://www.martin.zinkevich.org/publications/ICML03.pdf">Zinkevich, Online Convex Programming and Generalized Infinitesimal Gradient Ascent</a>。</p>
+      <ol>
+        <li>在第 \(t\) 轮，先从已知 feasible set \(\mathcal{X}\) 中选择 \(\theta_t\)。</li>
+        <li>随后 convex cost function \(f_t\) 被揭示，optimizer 承受 cost \(f_t(\theta_t)\)。</li>
+        <li>观察当前 gradient \(g_t=\nabla f_t(\theta_t)\)，再计算下一轮的 \(\theta_{t+1}\)。</li>
+      </ol>
+      <p>Convex 要求每个 \(f_t\) 对任意 \(x,y\in\mathcal{X}\) 与 \(\lambda\in[0,1]\) 满足：</p>
+      <div class="equation">\[
+f_t\!\left(\lambda x+(1-\lambda)y\right)
+\leq
+\lambda f_t(x)+(1-\lambda)f_t(y).
+\]</div>
+      <p>因为 optimizer 选择 \(\theta_t\) 时还不知道 \(f_t\)，不能要求它每一轮都选中当轮最优解。OCO 因此用 regret 比较整段 online decisions 与“事后看完所有 cost functions 才选出的最佳固定 parameter”。对于 convex cost sequence \(f_1,\ldots,f_T\)：</p>
+      <div class="equation">\[
+R(T)
+=\sum_{t=1}^{T}
+\left(
+f_t(\theta_t)-f_t(\theta^*)
+\right),
+\qquad
+\theta^*
+=\operatorname*{arg\,min}_{\theta\in\mathcal{X}}
+\sum_{t=1}^{T}f_t(\theta).
+\]</div>
+      <p>这里的 comparator \(\theta^*\) 在全部 \(T\) 轮中保持不变；它不是每一轮都重新选择的 \(\operatorname*{arg\,min}_{\theta}f_t(\theta)\)。在 Adam 的 stochastic-objective 表述中，\(f_t\) 可以对应第 \(t\) 次 objective realization，例如一个 minibatch 产生的 loss。</p>
+      <p>论文声称在一组条件下：</p>
+      <div class="equation">\[
+R(T)=\mathcal{O}(\sqrt{T}),
+\qquad
+\frac{R(T)}{T}
+=\mathcal{O}\!\left(\frac{1}{\sqrt{T}}\right)
+\longrightarrow0.
+\]</div>
+      <p>若 \(R(T)=\mathcal{O}(T)\)，与 comparator 的 average cost gap 可能保持为常数；论文声称的 \(\mathcal{O}(\sqrt{T})\) 增长速度慢于 \(T\)，所以 average gap \(R(T)/T\) 会消失。这是作者希望提供的 theoretical justification，而不只是 empirical curves。</p>
+      <div class="callout caution">
+        <strong>收敛对象：</strong>这里趋近于 zero 的是 average regret \(R(T)/T\)，不是 \(\theta_t\) 本身。它不保证每一步 loss 单调下降，也不等价于 \(\theta_t\longrightarrow\theta^*\)。
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>原论文 theorem 中的重要条件</th><th>不能静默替换成</th></tr></thead>
+          <tbody>
+            <tr><td>online convex cost functions</td><td>deep network 的 non-convex loss</td></tr>
+            <tr><td>bounded gradients；且任意 iterates 满足 \(\lVert\theta_n-\theta_m\rVert\leq D\)</td><td>未经验证的实际 gradient range，或把 bounded distance 解释成“迭代步数有限”</td></tr>
+            <tr><td>\(\alpha_t=\alpha/\sqrt{t}\)</td><td>constant LR、warmup 或任意 schedule</td></tr>
+            <tr><td>\(\beta_{1,t}=\beta_1\lambda^{t-1}\)，即 first-moment coefficient 随 \(t\) exponentially decay</td><td>始终固定的 \(\beta_{1,t}\)，或任意其他 schedule</td></tr>
+            <tr><td>\(R(T)/T=\mathcal{O}(1/\sqrt{T})\) 的 asymptotic statement</td><td>observed regret 每步单调下降，或 parameters \(\theta_t\) 必然收敛到同一个 point</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>后来为什么需要重新画 evidence boundary？</h2>
+      <p>Reddi、Kale 与 Kumar 在 ICLR 2018 的 <em>On the Convergence of Adam and Beyond</em> 中指出原 Adam convergence analysis 的问题，并构造 simple convex setting，使 Adam 不收敛到 optimal solution。其解释聚焦于 adaptive denominator 的 exponential moving average 可能忘记重要的过去 gradients，导致 coordinate-wise effective stepsize 行为不受所需方式约束。</p>
+      <p>他们据此提出带 long-term memory 的 variants，包括 AMSGrad。对本课程最重要的不是立刻掌握 AMSGrad，而是学会写出下面这个 evidence verdict：</p>
+      <div class="callout caution">
+        <strong>Evidence verdict：</strong>Adam 原论文提供了有影响力的 mechanism、有限实验范围内的 empirical evidence，以及一个带明确假设的 online-convex theoretical claim；后续 primary research 给出了 counterexample 并指出原分析问题。因此不能写成“Adam 已被证明总会收敛”，也不能因为理论被修正就否定原论文实验中的观察。
+      </div>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：global schedule 提供共享基础尺度，moment history 决定 coordinate-specific normalization，二者共同产生实际 parameter update。" data-incorrect-feedback="先区分 optimizer configuration、per-coordinate preconditioner 和最终 parameter delta。">
+      <h2>30 秒 effective-step 检索</h2>
+      <p>下面哪一个 quantity 最直接表示 parameter coordinate 本次实际移动量？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="false">只有 global learning rate</button>
+        <button class="choice" type="button" data-correct="false">只有 second-moment estimate</button>
+        <button class="choice" type="button" data-correct="true">global learning rate、moment ratio 与稳定项共同形成的 parameter delta</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：原论文 theorem 位于带假设的 online convex setting，后续工作还给出了 Adam 的 convex counterexample。" data-incorrect-feedback="区分实验对象、theorem 的 mathematical setting，以及后续论文对原分析的修正。">
+      <h2>Evidence boundary 检索</h2>
+      <p>Adam 原论文的 regret theorem 是否直接证明标准 Transformer training 必然收敛？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">否，problem setting 与 assumptions 不同</button>
+        <button class="choice" type="button" data-correct="false">是，只要 optimizer 名字是 Adam 即可</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2>结束时应能说清</h2>
+      <p>请用自己的话回答：</p>
+      <ol>
+        <li>Global learning rate、per-coordinate preconditioner 与 realized parameter update 有什么区别？</li>
+        <li>为什么稳定同向 gradient 与正负频繁抵消的 gradient 会得到不同的 normalized update？</li>
+        <li>Adam §6 的 experiments 支持了哪些 claim，又不能支持哪些 universal claim？</li>
+        <li>为什么原论文的 average-regret claim 不能直接外推到 Transformer training？后续 counterexample 又改变了什么？</li>
+      </ol>
+    </section>
+
+    <footer>
+      <p>上一支线课：<a href="0009b-adam-bias-correction.html">Adam 0009B</a> · 原论文：<a href="https://arxiv.org/abs/1412.6980">Adam</a> · 理论修正：<a href="https://openreview.net/forum?id=ryQu7f-RZ">On the Convergence of Adam and Beyond</a> · 下一课：<a href="0010-batching-dropout-label-smoothing.html">Transformer 0010</a>，Batching、Dropout 与 Label Smoothing。</p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

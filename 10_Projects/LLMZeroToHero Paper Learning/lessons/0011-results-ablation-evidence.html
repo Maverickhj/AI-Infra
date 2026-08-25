@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0011 · Results, Ablations and Evidence Boundaries</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Attention Is All You Need · Lesson 0011 · 约 22 分钟</p>
+    <h1>Results 与 Ablation：一个分数究竟证明了什么？</h1>
+    <p class="lede">Architecture mechanism 解释模型怎样计算；experiment 则检验这套设计在特定 data、training、checkpoint selection 与 decoding pipeline 下产生了什么结果。Table 2 回答“完整系统是否有竞争力”，Table 3 尝试回答“哪些 design choices 与结果变化相关”，但二者都不是无条件的普遍因果证明。</p>
+    <p class="meta">前置：<a href="0010-batching-dropout-label-smoothing.html">Lesson 0010</a> · 数学：<a href="../reference/math-functions-information.html#exp-log">exponential 与 logarithm</a> · 主证据：<a href="https://arxiv.org/html/1706.03762v7#S6">Vaswani et al., §6、Tables 2–3</a></p>
+
+    <section>
+      <h2>先把 reported score 放回 evaluation pipeline</h2>
+      <div class="chain">
+        <div class="chain-step"><strong>Training setup</strong><br>dataset、tokenization、model size、optimizer、schedule、regularization 与 training steps。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Checkpoint selection</strong><br>选择单个 checkpoint，或对多个 checkpoints 的 parameters 求平均。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Decoding</strong><br>beam search、beam size、length penalty 与 maximum output length。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Metric</strong><br>在指定 dataset split、tokenization 与 metric implementation 下计算 BLEU 或 perplexity。</div>
+      </div>
+      <p>因此“Transformer big 得到 \(28.4\) BLEU”不是 architecture 单独产生的数字，而是整个 evaluation pipeline 的 output。若 pipeline 中任一环节改变，score 也可能改变。</p>
+    </section>
+
+    <section>
+      <h2>Table 2：完整 translation system 的结果</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Setting</th><th>Transformer base</th><th>Transformer big</th><th>证据范围</th></tr></thead>
+          <tbody>
+            <tr><td>WMT 2014 EN–DE<br>newstest2014</td><td>\(27.3\) BLEU</td><td>\(28.4\) BLEU</td><td>Big 比表中此前最佳 ensemble \(26.36\) 高约 \(2.04\) BLEU。</td></tr>
+            <tr><td>WMT 2014 EN–FR<br>newstest2014</td><td>\(38.1\) BLEU</td><td>\(41.8\) BLEU</td><td>Table 2 中高于此前列出的 single models 与 ensembles。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>EN–DE big training 使用 \(8\) 张 NVIDIA P100，持续约 \(3.5\) days。论文报告 base model 也超过表中此前 published models 与 ensembles，并以更低的 estimated training cost 达成。对 EN–FR，§6.1 还声称 big model 的 training cost 小于此前 state-of-the-art model 的 \(1/4\)，并说明该 EN–FR run 使用 \(P_{\mathrm{drop}}=0.1\)，而不是 EN–DE big configuration 的 \(0.3\)。</p>
+      <div class="callout caution">
+        <strong>论文内部数值不一致：</strong>Abstract 与 Table 2 报告 EN–FR big 为 \(41.8\) BLEU，但 §6.1 narrative 写成 \(41.0\)。本课在结果表中保留 Table 2 的 \(41.8\)，同时显式记录正文的 \(41.0\)；不能把二者悄悄合并成一个“确定无歧义”的数字。
+      </div>
+    </section>
+
+    <section>
+      <h2>Reported BLEU 还包含哪些 decoding choices？</h2>
+      <p>论文在 §6.1 同时给出：</p>
+      <ul>
+        <li>Base models：平均最后 \(5\) 个 checkpoints；这些 checkpoints 每 \(10\) 分钟保存一次。</li>
+        <li>Big models：平均最后 \(20\) 个 checkpoints。</li>
+        <li>Beam search：beam size \(4\)。</li>
+        <li>Length penalty：\(\alpha=0.6\)。</li>
+        <li>Maximum output length：input length \(+50\)，允许提前终止。</li>
+        <li>Beam 与 length-penalty hyperparameters：在 development set 上实验后选择。</li>
+      </ul>
+      <p>Checkpoint averaging 仍得到一个 model，但其 parameters 已不是某一个原始 checkpoint；beam search 与 length penalty 则改变如何从 next-token distributions 构造最终 sequence。因而 Table 2 比较的是 paper-defined systems，而不是只比较 forward equation。</p>
+    </section>
+
+    <section>
+      <h2>Training Cost (FLOPs) 是 estimate，不是 energy measurement</h2>
+      <p>论文用下式估计 training floating-point operations：</p>
+      <div class="equation">\[
+C_{\mathrm{est}}
+=T_{\mathrm{train}}
+\times N_{\mathrm{GPU}}
+\times F_{\mathrm{sustained}},
+\]</div>
+      <p>其中 \(T_{\mathrm{train}}\) 是 training wall-clock seconds，\(N_{\mathrm{GPU}}\) 是 GPU 数量，\(F_{\mathrm{sustained}}\) 是作者估计的单张 GPU sustained single-precision throughput，单位为 FLOPs/s。以 big model 的 P100 context 为例：</p>
+      <div class="equation">\[
+\begin{aligned}
+C_{\mathrm{est}}
+&amp;=(3.5\times24\times3600)\,\mathrm{s}
+\times8
+\times9.5\times10^{12}\,\mathrm{FLOPs/s}\\
+&amp;\approx2.3\times10^{19}\,\mathrm{FLOPs}.
+\end{aligned}
+\]</div>
+      <p>这复算了 Table 2 对 Transformer big EN–DE 列出的数量级。它适合在论文采用的估计口径下比较 training arithmetic，但不等于 measured energy、cloud price、memory consumption、communication overhead 或现代 accelerator 上的 efficiency。</p>
+    </section>
+
+    <section>
+      <h2>进入 Table 3 前，先换掉 evaluation scope</h2>
+      <p>Table 3 不是 Table 2 的同一 evaluation：</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Dimension</th><th>Table 2</th><th>Table 3</th></tr></thead>
+          <tbody>
+            <tr><td>Primary purpose</td><td>与 prior systems 比较</td><td>比较 Transformer variations</td></tr>
+            <tr><td>Dataset split</td><td>newstest2014 test</td><td>EN–DE newstest2013 development set</td></tr>
+            <tr><td>Checkpoint averaging</td><td>Base last \(5\)，big last \(20\)</td><td>不使用</td></tr>
+            <tr><td>Decoding</td><td>Beam setup from §6.1</td><td>沿用该 beam setup</td></tr>
+            <tr><td>Unlisted configuration</td><td>各完整 system</td><td>与 base model 相同</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Table 3 的 development-set PPL 是 per-wordpiece perplexity。设有效 wordpiece positions 数为 \(N\)，其平均 negative log-likelihood 为：</p>
+      <div class="equation">\[
+\overline{\mathcal{L}}_{\mathrm{NLL}}
+=-\frac{1}{N}\sum_{i=1}^{N}\log p(y_i\mid y_{&lt;i},x),
+\qquad
+\operatorname{PPL}
+=\exp\!\left(\overline{\mathcal{L}}_{\mathrm{NLL}}\right).
+\]</div>
+      <p>因为 denominator 的 unit 是 wordpiece，不能把这些数值直接与 per-word perplexity 比较。这是 metric scope 的差异，不是简单的单位标签差异。</p>
+    </section>
+
+    <section>
+      <h2>Table 3 应怎样读？</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Rows</th><th>Observed comparison</th><th>可以说什么</th><th>不能直接说什么</th></tr></thead>
+          <tbody>
+            <tr><td>(A) heads</td><td>在 paper-defined constant-compute design 下，\(1\) head 为 \(24.9\) BLEU；best setting 为 \(25.8\)；\(32\) heads 降至 \(25.4\)。</td><td>在这些 tested settings 中，single head 比 best 低 \(0.9\) BLEU，heads 过多也下降。</td><td>不能推出“head 越多越好”或存在跨模型通用的最佳 head count。</td></tr>
+            <tr><td>(B) key size</td><td>把 \(d_k\) 从 base 的 \(64\) 降到 \(32\) 或 \(16\)，BLEU 分别为 \(25.4\)、\(25.1\)。</td><td>在这些 variations 中，更小的 key dimension 与更差质量相关。</td><td>作者关于 compatibility function 可能需要更复杂形式，是 hypothesis，不是 Table 3 直接证明。</td></tr>
+            <tr><td>(C) capacity</td><td>较少 layers、较窄 \(d_{\mathrm{model}}\) 或较小 \(d_{\mathrm{ff}}\) 通常更差；tested larger settings 通常更好。</td><td>在该 EN–DE dev setup 中，增加 tested capacity 改善结果。</td><td>不能推出任意增大 depth/width 都持续改善；不同 subgroups 也不是一个统一的单变量实验。</td></tr>
+            <tr><td>(D) regularization</td><td>\(P_{\mathrm{drop}}=0\) 为 \(24.6\) BLEU，base \(0.1\) 为 \(25.8\)；label smoothing variations 也改变 PPL/BLEU。</td><td>Dropout 对该 setup 的 generalization 很重要。</td><td>不能由一张表确定任意 dataset 的最佳 dropout 或 smoothing strength。</td></tr>
+            <tr><td>(E) position</td><td>Learned positional embeddings 为 \(25.7\)，sinusoidal base 为 \(25.8\)。</td><td>两种方案在该 comparison 中近似。</td><td>不能推出二者在 length extrapolation、其他 tasks 或更长 context 上等价。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout caution">
+        <strong>Big row 不是单因素 ablation：</strong>它同时改变 \(d_{\mathrm{model}}\)、\(d_{\mathrm{ff}}\)、head count、dropout、training steps 与 parameter count。Big 的 \(26.4\) dev BLEU 证明完整 big configuration 在该 setup 下更好，不能把全部增益归因给其中一个 dimension。
+      </div>
+    </section>
+
+    <section>
+      <h2>Ablation 提供的是哪一级 evidence？</h2>
+      <div class="chain">
+        <div class="chain-step"><strong>Observed result</strong><br>指定 variation 在 newstest2013 dev 上得到某个 PPL / BLEU。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Local comparison</strong><br>在作者保持不变的其他配置下，variation 与 base 的结果不同。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Mechanism interpretation</strong><br>作者依据差异提出关于 compatibility、capacity 或 overfitting 的解释。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>General claim</strong><br>若要推广到其他 architectures、datasets、scales 或 training regimes，需要额外实验。</div>
+      </div>
+      <p>Table 3 没有报告 repeated-run distribution、error bars 或 statistical test。因此 \(25.7\) 与 \(25.8\) 这样的微小差异足以支持“在该表中近似”，却不足以证明两个方法严格等价。Development-set results 还承担了 model choice / hyperparameter exploration 的角色，不能和 untouched test evidence 混为一谈。</p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：reported BLEU 属于完整 evaluation pipeline；checkpoint averaging 与 decoding setup 都参与产生最终 sequence。" data-incorrect-feedback="回到 pipeline：trained architecture 之后还有 checkpoint selection、decoding 和 metric。">
+      <h2>30 秒 system-result 检索</h2>
+      <p>Table 2 的 \(28.4\) BLEU 能否被解释成“仅由 Transformer architecture 单独产生”？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">不能，它是完整 training、checkpoint averaging 与 decoding pipeline 的结果</button>
+        <button class="choice" type="button" data-correct="false">能，beam search 与 checkpoints 不会影响 decoded output</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：结果只支持 tested settings 中存在中间较优区域，不能推出 monotonic relation 或通用最优 head count。" data-incorrect-feedback="同时看 single head、best setting 与 32 heads；两端都可能下降。">
+      <h2>Ablation boundary 检索</h2>
+      <p>Rows (A) 最稳妥的结论是什么？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">在 tested constant-compute settings 中，single head 较差，而过多 heads 也会下降</button>
+        <button class="choice" type="button" data-correct="false">head count 越多，BLEU 必然越高</button>
+        <button class="choice" type="button" data-correct="false">所有 Transformer 的最佳 head count 都是 \(16\)</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：Table 3 的 PPL 以 wordpiece 为基本单位，不能直接与 per-word PPL 比数值大小。" data-incorrect-feedback="Perplexity 的 reduction unit 是 metric definition 的一部分。">
+      <h2>Metric-scope 检索</h2>
+      <p>为什么 Table 3 的 train PPL 不能直接与另一篇论文的 per-word PPL 比较？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">两者平均 NLL 的基本单位不同</button>
+        <button class="choice" type="button" data-correct="false">因为 exponential function 在两篇论文中定义不同</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2>结束时应能说清</h2>
+      <p>请用自己的话回答：</p>
+      <ol>
+        <li>为什么 Table 2 的 BLEU 是完整 evaluation pipeline 的结果，而不是 architecture-only result？</li>
+        <li>论文怎样估计 Training Cost (FLOPs)？这个 quantity 没有衡量哪些系统成本？</li>
+        <li>Table 3 rows (A)–(E) 分别观察到了什么？哪些作者解释仍然只是 mechanism hypothesis？</li>
+        <li>为什么 newstest2013 dev ablation、newstest2014 test result、per-wordpiece PPL 与 BLEU 不能混在同一个证据层级中？</li>
+      </ol>
+    </section>
+
+    <footer>
+      <p>上一课：<a href="0010-batching-dropout-label-smoothing.html">Lesson 0010</a> · 来源：<a href="https://arxiv.org/html/1706.03762v7#S6">Attention Is All You Need §6、Tables 2–3</a> · 下一课：<a href="0012-transformer-causal-review-promotion.html">Lesson 0012：全文因果链复盘与知识沉淀判断</a>。</p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

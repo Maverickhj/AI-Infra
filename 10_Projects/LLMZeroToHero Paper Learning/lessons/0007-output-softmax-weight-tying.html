@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0007 · Output Softmax 与 Weight Tying</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Lesson 0007 · 约 12 分钟</p>
+    <h1>Output Softmax 与 Weight Tying：hidden state 如何变成 next token？</h1>
+    <p class="lede">Decoder stack 最终输出的仍是 \(d_{\text{model}}\)-dimensional representations，不是 token。模型还需要把每个 target position 的 representation 投影到整个 vocabulary，再经 softmax 得到 predicted next-token probabilities。</p>
+    <p class="meta">前置：<a href="0006-positional-encoding.html">课程 0006</a> · 数学：<a href="../reference/math-foundations-for-attention.html#vocabulary-softmax">Vocabulary softmax</a> · 术语：<a href="../reference/attention-glossary.html#output-head">Output head</a> · 主证据：<a href="https://arxiv.org/html/1706.03762v7">Vaswani et al. (2017), §§3.1, 3.4</a></p>
+
+    <section>
+      <h2>设计起点：representation 还不是 token</h2>
+      <p>经过 masked self-attention、cross-attention 与 FFN 后，Decoder 对每个 target position 产生一个 contextual representation。它编码了当前 target prefix 与 source memory，但还没有回答“vocabulary 中哪个 token 应该排在下一位”。</p>
+      <div class="chain">
+        <div class="chain-step"><strong>Decoder output</strong><br>每个 position 得到一个 \(d_{\text{model}}\)-dimensional hidden state。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Output projection</strong><br>为 vocabulary 中每个 candidate token 产生一个 logit。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Vocabulary softmax</strong><br>沿 vocabulary axis 把 logits 归一化为 next-token probability distribution。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Consumer</strong><br>training 用 target token 计算 loss；inference 从该 distribution 选择下一个 token。</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>从 \(d_{\text{model}}\) 投影到 vocabulary</h2>
+      <p>设 batch size 为 \(B\)，target length 为 \(T\)，vocabulary 为 \(\mathcal{V}\)，其大小为 \(|\mathcal{V}|\)。Decoder stack 输出：</p>
+      <div class="equation">\[
+Z\in\mathbb{R}^{B\times T\times d_{\text{model}}}.
+\]</div>
+      <p>令 output projection matrix 为 \(W_{\text{out}}\in\mathbb{R}^{|\mathcal{V}|\times d_{\text{model}}}\)。省略论文 §3.4 未说明的 output bias，则：</p>
+      <div class="equation">\[
+\begin{aligned}
+L&amp;=ZW_{\text{out}}^\top
+\in\mathbb{R}^{B\times T\times|\mathcal{V}|},\\
+p_{b,t,v}
+&amp;=\operatorname{softmax}_{\mathcal{V}}(L_{b,t,:})_v
+=\frac{\exp(L_{b,t,v})}
+{\sum_{u\in\mathcal{V}}\exp(L_{b,t,u})}.
+\end{aligned}
+\]</div>
+      <p>\(L_{b,t,v}\) 是 candidate token \(v\) 的 vocabulary logit；\(p_{b,t,v}\) 是模型分配给它的 probability。对固定的 batch item \(b\) 与 target position \(t\)，有：</p>
+      <div class="equation">\[
+\sum_{v\in\mathcal{V}}p_{b,t,v}=1.
+\]</div>
+      <div class="callout">
+        <strong>Shape 边界：</strong>projection 把最后一维从 \(d_{\text{model}}\) 变为 \(|\mathcal{V}|\)，不会把 sequence positions 合并。每个 target position 都得到自己的一份 vocabulary distribution。
+      </div>
+    </section>
+
+    <section>
+      <h2>两个 softmax，归一化轴完全不同</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>位置</th><th>输入 shape</th><th>softmax axis</th><th>回答的问题</th></tr></thead>
+          <tbody>
+            <tr><td>attention 内部</td><td>\([B,h,T_q,T_k]\)</td><td>key positions \(T_k\)</td><td>当前 query 应从哪些 positions 取回信息？</td></tr>
+            <tr><td>Decoder output head</td><td>\([B,T,|\mathcal{V}|]\)</td><td>vocabulary \(|\mathcal{V}|\)</td><td>当前位置的 next token 应是哪一个 vocabulary item？</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>二者都使用同一个 softmax 函数，但输入语义和 reduce axis 不同。Vocabulary softmax 不会产生 attention weights，attention softmax 也不会直接产生 token probabilities。</p>
+    </section>
+
+    <section>
+      <h2>Shifted targets 如何维持 autoregressive condition？</h2>
+      <p>对 target sequence \(y_1,\ldots,y_T\)，Decoder 的 input 与 prediction target 错开一个 position：</p>
+      <div class="equation">\[
+\begin{aligned}
+\text{Decoder input}
+&amp;=[\mathrm{BOS},y_1,\ldots,y_{T-1}],\\
+\text{Prediction target}
+&amp;=[y_1,y_2,\ldots,y_T].
+\end{aligned}
+\]</div>
+      <p>因此 position \(t\) 应表示：</p>
+      <div class="equation">\[
+p(y_t\mid y_{&lt;t},x),
+\]</div>
+      <p>其中 \(x\) 是完整 source sequence。training 时，已知的 shifted targets 让所有 \(T\) 个 positions 可以一次进入矩阵计算；causal mask 保证 position \(t\) 的 hidden state 不能读取 \(y_t\) 或更晚的 targets。</p>
+      <p>inference 时没有完整 target 可供 shift。模型先产生一个 next-token distribution，选择一个 token 并追加到 prefix，然后再次运行 Decoder。因此 layer 内可以并行，不等于 autoregressive generation 的 token steps 可以并行。</p>
+    </section>
+
+    <section>
+      <h2>Weight Tying：同一个 matrix 承担三种角色</h2>
+      <p>令 learned token embedding matrix 为：</p>
+      <div class="equation">\[
+\mathcal{E}
+\in\mathbb{R}^{|\mathcal{V}|\times d_{\text{model}}}.
+\]</div>
+      <p>原始 Transformer 在两个 embedding layers 与 pre-softmax linear transformation 之间共享同一个 weight matrix。令 \(W_{\mathrm{src}}\)、\(W_{\mathrm{tgt}}\) 与 \(W_{\mathrm{out}}\) 分别表示这三处的 matrix；用上述 row-major 记法：</p>
+      <div class="equation">\[
+W_{\mathrm{src}}
+=W_{\mathrm{tgt}}
+=W_{\text{out}}
+=\mathcal{E}.
+\]</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>使用位置</th><th>如何使用 \(\mathcal{E}\)</th><th>输出</th></tr></thead>
+          <tbody>
+            <tr><td>source embedding</td><td>按 source token id 查一行</td><td>\(d_{\text{model}}\)-dimensional vector</td></tr>
+            <tr><td>target embedding</td><td>按 target token id 查一行</td><td>\(d_{\text{model}}\)-dimensional vector</td></tr>
+            <tr><td>output projection</td><td>hidden state 与所有 rows 做 dot products</td><td>\(|\mathcal{V}|\) 个 logits</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>在 embedding 用法中，论文把 lookup vector 乘以 \(\sqrt{d_{\text{model}}}\)；pre-softmax output projection 不做这项 embedding scaling。共享的是 learned parameters，不是三处完全相同的 computation。</p>
+      <div class="callout caution">
+        <strong>适用条件：</strong>三向 weight tying 要求 source、target 与 output 使用兼容的 vocabulary / token-id mapping，且 embedding width 与 Decoder output width 都是 \(d_{\text{model}}\)。若 source 与 target 使用不兼容的 vocabularies，就不能直接共享同一张完整矩阵。
+      </div>
+    </section>
+
+    <section>
+      <h2>Weight tying 改变了什么，没改变什么？</h2>
+      <p>下面是由矩阵形状直接得到的 parameter-count 推论，不是论文 §3.4 给出的效果证明。若三处各有独立 matrix，忽略 biases 时参数量为：</p>
+      <div class="equation">\[
+3|\mathcal{V}|d_{\text{model}}.
+\]</div>
+      <p>三向共享后只需：</p>
+      <div class="equation">\[
+|\mathcal{V}|d_{\text{model}},
+\]</div>
+      <p>因此减少 \(2|\mathcal{V}|d_{\text{model}}\) 个 parameters。共享还使 token 的 input embedding 与 output candidate vector 使用同一组 learned rows，但它不要求 Decoder hidden state 等于某个 embedding，也不保证某个 token 一定获得高 probability；contextual Decoder computation 仍决定最终 dot products。</p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：output softmax 固定 batch 与 target position，沿 vocabulary axis 归一化。" data-incorrect-feedback="先看输出 shape：[B, T, |V|]；要得到每个 position 的 token distribution，只能沿最后的 vocabulary axis 做 softmax。">
+      <h2>30 秒 shape 检索</h2>
+      <p>对 \(L\in\mathbb{R}^{B\times T\times|\mathcal{V}|}\)，output softmax 应沿哪一维归一化？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">vocabulary axis \(|\mathcal{V}|\)</button>
+        <button class="choice" type="button" data-correct="false">target-position axis \(T\)</button>
+        <button class="choice" type="button" data-correct="false">batch axis \(B\)</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：共享的是 source embedding、target embedding 与 pre-softmax projection 的 weight matrix；embedding lookup 还会乘以 sqrt(d_model)。" data-incorrect-feedback="区分 parameter identity 与 computation：三处引用同一 matrix，但 lookup、scaling 和 output dot products 并不相同。">
+      <h2>Weight tying 边界检索</h2>
+      <p>原始 Transformer 的 weight tying 准确表示什么？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">三处共享 weight matrix，但使用方式可以不同</button>
+        <button class="choice" type="button" data-correct="false">三个 attention heads 共享 Q/K/V weights</button>
+        <button class="choice" type="button" data-correct="false">embedding vector 与 Decoder hidden state 必须相等</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2>结束时应能说清</h2>
+      <p>请用自己的话回答：<strong>“Decoder hidden states 如何通过 shapes 变成 next-token probabilities？attention softmax 与 output softmax 的 axis 有何不同？shifted targets 与 causal mask 如何共同保证 autoregressive condition？原论文的三向 weight tying 共享了什么，又没有共享什么？”</strong></p>
+    </section>
+
+    <footer>
+      <p>复习：<a href="0006-positional-encoding.html">课程 0006</a> · 下一课：<a href="0008-why-self-attention.html">课程 0008</a> · 数学：<a href="../reference/math-foundations-for-attention.html#vocabulary-softmax">Vocabulary softmax</a> · 原始定义见 <a href="https://arxiv.org/html/1706.03762v7">论文 §§3.1、3.4</a>。</p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

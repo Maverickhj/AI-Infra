@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Math Foundations · Index</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Math Foundations · Index</p>
+    <h1>论文课程数学基础索引</h1>
+    <p class="lede">这里不再复述 Transformer、Adam 或 training recipe。它只索引课程用到的基本数学原理；具体机制、tensor mapping、论文配置与 evidence boundary 留在相应 Lesson。</p>
+
+    <section id="boundary">
+      <h2>内容边界</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>层次</th><th>回答的问题</th><th>内容所有权</th></tr></thead>
+          <tbody>
+            <tr><td>Math Foundation</td><td>这个数学对象本身是什么？</td><td>定义、性质、一般公式、成立条件、中性例子。</td></tr>
+            <tr><td>Lesson</td><td>论文为什么以及如何使用它？</td><td>约束、机制、tensor mapping、论文事实、工程推论与边界。</td></tr>
+            <tr><td>Learning Record</td><td>学习后真正理解了什么？</td><td>自己的表述、修正、尚存疑问与可迁移结论。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout">
+        <strong>进入 Lesson 的方式：</strong>只读该课列出的 prerequisite anchors。Foundation 不是需要从头到尾学完的通用数学课程。
+      </div>
+    </section>
+
+    <section id="minimum">
+      <h2>四个主题</h2>
+      <div class="card" id="shapes">
+        <h3><a href="math-linear-algebra.html">Linear Algebra 与 Symmetry</a></h3>
+        <p>Vector、matrix、tensor shape、matrix multiplication、dot product、transpose、permutation matrix、equivariance 与 invariance。</p>
+      </div>
+      <div class="card" id="layernorm">
+        <h3><a href="math-probability-statistics.html">Probability、Statistics 与 Estimation</a></h3>
+        <p>Mean、variance、standardization、expectation、Bernoulli distribution、raw moment、centered variance 与 estimator bias。</p>
+      </div>
+      <div class="card" id="softmax-mask">
+        <h3><a href="math-functions-information.html">Functions 与 Information Measures</a></h3>
+        <p>Exponential、logarithm、softmax、normalization axis、cross-entropy、entropy 与 KL divergence。</p>
+      </div>
+      <div class="card" id="adam-and-schedule">
+        <h3><a href="math-sequences-transforms.html">Sequences 与 Transforms</a></h3>
+        <p>Geometric series、exponential moving average、trigonometric addition、rotation matrix、power function 与 piecewise function。</p>
+      </div>
+    </section>
+
+    <section id="legacy-map">
+      <h2>旧链接兼容映射</h2>
+      <p>历史 Lesson 可能仍指向本页的旧 anchors。下面的入口将它们映射到新的数学主题，不在这里复制正文。</p>
+      <ul>
+        <li id="dot-product"><a href="math-linear-algebra.html#dot-product">Dot product</a></li>
+        <li id="permutation-matrix"><a href="math-linear-algebra.html#permutation-matrix">Permutation matrix</a></li>
+        <li id="vocabulary-softmax"><a href="math-functions-information.html#softmax">Softmax 与 normalization axis</a></li>
+        <li id="scaling"><a href="math-probability-statistics.html#variance-of-sums">Variance of sums</a></li>
+        <li id="positional-encoding"><a href="math-sequences-transforms.html#trigonometric-transform">Trigonometric addition 与 rotation</a></li>
+        <li><a href="math-probability-statistics.html#standardization">Standardization 与 affine transform</a></li>
+        <li><a href="math-sequences-transforms.html#ema">EMA 与 geometric series</a></li>
+        <li id="training-regularization"><a href="math-probability-statistics.html#bernoulli">Bernoulli distribution</a>、<a href="math-functions-information.html#cross-entropy">cross-entropy 与 KL divergence</a></li>
+      </ul>
+    </section>
+
+    <section id="ownership-test">
+      <h2>以后新增内容的判定规则</h2>
+      <p>一个内容只有同时满足以下条件，才进入 Math Foundation：</p>
+      <ul>
+        <li>脱离当前论文后仍然成立，并可迁移到其他机制；</li>
+        <li>可以用 model-agnostic symbols 表达；</li>
+        <li>正文不依赖 architecture component、论文超参数或 benchmark result。</li>
+      </ul>
+      <p>若内容出现具体 Q/K/V 来源、Transformer tensor axis、optimizer state、论文配置或实验结论，则由 Lesson 持有；Foundation 只提供它调用的一般数学原理。</p>
+    </section>
+
+    <footer>
+      <p>课程入口：<a href="../lessons/0001-transformer-sequential-bottleneck.html">Lesson 0001</a> · 术语入口：<a href="attention-glossary.html">Attention Glossary</a> · 机制速查：<a href="attention-causal-chain.html">Attention 因果链</a>。</p>
+    </footer>
+  </main>
+</body>
+</html>

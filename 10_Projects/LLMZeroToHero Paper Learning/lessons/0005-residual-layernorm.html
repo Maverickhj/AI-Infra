@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0005 · Residual Connection 与 LayerNorm</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] },
+      options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Lesson 0005 · 约 14 分钟</p>
+    <h1>Residual Connection 与 LayerNorm：如何把 sub-layers 堆深？</h1>
+    <p class="lede">attention 负责跨 positions 交换信息，FFN 负责逐 token 变换 representation。但若每个 sub-layer 都直接覆盖输入，深层模型中的已有信息和数值尺度会不断被重写。原始 Transformer 用 Residual Connection（残差连接）保留一条 additive path，再用 Layer Normalization（层归一化）调整每个 token 的 feature distribution。</p>
+    <p class="meta">前置：<a href="0004-position-wise-ffn.html">课程 0004</a> · 数学：<a href="../reference/math-foundations-for-attention.html#layernorm">LayerNorm 数学起步</a> · 术语：<a href="../reference/attention-glossary.html#residual">Attention Glossary</a> · 主证据：<a href="https://arxiv.org/html/1706.03762v7">Vaswani et al. (2017), §§3.1, 5.4</a></p>
+
+    <section>
+      <h2>先从“直接覆盖”留下的问题出发</h2>
+      <p>设一个 attention 或 FFN sub-layer 为 \(F\)。若直接写成 \(x^{l+1}=F(x^l)\)，下一层只能看到 \(F\) 重新计算后的结果；即使原来的 \(x^l\) 已包含有用 information，也必须由 \(F\) 再次重建。</p>
+      <p>Residual Connection 改为先相加：</p>
+      <div class="equation">\[
+u=x+F(x).
+\]</div>
+      <p>于是 \(F\) 可以被理解为学习一个 update / residual（更新量），而 \(x\) 提供直接的 additive path。若当前 sub-layer 暂时不需要改变某些信息，\(F(x)\) 可以在相应方向上接近 \(0\)，而不必重新生成整个 \(x\)。</p>
+      <div class="callout caution">
+        <strong>解释边界：</strong>“学习 update、保留直接路径”是理解 residual 的数学视角。原始 Transformer 明确给出了 residual 结构，但没有在 §3.1 中证明它必然解决所有深层优化问题。
+      </div>
+    </section>
+
+    <section>
+      <h2>为什么前几课一直回到 \(d_{\mathrm{model}}\)？</h2>
+      <p>element-wise addition（逐元素相加）要求两侧 shape 完全一致：</p>
+      <div class="equation">\[
+x,\ \operatorname{Sublayer}(x),\ x+\operatorname{Sublayer}(x)
+\in\mathbb{R}^{n\times d_{\mathrm{model}}}.
+\]</div>
+      <p>这解释了两个此前见过的设计：</p>
+      <ul>
+        <li>Multi-Head Attention 在 Concat 后用 \(W^O\) 投影回 \(d_{\mathrm{model}}\)；</li>
+        <li>FFN 从 \(d_{\mathrm{model}}\) 扩展到 \(d_{\mathrm{ff}}\) 后，再投影回 \(d_{\mathrm{model}}\)。</li>
+      </ul>
+      <p>它们都必须满足统一的 residual interface。原论文也明确说明，为了 residual connections，所有 sub-layers 与 embedding layers 的输出维度均为 \(d_{\mathrm{model}}=512\)。</p>
+    </section>
+
+    <section>
+      <h2>LayerNorm 在归一化什么？</h2>
+      <p>对某个 token position \(i\) 的 vector \(x_i\in\mathbb{R}^{d_{\mathrm{model}}}\)，LayerNorm 沿该 token 的 feature dimension 计算 mean 与 variance：</p>
+      <div class="equation">\[
+\begin{aligned}
+\mu_i&amp;=\frac{1}{d_{\mathrm{model}}}\sum_k x_{i,k},\\
+\sigma_i^2&amp;=\frac{1}{d_{\mathrm{model}}}\sum_k(x_{i,k}-\mu_i)^2,\\
+\operatorname{LN}(x_i)_k&amp;=\gamma_k\frac{x_{i,k}-\mu_i}{\sqrt{\sigma_i^2+\epsilon}}+\beta_k.
+\end{aligned}
+\]</div>
+      <p>也就是说，每个 token 有自己的 \(\mu_i\) 与 variance；它不使用其他 batch examples 的统计量，也不沿 sequence positions 求一个共同 mean。\(\gamma\)、\(\beta\) 是按 feature 学习的 gain 与 bias。</p>
+      <div class="callout">
+        <strong>不要误读：</strong>标准化后的中间量均值约为 0、variance 约为 1；再经过 learned γ、β 后，LayerNorm 最终输出不必仍严格满足零均值、单位方差。公式中的 ε 是实现中避免除零的数值保护项。
+      </div>
+    </section>
+
+    <section>
+      <h2>原始 Transformer 的顺序是 Post-LN</h2>
+      <p>2017 论文对每个 sub-layer 使用：</p>
+      <div class="equation">\[
+y=\operatorname{LayerNorm}(x+\operatorname{Sublayer}(x)).
+\]</div>
+      <p>LayerNorm 位于 residual addition 之后，因此这种排列后来通常称为 Post-LN（后归一化）。若把 training-time dropout 写完整，则是：</p>
+      <div class="equation">\[
+y=\operatorname{LayerNorm}\left(x+\operatorname{Dropout}(\operatorname{Sublayer}(x))\right).
+\]</div>
+      <p>原论文 base model 的 dropout rate 为 0.1；inference 时 dropout 关闭。Dropout 是 regularization（正则化），不能把它与 LayerNorm 的数值归一化职责混为一谈。</p>
+      <div class="callout caution">
+        <strong>重要边界：</strong>若 \(\operatorname{Sublayer}(x)=0\)，Post-LN 输出为 \(\operatorname{LayerNorm}(x)\)，而不是字面上的 \(x\)。因此 residual addition 提供了直接的 additive path，但经过后置 LayerNorm 后，整个 block 并非严格 identity mapping。
+      </div>
+    </section>
+
+    <section>
+      <h2>不要把原论文和现代 Pre-LN 混在一起</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>排列</th><th>公式</th><th>本课程中的证据边界</th></tr></thead>
+          <tbody>
+            <tr><td>Post-LN</td><td>\(\operatorname{LN}(x+\operatorname{Sublayer}(x))\)</td><td>原始 <em>Attention Is All You Need</em> 的结构。</td></tr>
+            <tr><td>Pre-LN</td><td>\(x+\operatorname{Sublayer}(\operatorname{LN}(x))\)</td><td>许多后续 Transformer / LLM 使用的变体；不是原论文 §3.1 的公式。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>二者都含 residual 与 normalization，但 normalization 的位置改变了 forward path 与 gradient path。当前只需能识别原论文是 Post-LN；更深模型为何大量转向 Pre-LN，留到后续论文的因果链中讨论。</p>
+    </section>
+
+    <section>
+      <h2>把完整 layer 拼起来</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Stack</th><th>sub-layers 的顺序</th></tr></thead>
+          <tbody>
+            <tr><td>Encoder layer</td><td>self-attention → Add &amp; Norm → FFN → Add &amp; Norm</td></tr>
+            <tr><td>Decoder layer</td><td>masked self-attention → Add &amp; Norm → cross-attention → Add &amp; Norm → FFN → Add &amp; Norm</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>这里每个 arrow 后传递的 shape 都保持 \([\text{sequence length},d_{\mathrm{model}}]\)。attention 改变跨 positions 的信息组合，FFN 改变逐 position 的 features，Residual Connection 与 LayerNorm 则让这些 sub-layers 能以统一接口反复堆叠。</p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：原始 Transformer 先做 sublayer 与 residual addition，再做 LayerNorm，因此是 Post-LN。" data-incorrect-feedback="回到结构顺序：LayerNorm 位于 residual addition 之后。">
+      <h2>30 秒检索：原论文是哪种顺序？</h2>
+      <p><em>Attention Is All You Need</em> 中每个 sub-layer 的输出公式是哪一个？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">\(\operatorname{LayerNorm}(x+\operatorname{Sublayer}(x))\)</button>
+        <button class="choice" type="button" data-correct="false">\(x+\operatorname{Sublayer}(\operatorname{LayerNorm}(x))\)</button>
+        <button class="choice" type="button" data-correct="false">\(\operatorname{Sublayer}(x+\operatorname{LayerNorm}(x))\)</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：Transformer 中的 LayerNorm 对每个 token 独立地沿 d_model features 计算统计量。" data-incorrect-feedback="不要沿 sequence 或 batch 聚合；固定一个 token，再看它的全部 feature coordinates。">
+      <h2>归一化范围检索</h2>
+      <p>输入 \(X[\text{batch},\text{sequence},d_{\mathrm{model}}]\) 时，本课中的 LayerNorm 在哪个范围计算一组 mean / variance？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">每个 batch item 的每个 token，沿 d_model features</button>
+        <button class="choice" type="button" data-correct="false">沿整个 batch 的相同 feature</button>
+        <button class="choice" type="button" data-correct="false">沿全部 sequence positions 求共同统计量</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2>结束时应能说清</h2>
+      <p>请用自己的话回答：<strong>“Residual Connection 与 LayerNorm 分别解决什么问题？为什么 attention 和 FFN 都必须输出 \(d_{\mathrm{model}}\)？原始 Post-LN 中，若 \(\operatorname{Sublayer}(x)=0\)，整个 block 是否严格等于 \(x\)？”</strong></p>
+    </section>
+
+    <footer>
+      <p>复习：<a href="0004-position-wise-ffn.html">课程 0004</a> · 数学：<a href="../reference/math-foundations-for-attention.html#layernorm">LayerNorm 数学起步</a> · 原始结构见 <a href="https://arxiv.org/html/1706.03762v7">论文 §3.1</a>。</p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

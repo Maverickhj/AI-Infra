@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0010 · Batching, Dropout and Label Smoothing</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Attention Is All You Need · Lesson 0010 · 约 18 分钟</p>
+    <h1>Training Recipe：Batching、Dropout 与 Label Smoothing</h1>
+    <p class="lede">Transformer 的 parallel architecture 只说明一个 batch 可以并行计算，并没有自动解决 variable-length workload、overfitting 与 overconfidence。论文 §5 通过 length-aware token batching、在指定位置施加 dropout，以及 label smoothing，把 architecture 变成可训练的 system。</p>
+    <p class="meta">前置：<a href="0009-adam-warmup-lr-schedule.html">Lesson 0009</a> 与 Adam 0009A–0009C · 数学：<a href="../reference/math-probability-statistics.html#bernoulli">Bernoulli distribution</a>、<a href="../reference/math-probability-statistics.html#expectation">expectation</a>、<a href="../reference/math-functions-information.html#cross-entropy">cross-entropy</a> · 主证据：<a href="https://arxiv.org/abs/1706.03762">Vaswani et al., Attention Is All You Need</a>, §§5.1、5.4</p>
+
+    <section>
+      <h2>约束一：一个 sentence 不等于一个固定 workload</h2>
+      <p>Translation sentence pairs 的 source length 与 target length 都会变化。若一个 dense batch 有 \(B\) 条 sequences，第 \(b\) 条长度为 \(\ell_b\)，padding 后长度为：</p>
+      <div class="equation">\[
+L_{\max}
+=\max_{1\leq b\leq B}\ell_b.
+\]</div>
+      <p>该 side 的 padded token slots 与真实 token 数分别为：</p>
+      <div class="equation">\[
+N_{\mathrm{slots}}
+=BL_{\max},
+\qquad
+N_{\mathrm{real}}
+=\sum_{b=1}^{B}\ell_b.
+\]</div>
+      <p>Padding fraction 可以写成：</p>
+      <div class="equation">\[
+r_{\mathrm{pad}}
+=1-\frac{N_{\mathrm{real}}}{N_{\mathrm{slots}}}.
+\]</div>
+      <p>如果同一 batch 混入差异很大的 sequence lengths，短 sequence 会补到 \(L_{\max}\)，产生更多无效 token slots。Self-attention 的 dense tensor 还会沿 sequence axes 构造 pairwise interactions，因此 long examples 对 compute 与 memory 的影响尤其明显。</p>
+    </section>
+
+    <section>
+      <h2>机制一：Approximate-length grouping 与 token budget</h2>
+      <p>论文 §5.1 明确写出两项 batching choices：</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Paper fact</th><th>直接含义</th></tr></thead>
+          <tbody>
+            <tr><td>Sentence pairs 按 approximate sequence length batched together</td><td>同一 batch 内的 lengths 尽量接近</td></tr>
+            <tr><td>每批约 \(25{,}000\) source tokens 与 \(25{,}000\) target tokens</td><td>batch capacity 以 token count 描述，而不是固定 sentence-pair count</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>因此一个 batch 能容纳的 sentence pairs 数量不是常数。若平均长度变长，可容纳的 pairs 会减少；平均长度变短，可容纳的 pairs 会增加。</p>
+      <div class="callout">
+        <strong>Systems inference：</strong>原论文陈述了 grouping 与 token counts，没有直接给出 padding-efficiency 推导。结合上面的 tensor slots 可以推断：approximate-length grouping 减少 padding waste；token budget 相比 fixed example count 更接近稳定每步 workload。这个解释是由 batching shapes 得出的工程推论。
+      </div>
+      <div class="callout caution">
+        <strong>两个 token budgets：</strong>source 与 target 分别约为 \(25{,}000\) tokens，不应合并改写成“每批总共 \(25{,}000\) tokens”。
+      </div>
+    </section>
+
+    <section>
+      <h2>约束二：更强 representation capacity 也更容易 overfit</h2>
+      <p>Dropout 在 training 时为 activation coordinates 采样 mask。令 drop probability 为 \(p\)，则 inverted dropout 可写为：</p>
+      <div class="equation">\[
+m_i\sim\operatorname{Bernoulli}(1-p),
+\qquad
+\operatorname{Dropout}(h)_i
+=\frac{m_i h_i}{1-p}.
+\]</div>
+      <h3>Application mapping：从 Bernoulli variable 到 dropout mask</h3>
+      <p><a href="../reference/math-probability-statistics.html#bernoulli">Math Foundation</a> 已定义一般的 Bernoulli variable。这里把其 parameter 设为 keep probability \(1-p\)，并把 binary outcome \(m_i\) 映射为 activation coordinate 的 mask：</p>
+      <div class="equation">\[
+m_i\in\{0,1\},
+\qquad
+\begin{aligned}
+\Pr(m_i=1)&amp;=1-p,\\
+\Pr(m_i=0)&amp;=p.
+\end{aligned}
+\]</div>
+      <p>\(m_i=1\) 表示保留第 \(i\) 个 activation coordinate，\(m_i=0\) 表示将它丢弃。代入 inverted-dropout convention 后，单次 forward 的结果是：</p>
+      <div class="equation">\[
+\operatorname{Dropout}(h)_i
+=
+\begin{cases}
+0, &amp; m_i=0,\\[4pt]
+\dfrac{h_i}{1-p}, &amp; m_i=1.
+\end{cases}
+\]</div>
+      <p>例如 \(p=0.1\) 时，activation 以 \(0.1\) 的 probability 被丢弃，以 \(0.9\) 的 probability 被保留并缩放。Standard element-wise dropout 通常为不同 coordinates 分别采样 mask；channel、spatial 等 variants 可能让一组 coordinates 共享 mask。</p>
+      <p>再应用 <a href="../reference/math-probability-statistics.html#expectation">linearity of expectation</a> 与 \(\mathbb{E}[m_i]=1-p\)：</p>
+      <div class="equation">\[
+\mathbb{E}\!\left[
+\operatorname{Dropout}(h)_i
+\right]
+=h_i.
+\]</div>
+      <p>它不是把 activation expectation 系统性缩小，而是在 training 时引入随机 subnetwork perturbation；evaluation 时通常不再随机丢弃 activation。</p>
+      <div class="callout caution">
+        <strong>实现边界：</strong>上式是常见 inverted-dropout convention，用于解释 expectation。Transformer 论文报告 dropout rate 与 placement，但没有在 §5.4 写出 mask scaling 公式。
+      </div>
+    </section>
+
+    <section>
+      <h2>机制二：论文把 residual dropout 放在哪里？</h2>
+      <p>原始 Transformer 是 Post-LN。对 sub-layer function \(F\)，§5.4 描述的顺序是：</p>
+      <div class="equation">\[
+y
+=\operatorname{LayerNorm}
+\left(
+x+\operatorname{Dropout}(F(x))
+\right).
+\]</div>
+      <p>也就是 dropout 作用于 sub-layer output，随后才与 residual input \(x\) 相加并做 LayerNorm。Residual path \(x\) 本身没有在这个位置被同一个 dropout mask 丢弃。</p>
+      <p>论文还在 encoder 与 decoder stacks 的入口，对 embedding 与 positional encoding 的和使用 dropout：</p>
+      <div class="equation">\[
+X_0
+=\operatorname{Dropout}(E+PE).
+\]</div>
+      <p>Base model 使用 \(P_{\mathrm{drop}}=0.1\)。Table 3 还通过 model variations 支持 dropout 有助于避免 overfitting，但这仍是该 translation setting 内的 empirical evidence。</p>
+    </section>
+
+    <section>
+      <h2>约束三：One-hot target 鼓励极端 confidence</h2>
+      <p>把 <a href="../reference/math-functions-information.html#cross-entropy">cross-entropy 的一般定义</a>实例化到 vocabulary categories。对 vocabulary size \(V\)、正确 token index \(y\)，one-hot target \(e_y\) 只有正确 token coordinate 为 \(1\)，因此：</p>
+      <div class="equation">\[
+\mathcal{L}_{\mathrm{hard}}
+=-\log p_y.
+\]</div>
+      <p>只要继续提高 \(p_y\)，loss 就会继续降低；target distribution 没有表达“训练 label 与未来 token distribution 可能存在 uncertainty”。Label smoothing 用一个非 one-hot distribution 作为 training target。</p>
+    </section>
+
+    <section>
+      <h2>机制三：Label smoothing 改变监督 target</h2>
+      <p>为了说明数学结构，令 \(u\) 是 vocabulary 上的 uniform distribution：</p>
+      <div class="equation">\[
+u_k
+=\frac{1}{V}.
+\]</div>
+      <p>一种常见 uniform-mixture convention 是：</p>
+      <div class="equation">\[
+q
+=(1-\epsilon_{\mathrm{ls}})e_y
++\epsilon_{\mathrm{ls}}u.
+\]</div>
+      <h3>\(\epsilon_{\mathrm{ls}}\)：smoothing strength</h3>
+      <p>\(\epsilon_{\mathrm{ls}}\) 是人工设置的 hyperparameter，表示从 one-hot component 转移到 smoothing distribution 的 probability mass 比例，而不是模型学习出的 parameter。在当前 uniform-mixture convention 下：</p>
+      <div class="equation">\[
+q_k
+=
+\begin{cases}
+1-\epsilon_{\mathrm{ls}}
++\dfrac{\epsilon_{\mathrm{ls}}}{V},
+&amp; k=y,\\[6pt]
+\dfrac{\epsilon_{\mathrm{ls}}}{V},
+&amp; k\neq y.
+\end{cases}
+\]</div>
+      <p>当 \(\epsilon_{\mathrm{ls}}=0\) 时，\(q=e_y\)，没有 smoothing；当 \(\epsilon_{\mathrm{ls}}=0.1\) 时，\(90\%\) 的 mixture weight 保留 one-hot label，\(10\%\) 分配给 uniform component；当 \(\epsilon_{\mathrm{ls}}=1\) 时，\(q=u\)，正确 label 的特殊信息被完全移除。Strength 越大，regularization 越强，但过大也会削弱 supervision signal。</p>
+      <p>此时 smoothed cross-entropy 为：</p>
+      <div class="equation">\[
+\begin{aligned}
+\mathcal{L}_{\mathrm{smooth}}
+&amp;=-\sum_{k=1}^{V}q_k\log p_k\\
+&amp;=-(1-\epsilon_{\mathrm{ls}})\log p_y
+-\frac{\epsilon_{\mathrm{ls}}}{V}
+\sum_{k=1}^{V}\log p_k.
+\end{aligned}
+\]</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Symbol</th><th>Scope 与含义</th></tr></thead>
+          <tbody>
+            <tr><td>\(\mathcal{L}_{\mathrm{smooth}}\)</td><td>当前一个有效 target-token position 的 smoothed cross-entropy loss</td></tr>
+            <tr><td>\(V\)</td><td>Vocabulary size</td></tr>
+            <tr><td>\(k\)</td><td>Candidate token 的 vocabulary index，求和遍历全部 \(V\) 个 candidates</td></tr>
+            <tr><td>\(y\)</td><td>当前 position 的正确 token index</td></tr>
+            <tr><td>\(p_k\)</td><td>Model softmax 分配给 candidate \(k\) 的 predicted probability</td></tr>
+            <tr><td>\(q_k\)</td><td>Smoothed target distribution 分配给 candidate \(k\) 的固定 target probability</td></tr>
+            <tr><td>\(e_y\)</td><td>仅正确 coordinate \(y\) 为 \(1\) 的 one-hot distribution</td></tr>
+            <tr><td>\(u_k=1/V\)</td><td>Vocabulary 上的 uniform distribution</td></tr>
+            <tr><td>\(\epsilon_{\mathrm{ls}}\)</td><td>Label-smoothing strength，控制从 one-hot component 转移出去的 probability mass</td></tr>
+            <tr><td>\(\log p_k\)</td><td>Candidate \(k\) 的 log-probability；前面的负号把 non-positive log-probability 转成 loss contribution</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>它不再只奖励正确 coordinate，还要求模型不要把所有 non-target probabilities 压到极端接近 zero。Transformer 使用 \(\epsilon_{\mathrm{ls}}=0.1\)。</p>
+      <p>上式是单个有效 target position 的 loss。完整 sequence 或 batch loss 还需要对所有 non-padding target positions 求和或平均；padding mask 与 reduction 方式属于 implementation choice。</p>
+      <div class="callout caution">
+        <strong>公式约定边界：</strong>论文 §5.4 只报告 label-smoothing value，没有写出 coordinate-level distribution。另一常见 convention 是 \(q_y=1-\epsilon_{\mathrm{ls}}\)、\(q_{k\neq y}=\epsilon_{\mathrm{ls}}/(V-1)\)。两者都表达 smoothing，但数值略有不同；复现时必须检查具体 implementation。
+      </div>
+    </section>
+
+    <section>
+      <h2>为什么 perplexity 变差，accuracy 与 BLEU 却改善？</h2>
+      <p>论文直接报告：label smoothing hurts perplexity，因为模型学得更 unsure；但 accuracy 与 BLEU 改善。这并不矛盾，因为 metrics 问的问题不同：</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Metric</th><th>更敏感于什么</th></tr></thead>
+          <tbody>
+            <tr><td>Hard-label negative log-likelihood / perplexity</td><td>正确 token 是否被分配了很高 probability</td></tr>
+            <tr><td>Token accuracy</td><td>正确 token 是否仍是 argmax</td></tr>
+            <tr><td>BLEU</td><td>最终 decoded sequence 与 reference 的 n-gram overlap</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Label smoothing 可以降低 \(p_y\) 的极端 confidence，从而让 hard-label perplexity 变差，但只要正确 token 仍排名第一，accuracy 不一定下降；regularization 还可能改善 held-out sequence quality。</p>
+      <div class="callout caution">
+        <strong>Argmax 不保证 BLEU：</strong>正确 token 在某个 position 仍是 argmax，只能直接关联该 position 的 token accuracy。BLEU 评估完整 decoded sequence 的 n-gram overlap；autoregressive history、beam search 与多个 positions 的联合结果都会影响 BLEU。本文观察到 BLEU 改善，但不能由单点 argmax 推出 BLEU 必然不下降。
+      </div>
+      <div class="callout caution">
+        <strong>Evidence boundary：</strong>“降低 overconfidence”是 label smoothing 的 mechanism explanation；“perplexity 变差而 accuracy 与 BLEU 改善”是本文配置下的 observation。不能由这一个实验推出任意 model、dataset 与 decoding setup 都有相同 trade-off。
+      </div>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：按相近 length 分组减少 padding waste，而 token budget 让 batch capacity 随 sequence length 调整。" data-incorrect-feedback="区分 fixed sentence count、真实 token count 与 padding 后 tensor slots。">
+      <h2>30 秒 batching 检索</h2>
+      <p>为什么 fixed token budget 比 fixed sentence-pair count 更接近控制每步 workload？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">sentence lengths 可变，token count 更直接反映 batch 中的 sequence elements</button>
+        <button class="choice" type="button" data-correct="false">每个 sentence 永远只有一个 token</button>
+        <button class="choice" type="button" data-correct="false">token budget 会消除所有 padding</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：论文报告的 trade-off 是 confidence-sensitive perplexity 变差，但 argmax accuracy 与 sequence-level BLEU 改善。" data-incorrect-feedback="先区分 probability calibration、token ranking 和 decoded sequence quality。">
+      <h2>Label-smoothing metric 检索</h2>
+      <p>Label smoothing 后 perplexity 变差，是否必然表示 token accuracy 与 BLEU 也变差？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">否，三种 metrics 衡量的对象不同</button>
+        <button class="choice" type="button" data-correct="false">是，所有 metrics 必须同方向变化</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2>结束时应能说清</h2>
+      <p>请用自己的话回答：</p>
+      <ol>
+        <li>Approximate-length grouping 与 token budget 分别解决什么 batching 问题？论文报告的两个 token counts 是多少？</li>
+        <li>Residual dropout 在 Post-LN block 中位于哪里？Embedding path 上又位于哪里？</li>
+        <li>Label smoothing 如何改变 target distribution 与 cross-entropy？为什么 perplexity 和 BLEU 可以反向变化？</li>
+        <li>本课哪些内容是 paper fact，哪些是根据 tensor shapes 得出的 systems inference，哪些只是 implementation convention？</li>
+      </ol>
+    </section>
+
+    <footer>
+      <p>上一课：<a href="0009c-adam-effective-step-evidence.html">Adam 0009C</a> · 来源：<a href="https://arxiv.org/abs/1706.03762">Attention Is All You Need</a> §§5.1、5.4 · 下一课：<a href="0011-results-ablation-evidence.html">Lesson 0011：Results、Ablation 与 Evidence Boundaries</a>。</p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0009 · Adam、Warmup 与 Learning-Rate Schedule</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Lesson 0009 · 约 15 分钟</p>
+    <h1>Adam、Warmup 与 Learning-Rate Schedule：参数如何开始移动？</h1>
+    <p class="lede">Transformer architecture 定义了 forward computation，但不会自动给出稳定、有效的 parameter updates。原论文使用 Adam 处理 gradient history，再用一个依赖 \(d_{\text{model}}\) 与 optimizer step 的 global learning-rate schedule 控制更新尺度。</p>
+    <p class="meta">前置：<a href="0008-why-self-attention.html">课程 0008</a> · 数学：<a href="../reference/math-foundations-for-attention.html#adam-and-schedule">Adam 与 schedule 数学起步</a> · 术语：<a href="../reference/attention-glossary.html#optimization">Optimization terms</a> · 主证据：<a href="https://arxiv.org/html/1706.03762v7">Vaswani et al. (2017), §§5.2–5.3</a> · Adam 定义：<a href="https://arxiv.org/abs/1412.6980">Kingma &amp; Ba (2014)</a></p>
+
+    <section>
+      <h2>先分开两个控制层</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>机制</th><th>输入</th><th>控制对象</th><th>本课中的角色</th></tr></thead>
+          <tbody>
+            <tr><td>Adam moment adaptation</td><td>当前与历史 gradients</td><td>每个 parameter coordinate 的 normalized update</td><td>用 first / second moment estimates 调整不同 coordinates 的方向与尺度。</td></tr>
+            <tr><td>Transformer LR schedule</td><td>\(d_{\text{model}}\)、optimizer step \(s\)、warmup steps \(w\)</td><td>全局 learning-rate scalar \(\alpha_s\)</td><td>先 linear warmup，再 inverse-square-root decay。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Adam 并不取代 schedule，schedule 也不取代 Adam。一次 parameter update 同时使用 Adam 的 per-coordinate normalization 与当前 step 的 global learning rate。</p>
+    </section>
+
+    <section>
+      <h2>Adam 的最小数学：\(\beta_1\)、\(\beta_2\)、\(\epsilon\) 在做什么？</h2>
+      <p>令 \(\theta_{s-1}\) 为 optimizer step \(s\) 开始前的 parameters，\(g_s\) 为当前 stochastic gradient；update 后得到 \(\theta_s\)。Adam 维护：</p>
+      <div class="equation">\[
+\begin{aligned}
+m_s
+&amp;=\beta_1m_{s-1}+(1-\beta_1)g_s,\\
+v_s
+&amp;=\beta_2v_{s-1}+(1-\beta_2)g_s^2.
+\end{aligned}
+\]</div>
+      <p>所有 vector operations 都按 coordinate 执行，\(g_s^2\) 是 element-wise square。\(m_s\) 估计 gradient 的 first moment，\(v_s\) 估计 squared gradient 的 second raw moment。因为二者从 zero 初始化，Adam 还使用 bias correction：</p>
+      <div class="equation">\[
+\widehat{m}_s
+=\frac{m_s}{1-\beta_1^s},
+\qquad
+\widehat{v}_s
+=\frac{v_s}{1-\beta_2^s}.
+\]</div>
+      <p>给定当前 global learning rate \(\alpha_s\)，update 为：</p>
+      <div class="equation">\[
+\theta_s
+=\theta_{s-1}
+-\alpha_s
+\frac{\widehat{m}_s}
+{\sqrt{\widehat{v}_s}+\epsilon}.
+\]</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Hyperparameter</th><th>原始 Transformer</th><th>精确作用</th></tr></thead>
+          <tbody>
+            <tr><td>\(\beta_1\)</td><td>\(0.9\)</td><td>first-moment exponential moving average 的 decay rate。</td></tr>
+            <tr><td>\(\beta_2\)</td><td>\(0.98\)</td><td>second-raw-moment exponential moving average 的 decay rate。</td></tr>
+            <tr><td>\(\epsilon\)</td><td>\(10^{-9}\)</td><td>加入 denominator，避免除零并影响极小 \(v_s\) 下的数值尺度。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout caution">
+        <strong>证据边界：</strong>Transformer 论文报告了这组配置，但没有在 §5.3 给出选择 \(\beta_2=0.98\)、\(\epsilon=10^{-9}\) 的消融或因果证明。它们也不同于 Adam 原论文列出的通用 default \(\beta_2=0.999\)、\(\epsilon=10^{-8}\)。
+      </div>
+    </section>
+
+    <section>
+      <h2>原始 Transformer 的 learning-rate 公式</h2>
+      <p>令 \(s\geq1\) 为 <code>step_num</code>，\(w\) 为 <code>warmup_steps</code>。论文定义：</p>
+      <div class="equation">\[
+\alpha_s
+=d_{\text{model}}^{-1/2}
+\min\left(
+s^{-1/2},
+s\,w^{-3/2}
+\right),
+\qquad
+w=4000.
+\]</div>
+      <p>这里的 \(\min\) 不是装饰。两条 branch 在 \(s=w\) 时相交：</p>
+      <div class="equation">\[
+\begin{aligned}
+s^{-1/2}
+&amp;=s\,w^{-3/2}\\
+s^{3/2}
+&amp;=w^{3/2}\\
+s&amp;=w.
+\end{aligned}
+\]</div>
+      <p>因此 schedule 可以等价写成：</p>
+      <div class="equation">\[
+\alpha_s
+=d_{\text{model}}^{-1/2}
+\begin{cases}
+s\,w^{-3/2}, &amp; 1\leq s\leq w,\\
+s^{-1/2}, &amp; s\geq w.
+\end{cases}
+\]</div>
+    </section>
+
+    <section>
+      <h2>两段 schedule 的 causal interpretation</h2>
+      <div class="chain">
+        <div class="chain-step"><strong>Warmup phase</strong><br>当 \(1\leq s\leq w\) 时，\(\alpha_s\propto s\)：learning rate 从较小值 linear increase。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Peak</strong><br>在 \(s=w\) 时两条 branch 相等，learning rate 达到最大值。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Decay phase</strong><br>当 \(s\geq w\) 时，\(\alpha_s\propto s^{-1/2}\)：learning rate 按 inverse square root 缓慢下降。</div>
+      </div>
+      <p>peak learning rate 由公式直接得到：</p>
+      <div class="equation">\[
+\alpha_{\max}
+=\alpha_w
+=\frac{1}{\sqrt{d_{\text{model}}w}}.
+\]</div>
+      <p>对 base model 的 \(d_{\text{model}}=512\)、\(w=4000\)：</p>
+      <div class="equation">\[
+\alpha_{\max}
+=\frac{1}{\sqrt{512\cdot4000}}
+\approx6.99\times10^{-4}.
+\]</div>
+      <div class="callout">
+        <strong>\(d_{\text{model}}\) scaling：</strong>在相同 \(s,w\) 下，width 更大的 model 得到更小的 global learning-rate scalar。论文采用了这一公式；不能据此推出它对任意 architecture、batch size 或 optimizer configuration 都是最优 scaling law。
+      </div>
+    </section>
+
+    <section>
+      <h2><code>step_num</code> 不是 token count，也不是 epoch</h2>
+      <p>schedule 中的 \(s\) 是 optimizer update count。一个 step 可以消费一个 batch，而 batch 中包含多少 examples、source tokens 或 target tokens，取决于 batching 与 gradient accumulation configuration。</p>
+      <div class="callout caution">
+        <strong>复现实验边界：</strong>只复制 \(w=4000\) 而改变 global batch、tokens per update、gradient accumulation 或 data distribution，会改变 warmup 期间实际见过的 token 数。因此“相同 warmup steps”不等于“相同 optimization exposure”。
+      </div>
+    </section>
+
+    <section>
+      <h2>论文报告的 hardware / schedule context</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Configuration</th><th>Hardware</th><th>Step time</th><th>Total steps</th><th>Reported duration</th></tr></thead>
+          <tbody>
+            <tr><td>base</td><td>one machine, 8 NVIDIA P100 GPUs</td><td>约 \(0.4\,\mathrm{s}\)</td><td>\(100{,}000\)</td><td>约 \(12\,\mathrm{h}\)</td></tr>
+            <tr><td>big</td><td>one machine, 8 NVIDIA P100 GPUs</td><td>约 \(1.0\,\mathrm{s}\)</td><td>\(300{,}000\)</td><td>约 \(3.5\,\mathrm{days}\)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>这些数值是论文的 historical experiment context，不是现代硬件的 performance baseline。论文也没有在这里给出 distributed topology、communication overlap 或精确 utilization，因此不能从 “8 GPUs” 单独重建系统效率。</p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：warmup branch 与 inverse-square-root branch 在 warmup boundary 相交，此时 learning rate 达到峰值。" data-incorrect-feedback="令两条 branch 相等并求交点；结果就是 warmup boundary。">
+      <h2>30 秒 schedule 检索</h2>
+      <p>learning rate 在哪个 optimizer step 达到 peak？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">\(s=w\)</button>
+        <button class="choice" type="button" data-correct="false">\(s=1\)</button>
+        <button class="choice" type="button" data-correct="false">training 的最后一步</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：Adam moments 进行 per-coordinate adaptation；schedule 产生当前 step 的 global learning-rate scalar。" data-incorrect-feedback="把两层控制分开：moment estimates 来自 gradient history，global learning rate 来自 model width、step 与 warmup setting。">
+      <h2>职责边界检索</h2>
+      <p>哪项准确描述 Adam 与 Transformer schedule 的关系？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">per-coordinate adaptation 与 global step scale 共同决定 update</button>
+        <button class="choice" type="button" data-correct="false">用了 Adam 就不再需要 learning rate</button>
+        <button class="choice" type="button" data-correct="false">schedule 直接计算每个 parameter 的 second moment</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2>结束时应能说清</h2>
+      <p>请用自己的话回答：<strong>“\(\beta_1\)、\(\beta_2\)、\(\epsilon\) 分别控制什么？为什么 schedule 在 \(s=w\) 切换并达到 peak？warmup 与 decay 两段分别怎样随 \(s\) 变化？Adam moments 与 global schedule 又分别控制 parameter update 的哪一部分？”</strong></p>
+    </section>
+
+    <footer>
+      <p>上一课：<a href="0008-why-self-attention.html">课程 0008</a> · Adam 支线：<a href="0009a-adam-adaptive-moments.html">课程 0009A</a> · 数学：<a href="../reference/math-foundations-for-attention.html#adam-and-schedule">Adam 与 schedule 数学起步</a> · 原始配置见 <a href="https://arxiv.org/html/1706.03762v7">论文 §§5.2–5.3</a>。</p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

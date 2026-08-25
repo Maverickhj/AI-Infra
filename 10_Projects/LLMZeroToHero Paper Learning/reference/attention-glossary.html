@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Attention Glossary</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Reference · Vocabulary</p>
+    <h1>Attention Glossary</h1>
+    <p class="lede">术语以 English 为主；中文只用来锚定含义，而不替换术语本身。以后课程沿用这里的词，避免同一概念出现多个中文叫法。</p>
+    <p class="meta">适用：课程 0001 及后续 Transformer 课程 · Transformer 证据：<a href="https://arxiv.org/html/1706.03762v7">Vaswani et al. (2017), §§3–5</a> · Adam 定义：<a href="https://arxiv.org/abs/1412.6980">Kingma &amp; Ba (2014)</a></p>
+
+    <section id="convention">
+      <h2>使用约定</h2>
+      <div class="callout">
+        <strong>English-first：</strong>首次出现写作 <em>query（当前 token 的检索请求）</em>；之后写 <em>query</em>。公式、张量名、代码符号与论文标题始终保持原样。
+      </div>
+      <p>中文说明解释当前上下文的功能，不追求为每个 English term 制造固定译名。例如 key 在 attention 中更接近“供 query 匹配的索引”，而不仅是一个孤立的“键”。</p>
+    </section>
+
+    <section id="core">
+      <h2>Core terms</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>English term</th><th>中文解释</th><th>本课中的精确定义</th></tr></thead>
+          <tbody>
+            <tr><td>Transformer</td><td>由 attention 驱动的 sequence model</td><td>原论文的 Encoder–Decoder architecture；不是所有现代 decoder-only LLM 的同义词。</td></tr>
+            <tr><td>Encoder</td><td>处理完整 input sequence 的表示模块</td><td>由 self-attention 与 FFN 组成；其输出是供 Decoder cross-attention 读取的 memory。</td></tr>
+            <tr><td>Decoder</td><td>逐 token 生成 target sequence 的模块</td><td>先经 masked self-attention 读取 target prefix，再经 cross-attention 读取 Encoder memory。</td></tr>
+            <tr><td>attention</td><td>按相关性加权聚合信息</td><td>一个 query 对多组 key–value pairs 计算权重，再对 values 加权求和。</td></tr>
+            <tr><td>self-attention</td><td>序列内部的 attention</td><td>Q、K、V 来自同一序列的一层表示；Encoder 可见全序列，Decoder 另有 causal mask。</td></tr>
+            <tr><td>cross-attention / encoder-decoder attention</td><td>Decoder 从 Encoder memory 检索 source 信息</td><td>Q 来自 Decoder；K、V 来自 Encoder output。它允许每个 Decoder position 读取所有 input positions。</td></tr>
+            <tr><td>query</td><td>当前 token 的检索请求</td><td>\(q_i\) 与每个 \(k_j\) 计算相容度，决定位置 \(i\) 想从哪里取信息。</td></tr>
+            <tr><td>key</td><td>供 query 匹配的索引</td><td>\(k_j\) 与 query 形成 attention score；它不是输出内容本身。</td></tr>
+            <tr><td>value</td><td>被加权带回的信息</td><td>\(v_j\) 按 attention weight 聚合，形成 attention output。</td></tr>
+            <tr><td>attention score / logit</td><td>softmax 前的未归一化相容度</td><td>\(S_{i,j}=q_i^\top k_j/\sqrt{d_k}+M_{i,j}\)。</td></tr>
+            <tr><td>attention weight</td><td>归一化后的聚合权重</td><td>\(A_{i,j}=\operatorname{softmax}(S_{i,:})_j\)；对固定 \(i\)，其各 \(j\) 项之和为 \(1\)。</td></tr>
+            <tr><td>representation subspace</td><td>一组 projection 学到的子表示空间</td><td>一个 head 通过其独立 \(W^{Q/K/V}\) 在该空间内计算 attention；它不是人工预先命名的语义槽位。</td></tr>
+            <tr><td>causal mask</td><td>阻止未来信息流的约束</td><td>在 softmax 前把 Decoder 中 \(j&gt;i\) 的 score 置为 \(-\infty\)，使对应 weight 为 \(0\)。</td></tr>
+            <tr><td>autoregressive</td><td>按生成历史逐 token 条件化</td><td>预测位置 i 只使用已知的更早输出；这使 Decoder 推理仍有 token-level 串行依赖。</td></tr>
+            <tr><td>head</td><td>一组独立的 Q/K/V 投影与 attention</td><td>multi-head attention 并行计算多个 head，再拼接并投影；不同 head 没有必须互异的约束。</td></tr>
+            <tr id="ffn"><td>Position-wise Feed-Forward Network (FFN)</td><td>逐位置前馈网络</td><td>对每个 token representation 分别、相同地应用的两层 Linear 与中间 ReLU；它不直接混合 token positions。</td></tr>
+            <tr><td>ReLU activation</td><td>非线性激活</td><td>\(\max(0,x)\)。原论文将它置于 FFN 的两次 Linear 之间；没有它，两次 Linear 可合并为一次 Linear。</td></tr>
+            <tr><td>\(d_{\mathrm{ff}}\)</td><td>FFN 的 inner-layer width</td><td>FFN 第一层的 hidden dimension；原论文 base configuration 中 \(d_{\mathrm{ff}}=2048\)，而 \(d_{\mathrm{model}}=512\)。</td></tr>
+            <tr id="residual"><td>Residual Connection</td><td>把 sub-layer 输入直接加到其输出</td><td>\(x+\operatorname{Sublayer}(x)\)。两侧必须具有相同 shape，因此各 sub-layer 都输出 \(d_{\mathrm{model}}\)。</td></tr>
+            <tr><td>Layer Normalization (LayerNorm)</td><td>逐 token 沿 features 归一化</td><td>mean / variance 负责稳定每个 token 的统计尺度；learned gain 与 bias 再恢复每个 feature 可学习的尺度与偏移。它们不是 normalization 的逆运算。</td></tr>
+            <tr><td>Post-LN</td><td>residual addition 后归一化</td><td>\(\operatorname{LayerNorm}(x+\operatorname{Sublayer}(x))\)；这是原始 Transformer 的排列。</td></tr>
+            <tr><td>Pre-LN</td><td>进入 sub-layer 前归一化</td><td>\(x+\operatorname{Sublayer}(\operatorname{LayerNorm}(x))\)；是后续常见变体，不是原论文 §3.1 的公式。</td></tr>
+            <tr id="positional-encoding"><td>Positional Encoding (PE)</td><td>注入 sequence position information</td><td>原始 Transformer 把与 embedding 同为 \(d_{\mathrm{model}}\) 维的 sinusoidal PE 加到 input embedding；所有 heads 接收同一份相加后的 representation。</td></tr>
+            <tr id="output-head"><td>output projection / pre-softmax linear transformation</td><td>把 Decoder representation 映射到 vocabulary logits</td><td>将最后一维从 \(d_{\text{model}}\) 投影为 \(|\mathcal{V}|\)；每个 target position 独立得到一组 candidate-token logits。</td></tr>
+            <tr><td>vocabulary logit</td><td>candidate token 的未归一化分数</td><td>output softmax 前的实数；不要与 attention 中的 query–key compatibility logit 混淆。</td></tr>
+            <tr><td>next-token probability</td><td>下一个 token 的预测概率</td><td>固定 batch item 与 target position，沿 vocabulary axis 对 logits 做 softmax 后得到。</td></tr>
+            <tr><td>weight tying</td><td>多个用途共享同一组 parameters</td><td>原始 Transformer 在 source embedding、target embedding 与 pre-softmax projection 之间共享同一个 weight matrix。</td></tr>
+            <tr><td>shifted target</td><td>Decoder input 与 prediction target 错开一位</td><td>输入 \([\mathrm{BOS},y_1,\ldots,y_{T-1}]\)，对应预测 \([y_1,\ldots,y_T]\)；配合 causal mask 保持 autoregressive condition。</td></tr>
+            <tr id="complexity"><td>per-layer complexity</td><td>单层理论计算量</td><td>论文 Table 1 的 asymptotic arithmetic count；不直接等于具体硬件上的 latency、memory traffic 或 memory footprint。</td></tr>
+            <tr><td>minimum sequential operations</td><td>受数据依赖约束的最少串行步骤</td><td>衡量 layer computation 的可并行化边界；self-attention 为 \(O(1)\)，不表示 autoregressive token generation 可并行。</td></tr>
+            <tr><td>maximum path length</td><td>任意 positions 间最长的 computational-graph 路径</td><td>衡量 information / gradient 跨 positions 传播所需的最大 edge 数；不是 token distance 或 wall-clock time。</td></tr>
+            <tr><td>restricted self-attention</td><td>只关注局部 neighborhood 的 self-attention</td><td>论文 Table 1 中 complexity 为 \(O(rnd)\)、maximum path length 为 \(O(n/r)\)；它是作者提出的 future direction，不是原始 full-attention model 的配置。</td></tr>
+            <tr id="optimization"><td>optimizer step</td><td>一次 parameter update 的编号</td><td>Transformer schedule 中的 \(s\) / <code>step_num</code>；不是 token position、example count 或 epoch。</td></tr>
+            <tr><td>stochastic objective</td><td>由随机 minibatch 或其他 noise source 形成的 step-level objective</td><td>\(f_t(\theta)\) 随 step 的 sampled data / stochastic mechanism 改变，其 gradient \(g_t\) 因而是 stochastic estimate。</td></tr>
+            <tr id="adam-paper"><td>Adam first moment</td><td>gradient 的 exponential moving average</td><td>\(m_t=\beta_1m_{t-1}+(1-\beta_1)g_t\)；它保留 signed gradient direction history，原始 Transformer 使用 \(\beta_1=0.9\)。</td></tr>
+            <tr><td>Adam second raw moment</td><td>squared gradient 的 exponential moving average</td><td>\(v_t=\beta_2v_{t-1}+(1-\beta_2)g_t^2\)；原始 Transformer 使用 \(\beta_2=0.98\)。</td></tr>
+            <tr><td>bias correction</td><td>修正 zero initialization 造成的 early-step moment shrinkage</td><td>Adam 使用 \(\widehat{m}_t=m_t/(1-\beta_1^t)\)、\(\widehat{v}_t=v_t/(1-\beta_2^t)\)。</td></tr>
+            <tr><td>adaptive moment estimation</td><td>用 gradient moments 构造 per-coordinate update scale</td><td>global stepsize 仍存在；\(\sqrt{\widehat{v}_t}+\epsilon\) 使 denominator 随 parameter coordinate 的 gradient history 变化。</td></tr>
+            <tr><td>warmup</td><td>training 初期逐步增大 learning rate</td><td>原论文前 \(w=4000\) 个 optimizer steps 使用 linear branch，\(\alpha_s\propto s\)。</td></tr>
+            <tr><td>inverse-square-root decay</td><td>按 step 平方根的倒数衰减</td><td>warmup 后 \(\alpha_s\propto s^{-1/2}\)；它是 global schedule，不是 Adam second moment。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="do-not-conflate">
+      <h2>不要混淆</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>不要混为一谈</th><th>关键区别</th></tr></thead>
+          <tbody>
+            <tr><td>score / logit vs attention weight</td><td>前者是 softmax 前、可为任意实数；后者是 softmax 后、非负且一行和为 1。</td></tr>
+            <tr><td>self-attention vs Decoder self-attention</td><td>前者说明 Q/K/V 同源；后者额外施加 causal mask，不能看未来。</td></tr>
+            <tr><td>layer-level parallelism vs autoregressive generation</td><td>训练时一层内可批量计算 \(QK^\top\)；生成下一个 token 仍须等待已有前缀。</td></tr>
+            <tr><td>LayerNorm vs BatchNorm</td><td>本课中的 LayerNorm 对每个 token 沿 features 计算统计量；不依赖其他 batch examples 的统计量。</td></tr>
+            <tr><td>Post-LN vs Pre-LN</td><td>两者都使用 residual 与 normalization，但归一化位置不同；原始 Transformer 是 Post-LN。</td></tr>
+            <tr><td>PE 的 pos / i / head index</td><td>pos 是 token position；i 是 sinusoidal frequency / feature pair index；二者都不是 head index。</td></tr>
+            <tr><td>Positional Encoding vs causal mask</td><td>PE 提供 position signal；causal mask 约束 future target 的可见性。二者职责不同。</td></tr>
+            <tr><td>attention softmax vs output softmax</td><td>前者沿 key positions 归一化并产生 aggregation weights；后者沿 vocabulary 归一化并产生 next-token probabilities。</td></tr>
+            <tr><td>weight sharing vs identical computation</td><td>weight tying 表示多处引用同一 parameter matrix；embedding lookup、embedding scaling 与 output dot products 的计算仍不同。</td></tr>
+            <tr><td>asymptotic complexity vs runtime</td><td>Big-O 比较主导增长项；实际速度还取决于 constants、kernel efficiency、parallel hardware、memory traffic、batching 与 communication。</td></tr>
+            <tr><td>Adam adaptation vs LR schedule</td><td>Adam moments 调整每个 parameter coordinate 的 update；schedule 提供当前 optimizer step 的 global learning-rate scalar。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="quiz" aria-labelledby="quiz-title">
+      <h2 id="quiz-title">术语检索</h2>
+      <p>“softmax 前、描述 query 与 key 相容度的量”应称为什么？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">attention score</button>
+        <button class="choice" type="button" data-correct="false">attention state</button>
+        <button class="choice" type="button" data-correct="false">attention value</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <footer>
+      <p>回到 <a href="../lessons/0001-transformer-sequential-bottleneck.html">课程 0001</a>，继续 <a href="../lessons/0007-output-softmax-weight-tying.html">课程 0007</a>，或先复习 <a href="math-foundations-for-attention.html">Attention 数学起步</a>。术语含义或中英表达不自然时，直接指出，我会更新此表而非临时改写同一个 term。</p>
+    </footer>
+  </main>
+  <script>
+    document.querySelectorAll('.choice').forEach((button) => {
+      button.addEventListener('click', () => {
+        const feedback = button.closest('.quiz').querySelector('.feedback');
+        const correct = button.dataset.correct === 'true';
+        feedback.className = 'feedback ' + (correct ? 'good' : 'try');
+        feedback.textContent = correct
+          ? '正确：attention score / logit 在 softmax 之前；attention weight 在 softmax 之后。'
+          : '再检查 softmax 的前后：它把 attention score 转成 attention weight。';
+      });
+    });
+  </script>
+</body>
+</html>

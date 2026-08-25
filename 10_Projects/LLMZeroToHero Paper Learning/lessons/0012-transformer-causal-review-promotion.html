@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0012 · Transformer Causal Review and Knowledge Promotion</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Attention Is All You Need · Lesson 0012 · Final Review · 约 25 分钟</p>
+    <h1>从机制拼图回到整篇论文的因果链</h1>
+    <p class="lede">前十一课分别解释了 Transformer 的组件。最终课不再增加新组件，而是检查这些机制是否共同形成一个闭环：论文替换了什么约束、怎样补回被移除结构原本提供的能力、如何把 architecture 训练成 system、证据支持到哪里，以及哪些结论已经成熟到可以离开项目笔记。</p>
+    <p class="meta">前置：<a href="0011-results-ablation-evidence.html">Lesson 0011</a> · 总索引：<a href="../reference/attention-causal-chain.html">Attention 因果链</a> · 主证据：<a href="https://arxiv.org/html/1706.03762v7">Vaswani et al., Attention Is All You Need</a></p>
+
+    <section>
+      <h2>一句话 thesis</h2>
+      <p>原论文的核心不是“发明 attention”——Encoder–Decoder models 之前已经使用 attention。它提出的是：在 sequence transduction 的 Encoder 与 Decoder 中，能否用 attention-based layers 替代 recurrent 与 convolutional sequence-processing layers，同时保持 translation quality，并显著提高 training parallelizability。</p>
+      <div class="callout caution">
+        <strong>版本边界：</strong>这篇论文研究的是原始 Encoder–Decoder Transformer，不是现代 decoder-only LLM 的完整设计说明，也没有讨论 KV cache、FlashAttention、RoPE、Mixture-of-Experts 或 distributed training。
+      </div>
+    </section>
+
+    <section>
+      <h2>总因果链：替换一个约束，会连续产生哪些新问题？</h2>
+      <div class="chain">
+        <div class="chain-step"><strong>Existing constraint</strong><br>RNN 的 \(h_t=f(h_{t-1},x_t)\) 在同一 sequence 内形成 recurrence dependency；convolution 需要通过固定 receptive field 或多层路径传播远距离信息。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Core replacement</strong><br>Self-attention 用 \(QK^\top\) 一次构造 query–key pairwise relations，使同一 layer 内各 positions 可以批量计算，并把任意两个 positions 的 maximum path length 降为 \(O(1)\)。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>New capacity problem</strong><br>Single-head weighted average 会把多种 relation 压进同一 distribution；Multi-Head Attention 用多组 learned projections 保留多种可学习的 matching / aggregation patterns。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>New structure problem</strong><br>Attention 负责跨 positions 通信，但还需要 position-wise non-linearity、stackable interfaces 与 sequence-order signal。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Architectural closure</strong><br>FFN 提供逐 position 非线性容量；Residual Connection 与统一 \(d_{\mathrm{model}}\) interface 支持堆叠；LayerNorm 稳定 feature statistics；Positional Encoding 补回 order information。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Task closure</strong><br>Encoder self-attention 构造 source memory；Decoder masked self-attention 表示 target prefix；cross-attention 把 current target-side need 对齐到 source memory；output projection 与 softmax 产生 next-token distribution。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Training closure</strong><br>Adam 与 warmup schedule 控制 parameter update；length-aware token batching 控制 variable-length workload；dropout 与 label smoothing regularize training。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Evidence</strong><br>Table 1 给出 theoretical complexity/path comparison；Table 2 给出完整 translation system 的 test results；Table 3 给出特定 dev setup 下的 model variations。</div>
+      </div>
+    </section>
+
+    <section id="causal-mind-map">
+      <h2>论文 causal chain 思维导图</h2>
+      <p>从中心的 <strong>core replacement</strong> 向外读：它先回应已有瓶颈，再要求 architecture 与 training 分别闭环；论文证据只能支持特定边界内的结论，并把未解决的问题留给后续工作。</p>
+      <div class="mind-map" role="img" aria-label="Attention Is All You Need 论文因果链思维导图：中心是以 self-attention 替代 recurrence 和 convolution，外围依次展开已有约束与瓶颈、架构闭环、训练闭环、证据、代价与边界、后续问题。">
+        <article class="mind-map__node mind-map__node--constraint">
+          <h3>Existing constraints / bottlenecks</h3>
+          <ul>
+            <li>RNN：sequence 内存在 recurrence dependency。</li>
+            <li>Convolution：远距离信息需要固定 receptive field 或多层路径。</li>
+          </ul>
+        </article>
+
+        <article class="mind-map__node mind-map__node--architecture">
+          <h3>Architecture closure</h3>
+          <ul>
+            <li>MHA 分离多组 matching / aggregation patterns。</li>
+            <li>FFN、Residual、Post-LN 与 PE 补齐容量、堆叠接口与 order signal。</li>
+            <li>Encoder、masked Decoder 与 cross-attention 闭合 sequence transduction。</li>
+          </ul>
+        </article>
+
+        <article class="mind-map__node mind-map__node--training">
+          <h3>Training closure</h3>
+          <ul>
+            <li>Adam 与 warmup 控制 parameter update。</li>
+            <li>Token batching 控制 variable-length workload。</li>
+            <li>Dropout 与 label smoothing 提供 regularization。</li>
+          </ul>
+        </article>
+
+        <article class="mind-map__node mind-map__node--boundary">
+          <h3>Costs / boundaries</h3>
+          <ul>
+            <li>Full self-attention 的 per-layer complexity 为 \(O(n^2d)\)。</li>
+            <li>Autoregressive inference 仍受 next-token dependency 限制。</li>
+            <li>结论范围是原始 Encoder–Decoder、Post-LN Transformer。</li>
+          </ul>
+        </article>
+
+        <div class="mind-map__core">
+          <span>Core replacement</span>
+          <strong>Recurrence / convolution<br>→ self-attention</strong>
+          <small>全位置关系 · layer-level parallelism</small>
+        </div>
+
+        <article class="mind-map__node mind-map__node--evidence">
+          <h3>Evidence</h3>
+          <ul>
+            <li>Table 1：theoretical complexity 与 path length。</li>
+            <li>Table 2：完整 translation system 的 test results。</li>
+            <li>Table 3：特定 dev setup 下的 model variations。</li>
+          </ul>
+        </article>
+
+        <article class="mind-map__node mind-map__node--successor">
+          <h3>Successor questions</h3>
+          <ul>
+            <li>怎样降低 long-sequence attention 的 quadratic cost？</li>
+            <li>Pre-LN、RoPE、decoder-only 与现代 training systems 如何演化？</li>
+            <li>理论 parallelism 如何转化为 kernel 与 distributed-system efficiency？</li>
+          </ul>
+        </article>
+      </div>
+      <p class="meta">这张图表示 causal dependency，不表示这些机制在时间上严格依次发明，也不把后续 Transformer 变体归因于原论文。</p>
+    </section>
+
+    <section>
+      <h2>Architecture map：每个组件只承担一种主要职责</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Component</th><th>Primary responsibility</th><th>不能替代什么</th><th>主要边界</th></tr></thead>
+          <tbody>
+            <tr><td>Scaled Dot-Product Attention</td><td>按 query–key compatibility 聚合 values</td><td>不自行提供 sequence order</td><td>Full attention score memory / compute 随 sequence length 呈 quadratic growth</td></tr>
+            <tr><td>Multi-Head Attention</td><td>允许学习多组 representation subspaces 与 attention patterns</td><td>不保证 heads 正交、不重叠或具有预先指定语义</td><td>固定 \(d_{\mathrm{model}}\) 下理论 compute 近似保持，不代表 runtime 完全相同</td></tr>
+            <tr><td>Position-wise FFN</td><td>逐 token 增加 nonlinear transformation capacity</td><td>不负责跨 token communication</td><td>所有 positions 共享一层参数，不同 layers 不共享</td></tr>
+            <tr><td>Residual Connection</td><td>让 sub-layer 学习 update，并保留 additive input path</td><td>在 Post-LN block 中不形成严格 identity output</td><td>要求 sub-layer output 与 input shape 相同</td></tr>
+            <tr><td>LayerNorm</td><td>对指定 feature axes 做 standardization，再用 gain / bias 恢复 affine freedom</td><td>不提供 sequence position 或 causal visibility</td><td>原论文是 Post-LN；现代 Pre-LN 不属于其 §3.1 公式</td></tr>
+            <tr><td>Positional Encoding</td><td>向 token representation 注入 position signal</td><td>不限制未来 target visibility</td><td>Sinusoidal relative-offset structure 是设计动机，不保证模型必然学会 relative position</td></tr>
+            <tr><td>Causal mask</td><td>限制 Decoder self-attention 的 information visibility</td><td>不提供 position identity</td><td>只解决 layer 内 visibility；autoregressive generation 仍逐 token 串行</td></tr>
+            <tr><td>Output projection / softmax</td><td>把 Decoder hidden state 映射为 vocabulary distribution</td><td>不等同于 attention softmax</td><td>归一化 axis 是 vocabulary，不是 key positions</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section>
+      <h2>Information-flow closure：三种 attention 为什么不能混用？</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Location</th><th>Q source</th><th>K/V source</th><th>Information question</th></tr></thead>
+          <tbody>
+            <tr><td>Encoder self-attention</td><td>Encoder states</td><td>Encoder states</td><td>当前 source position 应从完整 source sequence 读取什么？</td></tr>
+            <tr><td>Decoder masked self-attention</td><td>Decoder states</td><td>Decoder states</td><td>当前 target position 应从 causal target prefix 读取什么？</td></tr>
+            <tr><td>Cross-attention</td><td>Decoder states</td><td>Encoder memory</td><td>当前 target-side need 应从 source memory 读取什么？</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>这对应 sequence-to-sequence factorization：</p>
+      <div class="equation">\[
+p(y\mid x)
+=\prod_{t=1}^{m}
+p(y_t\mid y_{&lt;t},x).
+\]</div>
+      <p>Masked self-attention 提供 \(y_{&lt;t}\) 条件，cross-attention 提供 \(x\) 条件。Cross-attention 本身不需要 target causal mask，因为 future target states 没有作为其 K/V；但 source padding positions 仍可能需要 padding mask。</p>
+    </section>
+
+    <section>
+      <h2>Final gap check 1：Cross-Attention</h2>
+      <p>Learning Record 0003 仍把这一点标记为“部分建立”。完成本课时应能从 conditional factorization 推出，而不是只记住 Q/K/V 排列：</p>
+      <ul>
+        <li>Decoder query 表示基于 causal prefix 形成的 current target-side need。</li>
+        <li>Encoder keys / values 表示 generation 前已经构造好的 source memory。</li>
+        <li>Attention output 更新 query 所在一侧，因此由 Decoder 提 Q，正好得到 source-conditioned target representation。</li>
+        <li>Source length \(n\) 与 target length \(m\) 没有固定大小关系；training 可同时处理 \(m\) 个 target queries，incremental inference 常只添加一个新 query。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>Final gap check 2：Residual 与 LayerNorm</h2>
+      <p>Learning Record 0005 仍需要钉牢 normalization axis 与 Post-LN boundary。对 \(X\in\mathbb{R}^{B\times N\times d_{\mathrm{model}}}\)，原论文 block 可写为：</p>
+      <div class="equation">\[
+y_{b,t,:}
+=\operatorname{LayerNorm}
+\left(
+x_{b,t,:}
++\operatorname{Dropout}(F(x)_{b,t,:})
+\right).
+\]</div>
+      <p>LayerNorm 固定 batch item \(b\) 与 token position \(t\)，沿 \(d_{\mathrm{model}}\) features 计算 statistics；同一 module 的 \(\gamma,\beta\in\mathbb{R}^{d_{\mathrm{model}}}\) 在 batch items 与 token positions 间共享。若 \(F(x)=0\)，整个 Post-LN output 是 \(\operatorname{LayerNorm}(x)\)，不是严格的 \(x\)。</p>
+    </section>
+
+    <section>
+      <h2>三个不同的 parallelism statements</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Statement</th><th>是否成立</th><th>Scope</th></tr></thead>
+          <tbody>
+            <tr><td>一层 self-attention 的 positions 可批量计算</td><td>成立</td><td>Layer-level computation；论文称 minimum sequential operations 为 \(O(1)\)</td></tr>
+            <tr><td>Teacher-forcing training 的 target positions 可一起进入 Decoder</td><td>成立</td><td>完整 shifted targets 已知，causal mask 保持每个 position 的可见性边界</td></tr>
+            <tr><td>Autoregressive inference 可以一次生成所有未知 tokens</td><td>不成立</td><td>\(y_{t+1}\) 以已经生成的 \(y_t\) 为条件，generation loop 仍是 sequential</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Transformer 移除的是 layer 内 recurrence，不是 autoregressive factorization。</p>
+    </section>
+
+    <section>
+      <h2>Evidence ladder：不要把三个 tables 读成同一种证明</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Evidence</th><th>直接支持</th><th>不能直接支持</th></tr></thead>
+          <tbody>
+            <tr><td>Table 1 complexity</td><td>在给定 algebraic cost model 下，比较 per-layer complexity、sequential operations 与 path length</td><td>不能直接给出现代 kernel runtime、memory traffic 或 end-to-end serving latency</td></tr>
+            <tr><td>Table 2 test results</td><td>完整 training、checkpoint averaging、decoding 与 metric pipeline 在 WMT test sets 上的结果</td><td>不能隔离 architecture-only effect，也不能无条件推广到其他 tasks</td></tr>
+            <tr><td>Table 3 variations</td><td>EN–DE newstest2013 dev 上 tested configurations 的 local differences</td><td>不能把 mechanism hypothesis 当证明，也不能为所有 models 给出 universal hyperparameter rule</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>同样需要保留 source inconsistency：Abstract / Table 2 的 EN–FR big 是 \(41.8\) BLEU，§6.1 narrative 写成 \(41.0\)。Paper summary 应记录冲突，而不是任选一个数字后删除另一条证据。</p>
+    </section>
+
+    <section>
+      <h2>Paper-level summary template</h2>
+      <p>最终不应按“论文有几个 section”来总结，而应回答六个问题：</p>
+      <ol>
+        <li><strong>Previous constraint：</strong>被替换方案留下了什么 bottleneck？</li>
+        <li><strong>Core change：</strong>论文改变了哪条 data dependency 或 computation graph？</li>
+        <li><strong>Architectural closure：</strong>为弥补替换产生的新缺口，又加入了哪些 mechanisms？</li>
+        <li><strong>Training closure：</strong>哪些 recipe 让 architecture 成为可训练 system？</li>
+        <li><strong>Evidence：</strong>理论比较、benchmark 与 ablation 分别支持什么？</li>
+        <li><strong>Boundary / successor questions：</strong>论文没有解决什么，哪些问题留给后续工作？</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Knowledge promotion：不是所有课程内容都去同一个目录</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Artifact</th><th>候选位置</th><th>应包含</th><th>当前动作</th></tr></thead>
+          <tbody>
+            <tr><td>Paper source note</td><td><code>30_Sources/2017 - Attention Is All You Need.md</code></td><td>论文 thesis、原始 architecture、training setup、results、source inconsistency 与 evidence boundaries</td><td>完成 final review 后再创建</td></tr>
+            <tr><td>Reusable Transformer knowledge</td><td><code>20_Knowledge/transformer_fundamentals/</code></td><td>跨论文仍成立的 information flow、shape contracts、parallelism boundaries</td><td>只提升你已人工确认的结论</td></tr>
+            <tr><td>General paper-reading method</td><td><code>20_Knowledge/</code> 中合适主题</td><td>Observed result、local comparison、hypothesis、general claim 与 metric scope</td><td>确认其可跨论文复用后再决定是否独立成文</td></tr>
+            <tr><td>Learning journey</td><td>当前 project 的 <code>learning-records/</code></td><td>个人疑问、修正过程、尚未复核的解释</td><td>保留原位，不伪装成正式 knowledge</td></tr>
+            <tr><td>Adam paper branch</td><td>独立 Adam source / knowledge note</td><td>Moments、bias correction、effective step 与 convergence boundary</td><td>不混入 Transformer paper source note</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout">
+        <strong>Promotion gate：</strong>必须同时满足 source 已定位、claim strength 已校准、适用边界明确、公式和 shape 已复核、并由你确认表述。AI-generated 课程正文不会自动变成 reviewed knowledge。
+      </div>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：cross-attention 的 Q/K/V 分工来自要更新哪一侧，以及 conditional probability 中还缺哪一类 condition。" data-incorrect-feedback="从 p(y_t | y_&lt;t, x) 出发：masked self-attention 提供 prefix，cross-attention 还需要把 source x 加入当前 target state。">
+      <h2>Final retrieval：Cross-Attention</h2>
+      <p>为什么 cross-attention 由 Decoder 提 Q、Encoder 提 K/V？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">要用 source memory 更新 current target-side state，使预测同时依赖 target prefix 与 source</button>
+        <button class="choice" type="button" data-correct="false">因为 source length 永远小于 target length</button>
+        <button class="choice" type="button" data-correct="false">因为 causal mask 必须施加在 source memory 上</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：Post-LN 中 F(x)=0 只让 residual sum 退化为 x，随后 LayerNorm 仍会变换它。" data-incorrect-feedback="写完整 block：LayerNorm(x + F(x))。">
+      <h2>Final retrieval：Post-LN identity boundary</h2>
+      <p>若原论文 block 中 \(F(x)=0\)，整个 output 是否严格等于 \(x\)？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">否，output 是 \(\operatorname{LayerNorm}(x)\)</button>
+        <button class="choice" type="button" data-correct="false">是，任何 residual block 都是严格 identity</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：这是在特定 WMT dev setup 下的 local observation，不能升级成 universal rule。" data-incorrect-feedback="先区分 observed result、mechanism interpretation 与 general claim。">
+      <h2>Final retrieval：Evidence level</h2>
+      <p>Table 3 中 single head 比 best setting 低 \(0.9\) BLEU，最稳妥的 evidence label 是什么？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">Tested configurations 中的 local observation</button>
+        <button class="choice" type="button" data-correct="false">证明所有 Transformer 都必须使用 \(16\) heads</button>
+        <button class="choice" type="button" data-correct="false">证明 head count 越多效果越好</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2>Final paper review</h2>
+      <p>请用自己的话完成以下四项；这是创建 paper source note 与提升 reusable knowledge 前的最后人工检查：</p>
+      <ol>
+        <li>用“previous constraint → core replacement → new gaps → architectural closure → training closure”总结整篇论文。</li>
+        <li>重新解释 Cross-Attention 的设计逻辑，并说明为什么 source 不需要 causal mask、但可能需要 padding mask。</li>
+        <li>说明 Transformer 实现了哪一种 parallelism，又没有消除哪一种 sequential dependency。</li>
+        <li>从上面的 promotion table 中选择你希望实际沉淀的 artifacts；我会据此创建 source note 与经过你确认的 knowledge notes。</li>
+      </ol>
+    </section>
+
+    <footer>
+      <p>上一课：<a href="0011-results-ablation-evidence.html">Lesson 0011</a> · 课程主页：<a href="../_Project - LLMZeroToHero Paper Learning.md">LLMZeroToHero Paper Learning</a> · 完成 final review 后再执行知识沉淀。</p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

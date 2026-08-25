@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0003 · Encoder、Decoder 与 Cross-Attention</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] },
+      options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Lesson 0003 · 约 12 分钟</p>
+    <h1>Encoder、Decoder 与 Cross-Attention</h1>
+    <p class="lede">前两课解释了 attention 如何计算、多个 heads 为什么有用。这一课只回答一个架构问题：同一套 attention 公式，为何在原始 Transformer 中要以三种不同的 Q/K/V 来源出现？</p>
+    <p class="meta">前置：<a href="0002-multi-head-attention.html">课程 0002</a> · 术语：<a href="../reference/attention-glossary.html#core">Attention Glossary</a> · 主证据：<a href="https://arxiv.org/html/1706.03762v7">Vaswani et al. (2017), §§3.1, 3.2.3</a></p>
+
+    <section>
+      <h2>先还原原始 Transformer 的任务</h2>
+      <p>原论文的 Transformer 是一个 Encoder–Decoder sequence-to-sequence model。Encoder 把完整 input sequence \(x_{1:n}\) 映射为 contextual representations \(E[n,d_{\mathrm{model}}]\)；Decoder 在 \(E\) 的条件下，一次生成一个 target token \(y_i\)。</p>
+      <div class="chain">
+        <div class="chain-step"><strong>input sequence</strong><br>\(x_{1:n}\) → Encoder → \(E\)（source memory）</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>target prefix</strong><br>\(y_{&lt;i}\) → Decoder masked self-attention → \(D\)（当前 generation state）</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>condition on input</strong><br>\(Q\) from \(D\), \(K/V\) from \(E\) → cross-attention → predict \(y_i\)</div>
+      </div>
+      <p>关键不是记住三种名称，而是每次先问：<strong>query 在问什么？key/value 是哪一份 memory？哪些位置允许可见？</strong></p>
+    </section>
+
+    <section>
+      <h2>从条件概率推导 Cross-Attention</h2>
+      <p>翻译、摘要等 sequence-to-sequence task 想学习的不是“根据已写出的 target 续写”，而是：</p>
+      <div class="equation">\[
+p(y\mid x)=\prod_i p(y_i\mid y_{&lt;i},x).
+\]</div>
+      <p>生成第 \(i\) 个 target token 时，模型同时需要两类、性质不同的信息：<strong>target prefix</strong> 告诉它“我已经写到哪里、下一步在句法和语义上缺什么”；完整的 <strong>source \(x\)</strong> 提供事实、实体与对应片段。两者不能互相替代。</p>
+      <div class="chain">
+        <div class="chain-step"><strong>只有 Decoder masked self-attention</strong><br>每个位置只能从 \(y_{&lt;i}\) 读取信息；这最多是 \(p(y_i\mid y_{&lt;i})\)。source \(x\) 没有进入该信息路径。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>需要一份可查询的 source memory</strong><br>Encoder 先把完整 x 编码为 E；E 保留各个 source position 的 contextual information。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>由当前 target state 发起读取</strong><br>当前 \(D_i\) 形成 \(Q_i\)，在 \(E\) 的 \(K/V\) 中选择和聚合信息，补上条件 \(x\)。</div>
+      </div>
+      <div class="callout">
+        <strong>最小判断：</strong>若 cross-attention 的 \(Q/K/V\) 都来自 Decoder，结果仍只是 masked self-attention，模型没有任何从 \(x\) 到 \(y\) 的路径；它不能实现条件生成 \(p(y\mid x)\)。
+      </div>
+    </section>
+
+    <section>
+      <h2>为什么由 Decoder 提 Q、Encoder 提 K/V？</h2>
+      <p>在 target position \(i\)，Decoder state \(D_i\) 是“已生成 prefix 后的当前需求”。把它投影成 \(Q_i\)，可以理解为一次<strong>按需检索</strong>：此刻为了预测 \(y_i\)，source 中哪些位置相关？</p>
+      <p>Encoder 的每个 position \(E_j\) 则提供可被检索的 source memory。\(K_j\) 像可匹配的 address（地址），\(V_j\) 是一旦选中后要带回的 content（内容）。\(Q_iK_j^\top\) 为第 \(i\) 个 target position 对第 \(j\) 个 source position 计算相关度，softmax 后再加权聚合 \(V\)。</p>
+      <p>因此，<strong>attention 输出更新的是 query 所在的一侧</strong>：\(Q\) 来自 Decoder，就得到“带有 source 条件的 target representation”，正好供 \(y_i\) 的预测使用。若反过来让 Encoder 提 \(Q\)、Decoder 提 \(K/V\)，更新的会是 source representation 对不完整 target history 的读取，不能直接回答当前 target position 要生成什么。</p>
+      <p class="meta">一项直接的工程结果：\(E\) 以及它投影出的 \(K/V\) 在整个 decoding 过程中不变，可复用；每一步随 target prefix 改变的是 \(D_i\) 与 \(Q_i\)。这是该信息分工带来的效率收益，不是 \(Q/K/V\) 来源的唯一理由。</p>
+    </section>
+
+    <section>
+      <h2>三种 attention 的 Q/K/V 来源</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>位置</th><th>Q 来源</th><th>K/V 来源</th><th>可见性与职责</th></tr></thead>
+          <tbody>
+            <tr><td>Encoder self-attention</td><td>Encoder 上一层表示</td><td>同一份 Encoder 上一层表示</td><td>每个 input position 可读全部 input positions，建立 source-side context。</td></tr>
+            <tr><td>Decoder masked self-attention</td><td>Decoder 上一层表示</td><td>同一份 Decoder 上一层表示</td><td>位置 \(i\) 只能读 target positions \(\le i\)；causal mask 防止读取未来 target。</td></tr>
+            <tr><td>cross-attention<br>（encoder-decoder attention）</td><td>Decoder masked self-attention 的输出</td><td>Encoder stack 的输出 E</td><td>每个 Decoder position 可读全部 input positions；把当前 target-side need 对齐到 source memory。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout">
+        <strong>最容易混淆的边界：</strong>cross-attention 不需要 mask source positions，因为完整 input 在生成前已经给定；Decoder 不能偷看未来 target，靠的是它前面的 masked self-attention，而不是 cross-attention。
+      </div>
+    </section>
+
+    <section>
+      <h2>cross-attention 的形状</h2>
+      <p>在 teacher-forcing training 中，可同时处理 \(m\) 个 target positions；但每一位置的依赖约束仍由 causal mask 保证。令 Decoder 当前表示为 \(D[m,d_{\mathrm{model}}]\)，Encoder memory 为 \(E[n,d_{\mathrm{model}}]\)：</p>
+      <p class="meta">下式省略 head index，描述一个 head；原始 Transformer 实际并行执行多个 heads，再 Concat 并经 \(W^O\) 融合。</p>
+      <div class="equation">\[
+\begin{aligned}
+Q=DW^Q&amp;\in\mathbb{R}^{m\times d_k},\\
+K=EW^K&amp;\in\mathbb{R}^{n\times d_k},\\
+V=EW^V&amp;\in\mathbb{R}^{n\times d_v},\\
+S=QK^\top&amp;\in\mathbb{R}^{m\times n},\\
+A=\operatorname{softmax}(S)&amp;\in\mathbb{R}^{m\times n},\\
+O=AV&amp;\in\mathbb{R}^{m\times d_v}.
+\end{aligned}
+\]</div>
+      <p>\(S\) 的第 \(i\) 行是“第 \(i\) 个 target position 对所有 \(n\) 个 input positions 的 attention scores”。因此 cross-attention 的矩阵不是 \([m,m]\)，而是 \([m,n]\)。</p>
+    </section>
+
+    <section>
+      <h2>用一个翻译位置检查信息流</h2>
+      <p>假设 input 是 “我 喜欢 猫”，target 正在生成英文第 2 个位置。该位置的 Decoder state 可以从之前已生成的 target prefix 取得语言侧上下文；随后 cross-attention 以这个 state 为 query，在 Encoder 对 “我 / 喜欢 / 猫” 的完整 memory 中选择信息。</p>
+      <p>它可以对 source 的任意位置分配 weight，但不能通过此路径读取未来的 target token。对 source 的全局可见性与对 target 的因果可见性，是两个独立约束。</p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：masked self-attention 只能使用 target prefix；cross-attention 把 source 引入当前 target state。" data-incorrect-feedback="从条件生成的两类信息出发：target prefix 与完整 source 都是必需条件。">
+      <h2>30 秒因果检索：为何不能只用 Decoder self-attention？</h2>
+      <p>若移除 cross-attention，只保留 Decoder masked self-attention，最直接缺失了什么？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">从完整 source x 到当前 target prediction 的信息路径</button>
+        <button class="choice" type="button" data-correct="false">target prefix 的因果约束</button>
+        <button class="choice" type="button" data-correct="false">对 future target 的屏蔽能力</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：cross-attention 的 query 来自 Decoder，而 key/value 是 Encoder output。" data-incorrect-feedback="从任务方向判断：正在生成 target 的一侧提出 query；已编码的 input 一侧提供 memory。">
+      <h2>30 秒检索：谁提供 Q/K/V？</h2>
+      <p>在 cross-attention 中，正确的来源组合是什么？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">Q来自Decoder，K/V来自Encoder</button>
+        <button class="choice" type="button" data-correct="false">Q来自Encoder，K/V来自Decoder</button>
+        <button class="choice" type="button" data-correct="false">Q/K/V都来自Decoder</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：未来 target 的屏蔽发生在 Decoder masked self-attention；cross-attention 读取的是完整 source memory。" data-incorrect-feedback="再区分 source 与 target：source 已完整给定，target 才需要保持 autoregressive 可见性。">
+      <h2>因果检索：谁阻止未来 target 泄漏？</h2>
+      <p>Decoder 为什么不会通过 cross-attention 看见未来 target token？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">前置masked self-attention</button>
+        <button class="choice" type="button" data-correct="false">cross-attention的source mask</button>
+        <button class="choice" type="button" data-correct="false">Encoder self-attention</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2>结束时应能说清</h2>
+      <p>请用自己的话回答：<strong>“为什么 \(p(y_i\mid y_{&lt;i},x)\) 需要两份 memory？为什么由当前 target state 提 \(Q\)、source memory 提 \(K/V\)，恰好能把 \(x\) 的信息补入 \(y_i\) 的预测？”</strong> 我会据此判断下一课应进入 FFN，还是先把 original Encoder–Decoder 与现代 decoder-only LLM 的差异钉牢。</p>
+    </section>
+
+    <footer>
+      <p>复习：<a href="../reference/attention-glossary.html">Attention Glossary</a> · 原始三种 attention 的定义见 <a href="https://arxiv.org/html/1706.03762v7">论文 §3.2.3</a>。任何地方不清楚，直接问我。</p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0008 · Why Self-Attention</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Lesson 0008 · 约 15 分钟</p>
+    <h1>Why Self-Attention：三种成本不能混为一谈</h1>
+    <p class="lede">Lesson 1 已经建立“用全位置 pairwise computation 移除 RNN 串行递推”的直觉。本课进一步还原论文 §4 的正式比较：per-layer complexity、minimum sequential operations 与 maximum path length 是三个不同指标，不存在一个脱离 \(n\)、\(d\) 与硬件条件的“attention 永远更快”。</p>
+    <p class="meta">前置：<a href="0007-output-softmax-weight-tying.html">课程 0007</a> · 速查：<a href="../reference/attention-causal-chain.html">Attention 因果链</a> · 术语：<a href="../reference/attention-glossary.html#complexity">Complexity terms</a> · 主证据：<a href="https://arxiv.org/html/1706.03762v7">Vaswani et al. (2017), §4, Table 1</a></p>
+
+    <section>
+      <h2>设计问题：用哪三把尺评价 sequence layer？</h2>
+      <p>论文比较的是把一组 \(n\) 个 \(d\)-dimensional representations 映射为另一组等长 representations 的 layer。作者提出三项 desiderata（期望性质）：</p>
+      <div class="card">
+        <p><strong>Per-layer complexity：</strong>完成一层理论上需要多少 arithmetic operations？</p>
+        <p><strong>Minimum sequential operations：</strong>存在数据依赖时，最少必须串行经过多少 computation steps？</p>
+        <p><strong>Maximum path length：</strong>任意两个 positions 之间的信息或 gradient 最多经过多少层 computational-graph edges？</p>
+      </div>
+      <p>第一项描述总工作量；第二项描述可并行化边界；第三项描述远距离信息交互所需的 network depth。总工作量小，不自动表示串行步骤少；串行步骤少，也不自动表示实际 wall-clock latency 低。</p>
+    </section>
+
+    <section>
+      <h2>论文 Table 1：先定义符号，再读结论</h2>
+      <p>令 \(n\) 为 sequence length，\(d\) 为 representation dimension，\(k\) 为 convolution kernel size，\(r\) 为 restricted self-attention 的 neighborhood size。论文给出的 asymptotic comparison 为：</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Layer type</th><th>Complexity per layer</th><th>Sequential operations</th><th>Maximum path length</th></tr></thead>
+          <tbody>
+            <tr><td>Self-Attention</td><td>\(O(n^2d)\)</td><td>\(O(1)\)</td><td>\(O(1)\)</td></tr>
+            <tr><td>Recurrent</td><td>\(O(nd^2)\)</td><td>\(O(n)\)</td><td>\(O(n)\)</td></tr>
+            <tr><td>Convolutional</td><td>\(O(knd^2)\)</td><td>\(O(1)\)</td><td>\(O(\log_k n)\)</td></tr>
+            <tr><td>Self-Attention (restricted)</td><td>\(O(rnd)\)</td><td>\(O(1)\)</td><td>\(O(n/r)\)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout caution">
+        <strong>表格范围：</strong>这些是 2017 论文为 layer types 给出的 asymptotic expressions，不包含具体 kernel efficiency、memory traffic、launch overhead、activation memory、batching、communication 或现代 optimized implementations。
+      </div>
+    </section>
+
+    <section>
+      <h2>为什么论文说 \(n&lt;d\) 时 self-attention 更省计算？</h2>
+      <p>只比较 Table 1 中 full self-attention 与 recurrent layer 的主导项：</p>
+      <div class="equation">\[
+\begin{aligned}
+C_{\text{attn}}&amp;\propto n^2d,\\
+C_{\text{rnn}}&amp;\propto nd^2.
+\end{aligned}
+\]</div>
+      <p>令 self-attention 的理论计算量更小：</p>
+      <div class="equation">\[
+\begin{aligned}
+n^2d&amp;&lt;nd^2\\
+n&amp;&lt;d.
+\end{aligned}
+\]</div>
+      <p>所以论文的结论有明确条件：当 sequence length \(n\) 小于 representation dimension \(d\) 时，self-attention 的该主导项小于 recurrent layer。原论文认为当时 machine translation 的 sentence representations 通常处于这个区域。</p>
+      <p>当 \(n&gt;d\) 时，上述 inequality 反转。此时不能再用论文的这条算术比较声称 full attention 更省总计算；而且 attention score tensor 的 \(n\times n\) size 还会带来 quadratic memory pressure。</p>
+    </section>
+
+    <section>
+      <h2>\(O(1)\) sequential operations 到底意味着什么？</h2>
+      <p>在一个 full self-attention layer 内，所有 positions 的 Q/K/V 与 pairwise scores 可以组织成 batched matrix operations，不需要像 RNN 那样等待：</p>
+      <div class="equation">\[
+h_t=f(h_{t-1},x_t).
+\]</div>
+      <p>因此论文把 self-attention 的 minimum sequential operations 记为 \(O(1)\)，把 recurrent layer 记为 \(O(n)\)。这里的 \(O(1)\) 表示 layer computation graph 没有随 sequence length 增长的 token-to-token recurrence chain，不表示整个计算只需一个 machine instruction。</p>
+      <div class="callout caution">
+        <strong>不要跨越边界：</strong>这一指标描述 training / full-sequence layer evaluation 的并行结构。Autoregressive inference 仍必须先生成 \(y_t\)，才能把它作为 prefix 的一部分生成 \(y_{t+1}\)。
+      </div>
+    </section>
+
+    <section>
+      <h2>Maximum path length 为什么影响 long-range dependency？</h2>
+      <p>这里的 path length 不是 token distance 本身，而是信息与 backward signal 在 computational graph 中，从一个 position 到另一个 position 要经过的最大 edge 数。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Layer family</th><th>跨远距离 position 的路径</th><th>结果</th></tr></thead>
+          <tbody>
+            <tr><td>RNN</td><td>必须沿 hidden states 逐步传播</td><td>maximum path length 为 \(O(n)\)</td></tr>
+            <tr><td>full self-attention</td><td>任意 query 可直接连接任意 key</td><td>maximum path length 为 \(O(1)\)</td></tr>
+            <tr><td>local / restricted attention</td><td>每层只能跨 neighborhood \(r\)</td><td>需要多层传播，得到 \(O(n/r)\)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>论文据此提出：更短的 forward / backward paths 可能让 long-range dependencies 更容易学习。这里是 architecture-level motivation，不是“只要路径为 \(O(1)\)，模型就必然学会所有长距离关系”的保证。</p>
+    </section>
+
+    <section>
+      <h2>Convolution 与 restricted attention 的交换条件</h2>
+      <p>一个 kernel width 为 \(k&lt;n\) 的 convolutional layer 不能直接连接所有 position pairs。论文正文进一步区分：</p>
+      <div class="equation">\[
+\begin{aligned}
+\text{contiguous convolution path}
+&amp;=O(n/k),\\
+\text{dilated convolution path}
+&amp;=O(\log_k n).
+\end{aligned}
+\]</div>
+      <p>Table 1 在 Convolutional 一行列出 \(O(\log_k n)\)。这是使用 dilated stacking 缩短路径的结果；不要把它误读成任意单层 ordinary convolution 都能直接全局通信。</p>
+      <p>restricted self-attention 把每个 position 的可见范围限制在 size \(r\) 的 neighborhood：</p>
+      <div class="equation">\[
+O(n^2d)
+\quad\longrightarrow\quad
+O(rnd),
+\qquad
+O(1)
+\quad\longrightarrow\quad
+O(n/r)
+\]</div>
+      <p>它以更长的 cross-position path 换取更低的 long-sequence computation。论文把它写成未来可研究的方向；原始 Transformer 使用的是 full attention，不能把 restricted row 当成论文实验配置。</p>
+    </section>
+
+    <section>
+      <h2>“更可解释”在论文中是什么证据等级？</h2>
+      <p>论文将 interpretability 写作 self-attention 的一个 possible side benefit，并在 appendix 展示 attention distributions：一些 heads 看起来与 long-distance dependencies、anaphora 以及 syntactic / semantic structure 有关。</p>
+      <div class="callout caution">
+        <strong>证据边界：</strong>这是对 learned attention patterns 的 qualitative inspection。它支持“不同 heads 出现了可观察的结构化模式”，但不能单独证明 attention weights 是模型决策的完整 causal explanation。
+      </div>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：比较 n²d 与 nd²，约去共同的 nd 后得到 n < d。" data-incorrect-feedback="把两个主导项写在一起：n²d < nd²；约去共同因子 nd。">
+      <h2>30 秒 complexity 检索</h2>
+      <p>只按论文 Table 1 的主导项，full self-attention 何时比 recurrent layer 的 per-layer complexity 更低？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">\(n&lt;d\)</button>
+        <button class="choice" type="button" data-correct="false">\(n&gt;d\)</button>
+        <button class="choice" type="button" data-correct="false">对任意 \(n,d\) 都成立</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：restricted attention 降低 per-layer computation，但跨越远距离需要更多层，maximum path length 增至 O(n/r)。" data-incorrect-feedback="同时检查 Table 1 的第一列和最后一列：局部化减少连接数，也移除了任意位置的一跳直连。">
+      <h2>Trade-off 检索</h2>
+      <p>把 full attention 限制为 neighborhood size \(r\)，主要交换了什么？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">以更长 path length 换更低 computation</button>
+        <button class="choice" type="button" data-correct="false">同时降低 computation 和 path length</button>
+        <button class="choice" type="button" data-correct="false">只改变 vocabulary softmax</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2>结束时应能说清</h2>
+      <p>请用自己的话回答：<strong>“论文用哪三个指标比较 sequence layers？为什么 \(n&lt;d\) 是 self-attention 计算量更低的条件？\(O(1)\) sequential operations 为什么不代表 autoregressive generation 可以并行？restricted attention 又用什么换取了 \(O(rnd)\) complexity？”</strong></p>
+    </section>
+
+    <footer>
+      <p>复习：<a href="0001-transformer-sequential-bottleneck.html">课程 0001</a> · 上一课：<a href="0007-output-softmax-weight-tying.html">课程 0007</a> · 下一课：<a href="0009-adam-warmup-lr-schedule.html">课程 0009</a> · 原始比较见 <a href="https://arxiv.org/html/1706.03762v7">论文 §4、Table 1</a>。</p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

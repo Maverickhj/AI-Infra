@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0009B · Adam Bias Correction</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Adam Paper · Lesson 0009B · 约 15 分钟</p>
+    <h1>Adam Bias Correction：为什么恰好除以 \(1-\beta^t\)？</h1>
+    <p class="lede">Adam 把 moment states 初始化为 zero，但 training 开始前并不存在一长串值为 zero 的真实 gradients。Early EMA 因而缺少历史权重质量并偏向 zero。Bias correction 的目标，是除掉这项由初始化方式产生的 multiplicative shrinkage。</p>
+    <p class="meta">前置：<a href="0009a-adam-adaptive-moments.html">Adam 0009A</a> · 数学：<a href="../reference/math-sequences-transforms.html#ema">EMA 与 geometric series</a>、<a href="../reference/math-probability-statistics.html#estimator-bias">estimator bias</a> · 主证据：<a href="https://arxiv.org/abs/1412.6980">Kingma &amp; Ba, Adam: A Method for Stochastic Optimization</a>, §3、Algorithm 1</p>
+
+    <section>
+      <h2>问题不是 zero state 本身，而是 missing history</h2>
+      <p>把 <a href="../reference/math-sequences-transforms.html#ema">EMA 的一般 recurrence</a>实例化到 Adam 的 early state。令：</p>
+      <div class="equation">\[
+u_t
+=\beta u_{t-1}
++(1-\beta)x_t,
+\qquad
+u_0=0.
+\]</div>
+      <p>第一步只有一个 observation：</p>
+      <div class="equation">\[
+u_1
+=(1-\beta)x_1.
+\]</div>
+      <p>如果 \(\beta=0.9\)，即使 \(x_1=10\)，也只有 \(u_1=1\)。不是 observation 真的只有 \(1\)，而是 EMA 原本打算把 \(90\%\) 的权重给 history；在第一步，这段 history 尚不存在，只能由 initialized zero 占位。</p>
+    </section>
+
+    <section>
+      <h2>展开 recurrence：已有 observations 的权重和是多少？</h2>
+      <p>Math Foundation 已给出 EMA 的一般展开。代入 \(u_0=0\)，这里得到：</p>
+      <div class="equation">\[
+u_t
+=(1-\beta)
+\sum_{i=1}^{t}
+\beta^{t-i}x_i.
+\]</div>
+      <p>由 <a href="../reference/math-sequences-transforms.html#geometric-series">geometric-series identity</a>，已有 observations 的 coefficient sum 为：</p>
+      <div class="equation">\[
+(1-\beta)
+\sum_{i=1}^{t}
+\beta^{t-i}
+=1-\beta^t.
+\]</div>
+      <p>因此 early EMA 的有效权重总和小于 \(1\)。缺少的 \(\beta^t\) 正是 zero initialization 在展开式中留下的 weight mass。</p>
+    </section>
+
+    <section>
+      <h2>从 coefficient sum 到 expectation bias</h2>
+      <p>现在才进入 Adam bias-correction claim 所需的 probabilistic assumption。采用论文推导的简化条件：\(x_i\) 的 first moment 在这段时间内 stationary，且：</p>
+      <div class="equation">\[
+\mathbb{E}[x_i]=\mu.
+\]</div>
+      <p>对展开式取 expectation：</p>
+      <div class="equation">\[
+\begin{aligned}
+\mathbb{E}[u_t]
+&amp;=(1-\beta)
+\sum_{i=1}^{t}
+\beta^{t-i}\mathbb{E}[x_i]\\
+&amp;=\mu(1-\beta)
+\sum_{i=1}^{t}
+\beta^{t-i}\\
+&amp;=\mu(1-\beta^t).
+\end{aligned}
+\]</div>
+      <p>所以 \(u_t\) 对目标 moment \(\mu\) 有一个 multiplicative shrinkage factor \(1-\beta^t\)。定义：</p>
+      <div class="equation">\[
+\widehat{u}_t
+=\frac{u_t}{1-\beta^t},
+\]</div>
+      <p>就在该 stationary-moment assumption 下得到：</p>
+      <div class="equation">\[
+\mathbb{E}[\widehat{u}_t]=\mu.
+\]</div>
+    </section>
+
+    <section>
+      <h2>应用到 Adam 的 \(m_t\) 与 \(v_t\)</h2>
+      <p>对 first moment 令 \(x_t=g_t\)、\(\beta=\beta_1\)；对 second raw moment 令 \(x_t=g_t^2\)、\(\beta=\beta_2\)：</p>
+      <div class="equation">\[
+\begin{aligned}
+\widehat{m}_t
+&amp;=\frac{m_t}{1-\beta_1^t},\\
+\widehat{v}_t
+&amp;=\frac{v_t}{1-\beta_2^t}.
+\end{aligned}
+\]</div>
+      <p>这就是 Algorithm 1 中两个 correction factors 的来源。它们不是 tunable learning-rate multipliers，而是分别对应两组 EMA decay rates 的 initialization correction。</p>
+      <div class="callout caution">
+        <strong>不要混用 correction factor：</strong>\(m_t\) 必须除以 \(1-\beta_1^t\)，\(v_t\) 必须除以 \(1-\beta_2^t\)。当 \(\beta_1\neq\beta_2\) 时，两组 state 缺失的 weight mass 不同。
+      </div>
+    </section>
+
+    <section>
+      <h2>第一步检查：correction 是否恢复当前 observation？</h2>
+      <p>在 \(t=1\)：</p>
+      <div class="equation">\[
+\begin{aligned}
+m_1
+&amp;=(1-\beta_1)g_1,
+&amp;
+\widehat{m}_1
+&amp;=\frac{m_1}{1-\beta_1}=g_1,\\
+v_1
+&amp;=(1-\beta_2)g_1^2,
+&amp;
+\widehat{v}_1
+&amp;=\frac{v_1}{1-\beta_2}=g_1^2.
+\end{aligned}
+\]</div>
+      <p>第一步没有真实 history 可平均，所以 correction 后的 moment estimates 回到唯一可见的 observation \(g_1\) 与 \(g_1^2\)。这是检查公式最直接的方法。</p>
+    </section>
+
+    <section>
+      <h2>为什么不能期待两种 bias 自动在 ratio 中抵消？</h2>
+      <p>忽略 \(\epsilon\)，若不做 correction，第一步 normalized factor 为：</p>
+      <div class="equation">\[
+\frac{m_1}{\sqrt{v_1}}
+=
+\frac{1-\beta_1}
+{\sqrt{1-\beta_2}}
+\operatorname{sign}(g_1).
+\]</div>
+      <p>它只有在 \(1-\beta_1=\sqrt{1-\beta_2}\) 时才恰好等于 \(\operatorname{sign}(g_1)\)。一般情况下，first- 与 second-moment shrinkage 不同，放进 ratio 后仍留下额外 factor。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Configuration</th><th>\(\beta_1\)</th><th>\(\beta_2\)</th><th>uncorrected first-step factor</th></tr></thead>
+          <tbody>
+            <tr><td>Transformer paper</td><td>\(0.9\)</td><td>\(0.98\)</td><td>\(0.1/\sqrt{0.02}\approx0.707\)</td></tr>
+            <tr><td>Adam paper default</td><td>\(0.9\)</td><td>\(0.999\)</td><td>\(0.1/\sqrt{0.001}\approx3.162\)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Bias correction 后，在同样忽略 \(\epsilon\) 的 first-step check 中：</p>
+      <div class="equation">\[
+\frac{\widehat{m}_1}{\sqrt{\widehat{v}_1}}
+=
+\frac{g_1}{\sqrt{g_1^2}}
+=\operatorname{sign}(g_1).
+\]</div>
+    </section>
+
+    <section>
+      <h2>Bias correction 能修正什么，不能修正什么？</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>能够修正</th><th>不能保证修正</th></tr></thead>
+          <tbody>
+            <tr><td>zero initialization 导致的 \(1-\beta^t\) multiplicative shrinkage</td><td>minibatch gradient noise</td></tr>
+            <tr><td>early steps 中尚不存在的 EMA history weight</td><td>non-stationary moments 带来的 tracking lag</td></tr>
+            <tr><td>\(\beta\) 接近 \(1\) 时更持久的 initialization effect</td><td>错误的 global learning rate 或所有 optimization instability</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Adam §3 在 second moment 非 stationary 时保留 residual term \(\zeta\)。因此 \(\widehat{v}_t\) 不是任意时刻真实 second moment 的无条件精确估计；correction 针对的是已知的 zero-initialization factor。</p>
+      <p>随着 \(t\) 增大，\(\beta^t\rightarrow0\)，所以 \(1-\beta^t\rightarrow1\)。Initialization correction 对 later steps 的影响自然减弱。</p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：从 zero 开始的 EMA 在 early steps 尚未积累完整的 observation weight；缺失部分来自不存在的 history。" data-incorrect-feedback="展开 recurrence，再对 geometric series 求和；不要把尚不存在的 history 当作真实 observations。">
+      <h2>30 秒 coefficient 检索</h2>
+      <p>从 \(u_0=0\) 开始，前 \(t\) 个 observations 的 EMA coefficients 总和是多少？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">\(1-\beta^t\)</button>
+        <button class="choice" type="button" data-correct="false">\(1\)</button>
+        <button class="choice" type="button" data-correct="false">\(\beta^t\)</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：correction 去除 zero initialization 的已知 shrinkage，不会消除 stochastic noise 或保证 non-stationary tracking 无误差。" data-incorrect-feedback="区分可解析的 initialization factor 与数据、objective 随时间变化产生的 estimation error。">
+      <h2>Correction 边界检索</h2>
+      <p>Bias correction 是否让 moment estimate 在任意 non-stationary training 中都精确等于真实 moment？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">否，只针对 initialization shrinkage</button>
+        <button class="choice" type="button" data-correct="false">是，所有 estimation error 都被消除</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2>结束时应能说清</h2>
+      <p>请用自己的话回答：<strong>“从 zero 开始的 EMA 为什么使前 \(t\) 步 coefficient sum 只有 \(1-\beta^t\)？在 stationary-moment assumption 下，如何推出 \(\mathbb{E}[u_t]=\mu(1-\beta^t)\)？为什么 \(m_t\) 与 \(v_t\) 的 bias 不会自动在 update ratio 中抵消？bias correction 又不能消除哪些 error？”</strong></p>
+    </section>
+
+    <footer>
+      <p>上一支线课：<a href="0009a-adam-adaptive-moments.html">Adam 0009A</a> · 来源：<a href="https://arxiv.org/abs/1412.6980">Adam 原论文</a> §3 · 下一支线课：<a href="0009c-adam-effective-step-evidence.html">Lesson 0009C</a>，检查 effective step、experiments 与 convergence evidence boundary。</p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

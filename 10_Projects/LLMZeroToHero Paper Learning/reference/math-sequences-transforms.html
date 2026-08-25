@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Math Foundations · Sequences and Transforms</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] },
+      options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Math Foundations · Sequences and Transforms</p>
+    <h1>Sequences 与 Transforms</h1>
+    <p class="lede">本页解释 geometric series、exponential moving average、trigonometric transform 与 piecewise power function。Adam correction、Positional Encoding 和 learning-rate schedule 的专用推导留在相应 Lesson。</p>
+
+    <section id="geometric-series">
+      <h2>Geometric series</h2>
+      <p>对 ratio \(\beta\neq1\)，前 \(t\) 项 geometric series（等比数列求和）为：</p>
+      <div class="equation">\[
+\sum_{j=0}^{t-1}\beta^j
+=\frac{1-\beta^t}{1-\beta}.
+\]</div>
+      <p>若 \(0\leq\beta&lt;1\)，越早的 powers 越小；当 \(t\to\infty\) 时，\(\beta^t\to0\)，因此：</p>
+      <div class="equation">\[
+\sum_{j=0}^{\infty}\beta^j
+=\frac{1}{1-\beta}.
+\]</div>
+    </section>
+
+    <section id="ema">
+      <h2>Exponential moving average</h2>
+      <p>对 observations \(x_t\)，EMA recurrence 的一般形式是：</p>
+      <div class="equation">\[
+u_t=\beta u_{t-1}+(1-\beta)x_t,
+\qquad
+0\leq\beta&lt;1.
+\]</div>
+      <p>递归展开得到：</p>
+      <div class="equation">\[
+u_t
+=\beta^t u_0
++(1-\beta)\sum_{i=1}^{t}\beta^{t-i}x_i.
+\]</div>
+      <p>因此当前 observation 的 coefficient 是 \(1-\beta\)，向前第 \(j\) 个 observation 的 coefficient 是 \((1-\beta)\beta^j\)。若 \(u_0=0\)，已观察样本的 coefficient sum 为：</p>
+      <div class="equation">\[
+(1-\beta)\sum_{j=0}^{t-1}\beta^j
+=1-\beta^t.
+\]</div>
+      <p>这只是 recurrence 与 geometric series 的代数结论。它何时构成 estimator bias、应估计哪个 quantity、是否需要 correction，取决于应用中的 probabilistic assumptions。</p>
+    </section>
+
+    <section id="trigonometric-transform">
+      <h2>Trigonometric addition 与二维 rotation</h2>
+      <p>Sine 与 cosine 的 addition formulas 为：</p>
+      <div class="equation">\[
+\begin{aligned}
+\sin(a+b)&amp;=\sin a\cos b+\cos a\sin b,\\
+\cos(a+b)&amp;=\cos a\cos b-\sin a\sin b.
+\end{aligned}
+\]</div>
+      <p>把一对 coordinates 写成：</p>
+      <div class="equation">\[
+r(a)=
+\begin{bmatrix}
+\sin a\\
+\cos a
+\end{bmatrix},
+\]</div>
+      <p>则固定 offset \(b\) 对应一个只依赖 \(b\) 的 linear transform：</p>
+      <div class="equation">\[
+r(a+b)
+=
+\begin{bmatrix}
+\cos b &amp; \sin b\\
+-\sin b &amp; \cos b
+\end{bmatrix}
+r(a).
+\]</div>
+      <p>这个 matrix 是二维 rotation matrix 的一种 coordinate convention。关键性质是：固定 offset 可表示为对 coordinate pair 的固定 linear map。</p>
+    </section>
+
+    <section id="power-functions">
+      <h2>Power function、minimum 与 piecewise form</h2>
+      <p>Power function \(f(s)=s^a\) 的增长方向由 exponent \(a\) 决定。对 \(s&gt;0\)：</p>
+      <ul>
+        <li>\(a&gt;0\) 时，\(s^a\) 随 \(s\) 增大；</li>
+        <li>\(a&lt;0\) 时，\(s^a=1/s^{-a}\) 随 \(s\) 减小。</li>
+      </ul>
+      <p>若两个 positive functions \(f,g\) 在 \(s=s_0\) 相交，则：</p>
+      <div class="equation">\[
+h(s)=\min(f(s),g(s))
+=
+\begin{cases}
+f(s), &amp; f(s)\leq g(s),\\
+g(s), &amp; g(s)&lt;f(s).
+\end{cases}
+\]</div>
+      <p>分析具体 schedule 时，应先求交点，再分别判断交点两侧哪一条 branch 更小，而不是只凭函数名称判断。</p>
+    </section>
+
+    <section id="transfer-check">
+      <h2>进入 Lesson 前的 transfer check</h2>
+      <p>看到 recurrence 时尝试展开 coefficients；看到 trigonometric pair 时检查能否写成 \(2\times2\) linear transform；看到 \(\min\) schedule 时先求 branches 的交点。</p>
+    </section>
+
+    <footer>
+      <p>返回 <a href="math-foundations-for-attention.html">Math Foundations Index</a>。</p>
+    </footer>
+  </main>
+</body>
+</html>

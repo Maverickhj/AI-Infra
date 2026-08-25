@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Math Foundations · Probability and Statistics</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [['\\(', '\\)']], displayMath: [['\\[', '\\]']] },
+      options: { skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code'] }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Math Foundations · Probability and Statistics</p>
+    <h1>Probability、Statistics 与 Estimation</h1>
+    <p class="lede">本页解释随机变量的 expectation、variance、moments、standardization 与 estimator bias。Dropout、LayerNorm 和 Adam 是这些原理在具体机制中的应用，不在这里复述。</p>
+
+    <section id="expectation">
+      <h2>Random variable 与 expectation</h2>
+      <p>Discrete random variable（离散随机变量）\(X\) 可能取得数值 \(x_1,\ldots,x_r\)，其 expectation（期望）为：</p>
+      <div class="equation">\[
+\mathbb{E}[X]
+=\sum_{j=1}^{r}x_j\Pr(X=x_j).
+\]</div>
+      <p>Expectation 是在 distribution 下的加权平均，不是一次 observation 必须取得的数值。它具有 linearity：</p>
+      <div class="equation">\[
+\mathbb{E}[aX+bY+c]
+=a\mathbb{E}[X]+b\mathbb{E}[Y]+c.
+\]</div>
+      <p>Linearity 不要求 \(X\) 与 \(Y\) independent。</p>
+    </section>
+
+    <section id="bernoulli">
+      <h2>Bernoulli distribution：一次 binary experiment</h2>
+      <p>若 \(M\sim\operatorname{Bernoulli}(q)\)，其中 \(q\in[0,1]\)，则：</p>
+      <div class="equation">\[
+M\in\{0,1\},
+\qquad
+\Pr(M=1)=q,
+\qquad
+\Pr(M=0)=1-q.
+\]</div>
+      <p>其 expectation 与 variance 为：</p>
+      <div class="equation">\[
+\mathbb{E}[M]=q,
+\qquad
+\operatorname{Var}(M)=q(1-q).
+\]</div>
+      <p>Bernoulli distribution 只定义一次 binary random variable。多个 coordinates 是否独立采样、是否共享同一个 mask，是具体应用的 modeling 或 implementation choice。</p>
+    </section>
+
+    <section id="moments">
+      <h2>Raw moment 与 centered moment</h2>
+      <p>Random variable \(X\) 的 first raw moment 与 second raw moment 分别是：</p>
+      <div class="equation">\[
+\mu'_1=\mathbb{E}[X],
+\qquad
+\mu'_2=\mathbb{E}[X^2].
+\]</div>
+      <p>Variance 是 second centered moment：</p>
+      <div class="equation">\[
+\operatorname{Var}(X)
+=\mathbb{E}\!\left[(X-\mathbb{E}[X])^2\right]
+=\mathbb{E}[X^2]-\mathbb{E}[X]^2.
+\]</div>
+      <p>因此 second raw moment 与 variance 不是同一个量。若 \(X=c\) 恒定，则 \(\operatorname{Var}(X)=0\)，但 \(\mathbb{E}[X^2]=c^2\)，除非 \(c=0\)。</p>
+    </section>
+
+    <section id="variance-of-sums">
+      <h2>Sum 的 variance</h2>
+      <p>一般情况下：</p>
+      <div class="equation">\[
+\operatorname{Var}\!\left(\sum_{k=1}^{d}X_k\right)
+=\sum_{k=1}^{d}\operatorname{Var}(X_k)
++2\sum_{1\leq i&lt;j\leq d}\operatorname{Cov}(X_i,X_j).
+\]</div>
+      <p>只有当 covariance terms 全部为 \(0\) 时，sum 的 variance 才等于各项 variances 之和。若进一步每项 variance 都是 \(1\)，结果才是 \(d\)。应用中使用这类结论时必须说明 independence 或 zero-covariance assumption。</p>
+    </section>
+
+    <section id="standardization">
+      <h2>Standardization 与 affine transform</h2>
+      <p>对一组数 \(x_1,\ldots,x_d\)，定义 population mean 与 variance：</p>
+      <div class="equation">\[
+\mu=\frac{1}{d}\sum_{k=1}^{d}x_k,
+\qquad
+\sigma^2=\frac{1}{d}\sum_{k=1}^{d}(x_k-\mu)^2.
+\]</div>
+      <p>Standardization（标准化）为：</p>
+      <div class="equation">\[
+\widehat{x}_k
+=\frac{x_k-\mu}{\sqrt{\sigma^2+\varepsilon}},
+\qquad
+\varepsilon&gt;0.
+\]</div>
+      <p>忽略 \(\varepsilon\) 时，\(\widehat{x}\) 的 mean 为 \(0\)、variance 为 \(1\)。随后可施加 learned 或 fixed affine transform：</p>
+      <div class="equation">\[
+y_k=\gamma_k\widehat{x}_k+\beta_k.
+\]</div>
+      <p>Affine transform 恢复每个 coordinate 的 scale 与 offset 自由度；经过它以后，\(y\) 不再必须保持 zero mean 与 unit variance。具体在哪些 axes 上计算 \(\mu,\sigma^2\)，属于应用定义的一部分。</p>
+    </section>
+
+    <section id="estimator-bias">
+      <h2>Estimator bias</h2>
+      <p>设 \(\theta\) 是希望估计的固定 quantity，\(\widehat{\theta}\) 是由 random observations 构造的 estimator。Bias 定义为：</p>
+      <div class="equation">\[
+\operatorname{Bias}(\widehat{\theta})
+=\mathbb{E}[\widehat{\theta}]-\theta.
+\]</div>
+      <p>若 bias 为 \(0\)，称 estimator unbiased。这个陈述始终依赖所假设的 data-generating distribution；unbiased 不表示单次 estimate 等于 \(\theta\)，也不表示 variance 小。</p>
+    </section>
+
+    <section id="transfer-check">
+      <h2>进入 Lesson 前的 transfer check</h2>
+      <p>遇到 probability notation 时，先分清 observation、random variable、expectation 与 estimator；遇到 variance 推导时，检查 independence / covariance assumptions；遇到 normalization 时，先确定 reduction axes。</p>
+    </section>
+
+    <footer>
+      <p>返回 <a href="math-foundations-for-attention.html">Math Foundations Index</a>。</p>
+    </footer>
+  </main>
+</body>
+</html>
