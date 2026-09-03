@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0013 · AdamW: L2 vs Weight Decay</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">AdamW Paper · Lesson 0013 · 约 15 分钟</p>
+    <h1>AdamW：L2 正则与 Weight Decay 的等价性破解</h1>
+    <p class="lede">Adam 0009C 已说明 adaptive update 等价于“给 gradient 乘一个逐坐标 preconditioner”。现在把 regularization 放进来：L2 regularization 与 weight decay 在标准 SGD 下 iterate 等价（Prop 1），但照搬到 Adam 会错，因为 preconditioner 不是常数倍单位阵。本课建立等价性破绽的机制，并给出 AdamW 的解耦改法。</p>
+    <p class="meta">前置：<a href="0009c-adam-effective-step-evidence.html">Adam 0009C（preconditioner）</a> · 阅读：<a href="../reference/math-l2-regularization-motivation.md">L2 正则动机（pre-read）</a> · 数学：<a href="../reference/math-linear-algebra.html#matrix-multiplication">Diagonal matrix preconditioner</a> · 术语：<a href="../reference/0013-adamw-glossary.html">Lesson 0013 Glossary</a> · 主证据：<a href="https://arxiv.org/abs/1711.05101">Loshchilov &amp; Hutter, Decoupled Weight Decay Regularization</a>, §2、Appendix A、Algorithm 2</p>
+
+    <section>
+      <h2>起点：把 adaptive update 写成 preconditioner</h2>
+      <p>Adam 0009C 已定义 per-coordinate preconditioner \( \rho_{t,j}=1/(\sqrt{\widehat{v}_{t,j}}+\epsilon) \)。把整段 update 写成矩阵作用：</p>
+      <div class="equation">\[
+\theta_{t+1}
+=\theta_t-\alpha M_t\nabla f_t(\theta_t),
+\qquad
+M_t=\operatorname{diag}\left(\frac{1}{\sqrt{\widehat{v}_{t}}+\epsilon}\right).
+\]</div>
+      <p>其中 \(M_t\) 是随 step \(t\) 变化、逐 coordinate 不同的对角矩阵。这是后面“等价性破绽”的全部来源。</p>
+    </section>
+
+    <section>
+      <h2>weight decay 是什么（Hanson &amp; Pratt 1988, Eq. 1）</h2>
+      <p>weight decay 是 Hanson &amp; Pratt (1988) 定义的参数更新机制，不是给 objective 加罚项：每步先把 weights 按固定因子 \(1-\lambda\) 做一次乘性收缩，再叠加 gradient 更新。</p>
+      <div class="equation">\[
+\theta_{t+1}
+=(1-\lambda)\theta_t
+-\alpha\nabla f_t(\theta_t).
+\]</div>
+      <p>\(\lambda\) 是原文 Eq. 1 定义的 rate of the weight decay per step。关键是它直接乘在 \( \theta_t \) 上，不经过任何 gradient statistic 与 preconditioner。</p>
+      <h3>为什么要引入 weight decay</h3>
+      <p>weight decay 的直接目的不是降低当前 data loss，而是在 data gradient 之外给 optimization 加入显式的 inductive bias（归纳偏好）：持续抑制参数无约束增长，使多个参数解都能拟合训练数据时，更新过程偏向 parameter norm 较小的解。即使 \(\nabla f_t(\theta_t)=0\)，decay 项仍会把参数从 \(\theta_t\) 收缩到 \((1-\lambda)\theta_t\)。</p>
+      <div class="chain">
+        <div class="chain-step"><strong>有限数据与噪声</strong><br>可能存在多个同样拟合 training set 的参数解。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>缺少解的偏好</strong><br>data loss 本身未必区分这些解。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>乘性收缩</strong><br>每一步额外施加 \((1-\lambda)\theta_t\)。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>选择偏好</strong><br>倾向 parameter norm 较小、经验上可能更稳定的解。</div>
+      </div>
+      <div class="callout caution">
+        <strong>边界：</strong>weight decay 提供的是优化偏好，不保证 parameter magnitude 每一步都下降——data gradient 可能产生更大的反向更新；它也不自动保证更好的 generalization。特别是在带 normalization 或 parameter scale invariance 的 deep network 中，“参数更小”不能直接等同于“函数更简单”。
+      </div>
+    </section>
+
+    <section>
+      <h2>SGD 下定义不同，但 parameter iterate 等价（Proposition 1）</h2>
+      <p>L2 regularization 与 weight decay 不冲突，也不是同一个定义：前者修改 objective，后者直接修改 parameter update。Proposition 1 所说的“等价”，仅指在标准 SGD（无 momentum）下适当换算系数后，两种替代实现从同一个 \(\theta_t\) 出发会得到相同的 \(\theta_{t+1}\)，进而产生相同的 parameter iterate。</p>
+      <p>先看 L2 regularization：把 penalty 加入 loss，penalty coefficient 记作 \( \lambda' \)：</p>
+      <div class="equation">\[
+\widetilde f_t(\theta)=f_t(\theta)+\frac{\lambda'}{2}\|\theta\|_2^2.
+\]</div>
+      <p>对这个 regularized loss 执行一步标准 SGD：</p>
+      <div class="equation">\[
+\theta_{t+1}
+=\theta_t-\alpha\nabla f_t(\theta_t)-\alpha\lambda'\theta_t
+=(1-\alpha\lambda')\theta_t-\alpha\nabla f_t(\theta_t).
+\]</div>
+      <p>更新式中的乘性收缩因子是 \(1-\alpha\lambda'\)。要让它与 weight decay 的 \(1-\lambda\) 相同，必须满足：</p>
+      <div class="equation">\[
+\lambda'=\frac{\lambda}{\alpha}.
+\]</div>
+      <div class="callout">
+        <strong>记号规范：</strong>原文把 Eq. 1 的每步 decay 率记作 \( \lambda \)，把 L2 penalty coefficient 记作 \( \lambda' \)；Prop 1 的等价条件是 \( \lambda'=\lambda/\alpha \)。Algorithm 2 并排写两个 variant 时复用了同一个 \( \lambda \) 占位符，阅读时不要混淆。
+      </div>
+      <div class="callout caution">
+        <strong>等价的层级：</strong>这里不是说两个 objective 相同，也不是要求同时启用两种机制；它只说明两条不同路径在这一受限条件下产生相同的 parameter trajectory。通常将它们视为替代实现。若同时加入 L2 penalty 和 weight decay，收缩项会叠加为 \(1-\lambda-\alpha\lambda'\)，相当于重复施加正则作用。
+      </div>
+      <p>这个等价有一个常被忽略的后果：最优 decay 率 \( \lambda \) 与 learning rate \( \alpha \) 经 \( \lambda'=\lambda/\alpha \) 绑定——只改 learning rate 而不同除 \( \alpha \) 重设 L2 系数，两个机制就不再等价。</p>
+    </section>
+
+    <section>
+      <h2>Adam 下不再等价（Proposition 2 的机制）</h2>
+      <p>L2 版本里，\( \lambda'\theta_t \) 先进入 gradient，再被 \( M_t \) 逐坐标缩放：</p>
+      <div class="equation">\[
+\theta_{t+1}
+=\theta_t-\alpha M_t\nabla f_t(\theta_t)-\alpha\lambda' M_t\theta_t.
+\]</div>
+      <p>weight decay 版本则是直接乘：</p>
+      <div class="equation">\[
+\theta_{t+1}
+=(1-\lambda)\theta_t-\alpha M_t\nabla f_t(\theta_t).
+\]</div>
+      <p>两者对每个 \( t \) 等价，需要：</p>
+      <div class="equation">\[
+\lambda\theta_t=\alpha\lambda' M_t\theta_t,
+\qquad\text{即}\qquad M_t=kI.
+\]</div>
+      <p>Adam 的 \( M_t \) 随 coordinate 改变，不是常数倍单位阵，因此不存在一个 L2 coefficient \( \lambda' \) 能让两种 iterate 完全等价（原文 Prop 2，proof 见 Appendix A）。</p>
+      <div class="callout caution">
+        <strong>后果（原文 observation，不是新实验证明）：</strong>L2 在 Adam 下，历史 gradient / parameter 幅度较大的 coordinate 被正则得更弱，因为它们的 preconditioner factor 更小。这是 Adam 泛化常弱于 SGD+momentum 的一个主要原因；完整 iterate 形式见 Appendix A（Proposition 2 的 proof）。
+      </div>
+    </section>
+
+    <section>
+      <h2>AdamW 的解耦更新（Algorithm 2）</h2>
+      <p>改法只有一处位置：把 \( \lambda'\theta \) 从 gradient 里拿出来，decay 与 adaptive step 分开。</p>
+      <p>L2-Adam（decay 走 gradient → moments）：</p>
+      <div class="equation">\[
+g_t=\nabla f_t(\theta_{t-1})+\lambda'\theta_{t-1},
+\qquad
+\theta_t=\theta_{t-1}-\alpha\frac{\widehat{m}_t}{\sqrt{\widehat{v}_t}+\epsilon}.
+\]</div>
+      <p>AdamW（decay 直接加在更新项）：</p>
+      <div class="equation">\[
+g_t=\nabla f_t(\theta_{t-1}),
+\qquad
+\theta_t=\theta_{t-1}-\alpha\left(\frac{\widehat{m}_t}{\sqrt{\widehat{v}_t}+\epsilon}+\lambda\theta_{t-1}\right).
+\]</div>
+      <p>等价写成“先自适应一步，再乘性衰减”：</p>
+      <div class="equation">\[
+\theta_t
+=(1-\alpha\lambda)\theta_{t-1}
+-\alpha\frac{\widehat{m}_t}{\sqrt{\widehat{v}_t}+\epsilon}.
+\]</div>
+      <div class="chain">
+        <div class="chain-step"><strong>Loss gradient</strong><br>\( g_t=\nabla f_t(\theta_{t-1}) \) 不含正则项。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Moments</strong><br>\( m_t,v_t \) 只聚合 loss gradient。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Adaptive step</strong><br>\( \widehat{m}_t/(\sqrt{\widehat{v}_t}+\epsilon) \) 形成 per-coordinate 更新。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Decay</strong><br>\( (1-\alpha\lambda) \) 直接乘参数，与 moments/preconditioner 解耦。</div>
+      </div>
+      <p>decay 不再经过 \( g_t,m_t,v_t,\widehat{v}_t \)，因此与 preconditioner 解耦——这是 “decoupled weight decay” 的字面含义。</p>
+    </section>
+
+    <section>
+      <h2>作用边界</h2>
+      <div class="callout caution">
+        <strong>边界清单：</strong>Proposition 1/2 是形式分析（Appendix A），不是泛化实验证明；“15% relative improvement in test error” 来自 CIFAR-10 / ImageNet32x32 图像分类，不是 LLM-scale 结论；\( \lambda \) 与 \( \alpha \) 仍可能存在 problem-dependent 的隐式耦合（原文明确承认）。
+      </div>
+      <p>后续课再讲 normalized weight decay \( \lambda=\lambda_{\mathrm{norm}}\sqrt{b/(B T)} \) 与 warm restarts，它们回答“decay 因子怎么随训练预算缩放”。</p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：Prop 1 规定 \( \lambda'=\lambda/\alpha \)——给每步 decay 率，L2 系数必须除以 learning rate。" data-incorrect-feedback="回到展开式：\(-\alpha\lambda'\theta_t\) 要等于 \(-\lambda\theta_t\)。">
+      <h2>30 秒等价性检索</h2>
+      <p>标准 SGD 下等价时（原文 Prop 1），L2 系数 \( \lambda' \) 应取什么值？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">\( \lambda/\alpha \)</button>
+        <button class="choice" type="button" data-correct="false">\( \alpha\lambda \)</button>
+        <button class="choice" type="button" data-correct="false">\( \alpha/\lambda \)</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：解耦前 \( \lambda'\theta \) 进入 gradient，再被 \( M_t \) 逐坐标缩放。" data-incorrect-feedback="检查 L2 的迭代式：正则项带着 \( M_t \) 出现。">
+      <h2>Preconditioner 检索</h2>
+      <p>L2-Adam 里，\( \lambda'\theta_t \) 是否经过 per-coordinate preconditioner \( M_t \)？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">是，经 \(M_t\) 缩放</button>
+        <button class="choice" type="button" data-correct="false">否，直接乘参数</button>
+        <button class="choice" type="button" data-correct="false">否，只经 bias correction</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2>结束时应能说清</h2>
+      <p>请用自己的话回答：<strong>“标准 SGD 下 L2 ≡ weight decay 需要把哪个量重参数化，为什么是除以 \( \alpha \)？Adam 下为什么等价性失效（用 \(M_t\) 与 \(m_t,v_t\) 说明 decay 走了哪条路）？AdamW 的 \(g_t\) 与 \( \theta_t\) 两行和 L2-Adam 各差在哪？”</strong>我会据此判断是否进入下一课。</p>
+    </section>
+
+    <footer>
+      <p>来源：<a href="https://arxiv.org/abs/1711.05101">Loshchilov &amp; Hutter, Decoupled Weight Decay Regularization</a>, ICLR 2019, §2、Appendix A、Algorithm 2 · 下一课：<a href="0014-adamw-normalized-weight-decay-warm-restarts.html">Lesson 0014</a>（Normalized Weight Decay 与 Warm Restarts）。</p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

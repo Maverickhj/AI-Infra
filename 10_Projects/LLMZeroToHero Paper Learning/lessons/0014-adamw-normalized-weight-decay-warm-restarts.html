@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0014 · AdamWR: Normalized Weight Decay and Warm Restarts</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">AdamW Paper · Lesson 0014 · 约 15 分钟</p>
+    <h1>AdamWR：Normalized Weight Decay 与 Warm Restarts</h1>
+    <p class="lede">Lesson 0013 解决了 decay 应走哪条 update path；本课继续解决两个实践问题：同一个 raw decay rate 为什么不能直接跨 training budget 复用，以及如何用 cosine warm restarts 改善 anytime performance（任意中途预算点也能较早获得可用结果的能力）。两者组合形成论文中的 AdamWR。</p>
+    <p class="meta">前置：<a href="0013-adamw-decoupled-weight-decay.html">Lesson 0013</a> · 数学：<a href="../reference/math-functions-information.html#proportionality">Proportionality</a>、<a href="../reference/math-functions-information.html#reparameterization">Reparameterization</a>、<a href="../reference/math-sequences-transforms.html#multiplicative-decay">Repeated shrinkage</a> · 术语：<a href="../reference/0014-adamwr-glossary.html">Lesson 0014 Glossary</a> · 主证据：<a href="https://arxiv.org/html/1711.05101v3">AdamW</a> §4.4、Appendix B.1–B.2 · 调度来源：<a href="https://arxiv.org/html/1608.03983v5">SGDR</a> §3</p>
+
+    <section>
+      <h2>起点：decay 的重复次数也是 hyperparameter</h2>
+      <p>AdamW 每个 minibatch update 都施加一次 decay。设 dataset size 为 \(B\)，batch size 为 \(b\)，训练 \(T\) 个 epochs；忽略不完整 batch 时，batch-pass count（minibatch 更新总次数）为：</p>
+      <div class="equation">\[
+N=\frac{BT}{b}.
+\]</div>
+      <p>即使每步 raw weight-decay rate \(\lambda\) 不变，改变 \(b\) 或 \(T\) 也会改变 decay 被重复施加的次数。AdamW 论文的实验观察是：runtime / batch passes 越多，最优的 raw \(\lambda\) 往往越小。</p>
+      <div class="chain">
+        <div class="chain-step"><strong>Budget 改变</strong><br>\(B\)、\(b\) 或 \(T\) 改变。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Update count 改变</strong><br>\(N=BT/b\)。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>累计 decay 行为改变</strong><br>同一个 raw \(\lambda\) 被施加不同次数。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>调参不能直接迁移</strong><br>短 run 的最佳 \(\lambda\) 未必适合长 run。</div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Normalized weight decay：把 budget 显式放进换算</h2>
+      <p>论文引入 normalized weight decay（归一化权重衰减）hyperparameter \(\lambda_{\mathrm{norm}}\)，再按当前 budget 换算实际使用的 raw decay rate：</p>
+      <div class="equation">\[
+\lambda
+=\lambda_{\mathrm{norm}}\sqrt{\frac{b}{BT}}
+=\frac{\lambda_{\mathrm{norm}}}{\sqrt{N}}.
+\]</div>
+      <p>其中，\(B\) 是 training points 总数，\(b\) 是 batch size，\(T\) 是总 epochs。固定 \(\lambda_{\mathrm{norm}}\) 时，可写成 \(\lambda\propto1/\sqrt{N}\)；\(\propto\) 表示 proportional to（正比于），这里被固定的 proportionality constant 就是 \(\lambda_{\mathrm{norm}}\)。</p>
+      <p>这也是一次 hyperparameter reparameterization（超参数重参数化）：以前直接选择 raw \(\lambda\)，现在选择 \(\lambda_{\mathrm{norm}}\)，再根据 budget \(N\) 转换回 optimizer 实际使用的 \(\lambda\)：</p>
+      <div class="equation">\[
+\lambda_{\mathrm{norm}}
+=\lambda\sqrt{N},
+\qquad
+\lambda_{\mathrm{norm}}
+\xrightarrow{\;N\;}
+\lambda
+\xrightarrow{\;\mathrm{optimizer}\;}
+\text{weight decay}.
+\]</div>
+      <p>重参数化没有发明新的 decay mechanism；它只是把“用户调哪个 quantity”从 raw \(\lambda\) 换成希望更容易跨 budgets 迁移的 \(\lambda_{\mathrm{norm}}\)。论文把 \(\lambda_{\mathrm{norm}}\) 解释为只允许一次 batch pass 时使用的 weight decay。</p>
+      <div class="callout">
+        <strong>缩放直觉：</strong>若其他量不变而 \(T\) 增加到原来的四倍，则 \(N\) 变为四倍，raw \(\lambda\) 变为原来的 \(1/2\)。若 \(b\) 减半，则 \(N\) 加倍，raw \(\lambda\) 变为原来的 \(1/\sqrt{2}\)。
+      </div>
+      <p>如果暂时忽略 gradient，只看固定 rate 的纯乘性 toy model，则：</p>
+      <div class="equation">\[
+\theta_N
+=(1-\lambda)^N\theta_0
+\approx e^{-\lambda N}\theta_0.
+\]</div>
+      <p>在这个 toy model 中，若目标是让最终累计收缩严格保持不变，就需要近似令 \(\lambda N\) 为常数，因此 \(\lambda\propto1/N\)，而不是 \(1/\sqrt N\)。</p>
+      <div class="callout caution">
+        <strong>证据边界：</strong>不要从 \((1-\lambda)^N\) 硬推 \(1/\sqrt N\)。真实训练还包含 gradient updates、optimizer states、learning-rate schedule 与不断变化的 parameter norm；论文的 square-root normalization 是少量实验支持的一种经验性 reparameterization。作者更持久的结论是应显式处理 weight decay 对 budget 的依赖，而不是宣称 \(1/\sqrt N\) 是 universal law。
+      </div>
+    </section>
+
+    <section>
+      <h2>Warm restart：重启 schedule，不是从头训练</h2>
+      <p>Warm restart（热重启）把 training 划成多个 restart cycles。第 \(i\) 个 cycle 长度为 \(T_i\)，\(T_{cur}\) 表示距上次 restart 已经过的 epochs。Schedule multiplier（调度乘子）\(\eta_t\) 在 cycle 内按 cosine annealing（余弦退火）从高到低：</p>
+      <div class="equation">\[
+\eta_t
+=\eta_{\min}^{(i)}
++\frac{1}{2}\left(\eta_{\max}^{(i)}-\eta_{\min}^{(i)}\right)
+\left(1+\cos\left(\pi\frac{T_{cur}}{T_i}\right)\right).
+\]</div>
+      <p>论文使用的简化设置是 \(\eta_{\max}^{(i)}=1\)、\(\eta_{\min}^{(i)}=0\)：</p>
+      <div class="equation">\[
+\eta_t
+=\frac{1}{2}\left(1+\cos\left(\pi\frac{T_{cur}}{T_i}\right)\right).
+\]</div>
+      <p>当 \(T_{cur}=0\) 时，\(\eta_t=1\)；当 \(T_{cur}=T_i\) 时，\(\eta_t=0\)。Restart 把 \(T_{cur}\) 重置为 \(0\)，让 multiplier 回到高位，但继续使用已有 parameters；在论文 Algorithm 2 与 Appendix B.2 的组合中，\(m_t\)、\(v_t\) 也沿用，而不是重新初始化。</p>
+      <div class="callout caution">
+        <strong>不要误读 restart：</strong>它不是重新随机初始化 model，也不是清空 Adam states。它重启的是 learning-rate schedule 的 cycle position。作者把这种机制用于改善 anytime performance（在训练预算尚未耗尽时也能较早获得可用解），不是给出逃离 local minima 的保证。
+      </div>
+    </section>
+
+    <section>
+      <h2>Cycle 如何增长</h2>
+      <p>每次 restart 后，可以用 \(T_{mult}\) 放大下一 cycle 的长度：</p>
+      <div class="equation">\[
+T_{i+1}=T_iT_{mult}.
+\]</div>
+      <p>例如 \(T_0=100\)、\(T_{mult}=2\)，cycle lengths 依次为 \(100,200,400,\ldots\)。短的前期 cycles 较早给出低 learning-rate endpoint，后期 cycles 则允许更长的优化过程。</p>
+    </section>
+
+    <section>
+      <h2>AdamWR：两套机制在 update 中汇合</h2>
+      <p>令 Adam adaptive direction 为：</p>
+      <div class="equation">\[
+a_t=\frac{\widehat m_t}{\sqrt{\widehat v_t}+\epsilon}.
+\]</div>
+      <p>在第 \(i\) 个 restart cycle 中，normalized weight decay 使用当前 cycle budget \(T_i\)：</p>
+      <div class="equation">\[
+\lambda_i
+=\lambda_{\mathrm{norm}}
+\sqrt{\frac{b}{BT_i}}.
+\]</div>
+      <p>论文 Algorithm 2 的 schedule multiplier 同时控制 adaptive step 与 decoupled decay：</p>
+      <div class="equation">\[
+\theta_t
+=\theta_{t-1}
+-\eta_t\left(\alpha a_t+\lambda_i\theta_{t-1}\right)
+=(1-\eta_t\lambda_i)\theta_{t-1}-\eta_t\alpha a_t.
+\]</div>
+      <div class="chain">
+        <div class="chain-step"><strong>Normalized decay</strong><br>\(\lambda_i\) 根据当前 cycle budget 换算。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Cosine schedule</strong><br>\(\eta_t\) 在 cycle 内从 \(1\) 降到 \(0\)。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>Warm restart</strong><br>保留 \(\theta,m,v\)，重置 \(T_{cur}\)。</div>
+        <div class="arrow">↓</div>
+        <div class="chain-step"><strong>AdamWR</strong><br>AdamW + normalized decay + warm restarts。</div>
+      </div>
+      <p>两套机制职责不同：normalization 处理 decay hyperparameter 对 budget 的敏感性；warm restarts 处理 global schedule 与 anytime performance。它们不是同一个 trick。</p>
+    </section>
+
+    <section>
+      <h2>Evidence boundary</h2>
+      <div class="callout caution">
+        <strong>论文支持到哪里：</strong>AdamW 论文在 CIFAR-10 与 ImageNet32x32 等 image-classification settings 中观察到 normalized decay 更便于跨 budgets 复用，并报告 AdamWR 改善 anytime performance。作者同时明确承认 square-root scaling 来自有限实验，可能存在更好的规则；这些结果不能直接升级成 LLM-scale universal law。
+      </div>
+      <p>此外，现代 library 中名为 cosine warm restarts 的 scheduler 不必然同时实现论文的 normalized weight decay；“用了 cosine restart”不等于“实现了 AdamWR”。</p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：raw decay 按 1/sqrt(N) 缩放，budget 变为四倍时乘以 1/2。" data-incorrect-feedback="回到 lambda = lambda_norm / sqrt(N)：先对四倍 budget 开平方。">
+      <h2>30 秒 budget 检索</h2>
+      <p>保持 \(B\)、\(b\)、\(\lambda_{\mathrm{norm}}\) 不变，把 epochs \(T\) 增加为四倍，raw \(\lambda\) 如何变化？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">变为原来的 \(1/2\)</button>
+        <button class="choice" type="button" data-correct="false">变为原来的 \(1/4\)</button>
+        <button class="choice" type="button" data-correct="false">变为原来的 \(2\) 倍</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="quiz" data-correct-feedback="正确：warm restart 重置 cycle position 与 multiplier，保留 parameters 和 Adam moments。" data-incorrect-feedback="查看 Appendix B.2：旧 theta 继续作为初始解，Algorithm 2 的 moment states 没有重新初始化。">
+      <h2>Warm restart 检索</h2>
+      <p>论文中的 AdamWR 到达 restart boundary 时，真正被重置的是什么？</p>
+      <div class="choice-list">
+        <button class="choice" type="button" data-correct="true">Cycle position 与 multiplier</button>
+        <button class="choice" type="button" data-correct="false">Parameters 与 Adam states</button>
+        <button class="choice" type="button" data-correct="false">Second-moment state only</button>
+      </div>
+      <p class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section>
+      <h2>结束时应能说清</h2>
+      <p>请用自己的话回答：<strong>“为什么 raw \(\lambda\) 会依赖 \(B,b,T\)，论文如何用 \(\lambda_{\mathrm{norm}}\) 换算？为什么不能把 square-root rule 说成定理？Warm restart 到底重启什么、保留什么？最后写出 \(\eta_t\)、\(\lambda_i\) 如何共同进入 AdamWR update。”</strong>我会据此判断 AdamW paper 是否完成第一轮学习。</p>
+    </section>
+
+    <footer>
+      <p>来源：<a href="https://arxiv.org/html/1711.05101v3">Loshchilov &amp; Hutter, Decoupled Weight Decay Regularization</a>, §4.4、Appendix B.1–B.2；<a href="https://arxiv.org/html/1608.03983v5">SGDR</a>, §3。下一方向：RoPE（Lesson 0015 起，尚未创建）。有任何 symbol 或 evidence boundary 不清楚，先提问，不要跳过 retrieval。</p>
+    </footer>
+  </main>
+  <script src="../assets/quiz.js"></script>
+</body>
+</html>

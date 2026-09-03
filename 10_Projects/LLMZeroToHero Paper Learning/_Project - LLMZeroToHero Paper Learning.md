@@ -10,6 +10,7 @@ domains:
 source:
   - https://arxiv.org/abs/1706.03762
   - https://arxiv.org/abs/1412.6980
+  - https://arxiv.org/abs/1711.05101
 ai_generated: true
 reviewed: false
 ---
@@ -26,6 +27,7 @@ reviewed: false
 ## 当前课程
 
 - [[MISSION]]：学习任务的边界与成功标准。
+- [课程范围索引](CURRICULUM.md)：论文 → lesson / learning-record 编号范围与状态；变动时以此为准。
 - [资源清单](RESOURCES.md)：首篇论文的原始来源与本地阅读材料。
 - [Math Foundations Index](reference/math-foundations-for-attention.html)：按 Lesson 按需进入的数学前置索引；一般原理与论文实例分开维护。
 - [Attention Glossary](reference/attention-glossary.html)：英文术语与中文解释的速查表。
@@ -44,6 +46,7 @@ reviewed: false
 - [课程 0010：Batching、Dropout 与 Label Smoothing](lessons/0010-batching-dropout-label-smoothing.html)
 - [课程 0011：Results、Ablation 与 Evidence Boundaries](lessons/0011-results-ablation-evidence.html)
 - [课程 0012：Transformer 全文因果链复盘与知识沉淀判断](lessons/0012-transformer-causal-review-promotion.html)
+- [AdamW 0013：L2 正则与 Weight Decay 的等价性破解](lessons/0013-adamw-decoupled-weight-decay.html)
 - [速查：Attention 的因果链与张量形状](reference/attention-causal-chain.html)
 
 ## 剩余路线
@@ -51,6 +54,8 @@ reviewed: false
 Adam 0009A–0009C 与 Transformer 0010–0012 已完成第一轮学习。Lesson 0012 的 Cross-Attention final synthesis retrieval 被跳过，保留为 `[待核验]`；它不阻止 source / knowledge seed 的创建，但这些 notes 仍需人工 review。
 
 Adam 支线不改变 Transformer 主线编号。数学前置按 model-agnostic 主题加入 Math Foundations，architecture mapping 与论文专用推导留在 Lesson；若某个概念需要多轮巩固，课程总数会相应调整。
+
+AdamW 从 0013 开始第一轮学习；★ 必读篇目中还剩 RoPE。编号范围以 `CURRICULUM.md` 为准。
 
 ## 本轮沉淀产物
 

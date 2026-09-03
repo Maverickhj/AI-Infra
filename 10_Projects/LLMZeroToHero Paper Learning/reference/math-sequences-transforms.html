@@ -17,7 +17,7 @@
   <main>
     <p class="eyebrow">Math Foundations · Sequences and Transforms</p>
     <h1>Sequences 与 Transforms</h1>
-    <p class="lede">本页解释 geometric series、exponential moving average、trigonometric transform 与 piecewise power function。Adam correction、Positional Encoding 和 learning-rate schedule 的专用推导留在相应 Lesson。</p>
+    <p class="lede">本页解释 geometric series、repeated multiplicative update、exponential approximation、EMA、trigonometric transform 与 piecewise power function。具体 optimizer 与 schedule 映射留在相应 Lesson。</p>
 
     <section id="geometric-series">
       <h2>Geometric series</h2>
@@ -28,9 +28,44 @@
 \]</div>
       <p>若 \(0\leq\beta&lt;1\)，越早的 powers 越小；当 \(t\to\infty\) 时，\(\beta^t\to0\)，因此：</p>
       <div class="equation">\[
-\sum_{j=0}^{\infty}\beta^j
+      \sum_{j=0}^{\infty}\beta^j
 =\frac{1}{1-\beta}.
 \]</div>
+    </section>
+
+    <section id="multiplicative-decay">
+      <h2>Repeated multiplicative update 与累计收缩</h2>
+      <p>考虑没有 additive term 的 recurrence：</p>
+      <div class="equation">\[
+z_{t+1}=(1-r)z_t,
+\qquad
+0&lt;r&lt;1.
+\]</div>
+      <p>若每一步都使用相同的 \(r\)，递归展开 \(N\) 步得到：</p>
+      <div class="equation">\[
+z_N=(1-r)^Nz_0.
+\]</div>
+      <p>若希望最终只剩初值的固定比例 \(q\in(0,1)\)，即 \(z_N=qz_0\)，则 exact per-step rate 为：</p>
+      <div class="equation">\[
+(1-r)^N=q,
+\qquad
+r=1-q^{1/N}.
+\]</div>
+      <p>当 \(r\) 很小时，利用 \(\log(1-r)\approx-r\) 可得 exponential approximation：</p>
+      <div class="equation">\[
+(1-r)^N
+=\exp\!\big(N\log(1-r)\big)
+\approx\exp(-rN).
+\]</div>
+      <p>要让 \(q\) 在不同 \(N\) 下保持不变，需要近似保持 \(rN\) 不变，因此：</p>
+      <div class="equation">\[
+r\approx\frac{-\log q}{N},
+\qquad
+r\propto\frac{1}{N}.
+\]</div>
+      <div class="callout caution">
+        <strong>成立边界：</strong>这个 \(1/N\) relation 只回答“在纯乘性、固定 rate、没有 additive update 的 toy recurrence 中，如何保持最终累计收缩比例不变”。若真实系统还有 additive updates、time-varying rate、state evolution 或不同优化目标，则经验最优 scaling 不必等于 \(1/N\)。特别地，不能从本节公式推出 \(1/\sqrt{N}\)；那需要独立的定义或证据。
+      </div>
     </section>
 
     <section id="ema">
@@ -106,7 +141,7 @@ g(s), &amp; g(s)&lt;f(s).
 
     <section id="transfer-check">
       <h2>进入 Lesson 前的 transfer check</h2>
-      <p>看到 recurrence 时尝试展开 coefficients；看到 trigonometric pair 时检查能否写成 \(2\times2\) linear transform；看到 \(\min\) schedule 时先求 branches 的交点。</p>
+      <p>看到 recurrence 时尝试展开 coefficients；看到 repeated multiplication 时区分 per-step rate 与 total-step effect；看到 trigonometric pair 时检查能否写成 \(2\times2\) linear transform；看到 \(\min\) schedule 时先求 branches 的交点。</p>
     </section>
 
     <footer>

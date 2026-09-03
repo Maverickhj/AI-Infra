@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0013 · AdamW Glossary</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Reference · Lesson 0013 · Vocabulary</p>
+    <h1>AdamW：L2 Regularization 与 Weight Decay 术语表</h1>
+    <p class="lede">本页只收录 Lesson 0013 引入或重新精确定义的 terms、symbols 与易混边界。正文负责建立因果链，本页负责快速检索同一术语的稳定含义。</p>
+    <p class="meta">对应课程：<a href="../lessons/0013-adamw-decoupled-weight-decay.html">Lesson 0013</a> · 前置：<a href="math-l2-regularization-motivation.md">L2 正则动机</a> · 主证据：<a href="https://arxiv.org/abs/1711.05101">Loshchilov &amp; Hutter, Decoupled Weight Decay Regularization</a>, §2、Appendix A、Algorithm 2</p>
+
+    <section id="convention">
+      <h2>使用约定</h2>
+      <div class="callout">
+        <strong>English-first：</strong>lesson 首次出现 term 时保留一句中文解释；后续复用本页的 English term。公式中的 \(\lambda\)、\(\lambda'\)、\(\alpha\)、\(M_t\)、\(m_t\)、\(v_t\) 不改写成自然语言别名。
+      </div>
+    </section>
+
+    <section id="core-terms">
+      <h2>Core terms</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>English term</th><th>中文解释</th><th>Lesson 0013 中的精确定义与边界</th></tr></thead>
+          <tbody>
+            <tr><td>objective / loss</td><td>优化器试图最小化的目标函数</td><td>Data loss 记作 \(f_t(\theta)\)；加入 L2 penalty 后变为 regularized objective \(\widetilde f_t(\theta)\)。</td></tr>
+            <tr><td>regularization</td><td>在训练数据之外加入解的偏好</td><td>用来影响多个可拟合解之间的选择；它不等于训练误差本身，也不自动保证更好的 generalization。</td></tr>
+            <tr><td>L2 regularization</td><td>按参数平方和惩罚大 parameter norm</td><td>在 objective 中加入 \(\frac{\lambda'}{2}\lVert\theta\rVert_2^2\)，其 gradient contribution 为 \(\lambda'\theta\)。</td></tr>
+            <tr><td>weight decay</td><td>在 parameter update 中直接施加乘性收缩</td><td>原始形式为 \(\theta_{t+1}=(1-\lambda)\theta_t-\alpha\nabla f_t(\theta_t)\)；它不是给 objective 加 penalty 的定义。</td></tr>
+            <tr><td>inductive bias</td><td>数据本身未决定时采用的解选择偏好</td><td>Weight decay 倾向 parameter norm 较小的解；在有 normalization 或 scale invariance 时，不能直接推出对应函数更简单。</td></tr>
+            <tr><td>parameter norm</td><td>参数向量大小的度量</td><td>本课使用 L2 norm \(\lVert\theta\rVert_2\)。Parameter norm 变小与 data loss 变小是两个不同目标。</td></tr>
+            <tr><td>parameter iterate</td><td>一次更新得到的参数状态</td><td>记作 \(\theta_t\)。Proposition 1 的“等价”指相同起点和系数换算下得到相同的逐步 iterate。</td></tr>
+            <tr><td>parameter trajectory</td><td>连续 parameter iterates 形成的更新轨迹</td><td>若每一步的 \(\theta_t\) 都相同，则两种算法 parameter-trajectory equivalent；这不表示它们的定义或 objective 相同。</td></tr>
+            <tr><td>adaptive preconditioner</td><td>根据 gradient history 逐坐标缩放更新</td><td>Adam 中写作对角矩阵 \(M_t\)。不同 coordinates 通常有不同缩放，因此 \(M_t\neq kI\)。</td></tr>
+            <tr><td>coupled L2 regularization / L2-Adam</td><td>把 L2 term 放进 Adam gradient path</td><td>\(\lambda'\theta\) 会依次进入 \(g_t\)、\(m_t\)、\(v_t\) 并受到 \(M_t\) 的逐坐标作用。</td></tr>
+            <tr><td>decoupled weight decay / AdamW</td><td>把 decay 从 adaptive gradient path 中分离</td><td>Moments 只聚合 data gradient；decay 直接作用于 parameters，不经过 \(m_t\)、\(v_t\) 或 \(M_t\)。</td></tr>
+            <tr><td>first moment</td><td>gradient 的指数移动平均</td><td>记作 \(m_t\)，保留 signed direction history；AdamW 中不聚合 weight-decay term。</td></tr>
+            <tr><td>second raw moment</td><td>squared gradient 的指数移动平均</td><td>记作 \(v_t\)，记录 squared magnitude history；不是 centered variance。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="symbols">
+      <h2>Symbols</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Symbol</th><th>含义</th><th>不要混淆</th></tr></thead>
+          <tbody>
+            <tr><td>\(\alpha\)</td><td>learning rate</td><td>控制 gradient update 的全局尺度；不是每步 decay rate。</td></tr>
+            <tr><td>\(\lambda\)</td><td>weight-decay rate</td><td>Lesson 的 Proposition 1 语境下，它直接决定 \((1-\lambda)\theta_t\)。</td></tr>
+            <tr><td>\(\lambda'\)</td><td>L2 penalty coefficient</td><td>标准 SGD 下要与 decay rate \(\lambda\) 等价，需满足 \(\lambda'=\lambda/\alpha\)。</td></tr>
+            <tr><td>\(M_t\)</td><td>Adam 的 per-coordinate preconditioner</td><td>它随 step 和 coordinate 变化，通常不是常数倍单位阵 \(kI\)。</td></tr>
+            <tr><td>\(m_t,v_t\)</td><td>Adam 的 first 与 second raw moment state</td><td>L2-Adam 的 penalty 会进入这些 states；AdamW 的 decay 不进入。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="do-not-conflate">
+      <h2>不要混淆</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>不要混为一谈</th><th>关键区别</th></tr></thead>
+          <tbody>
+            <tr><td>L2 regularization vs weight decay</td><td>前者修改 objective，后者修改 update rule；只在受限条件下 parameter-trajectory equivalent。</td></tr>
+            <tr><td>等价定义 vs 等价 iterate</td><td>Proposition 1 只证明经过系数换算后的逐步更新相同，没有把两种机制定义成同一个概念。</td></tr>
+            <tr><td>单独使用 vs 同时使用</td><td>标准 SGD 下通常把二者视为替代实现；同时启用会叠加收缩，形成重复正则作用。</td></tr>
+            <tr><td>smaller parameter norm vs lower data loss</td><td>Decay 施加的是解选择偏好；data gradient 才直接响应当前 data loss。</td></tr>
+            <tr><td>L2-Adam vs AdamW</td><td>L2-Adam 让 penalty 经过 adaptive path；AdamW 让 decay 直接作用于 parameters。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      <p>返回 <a href="../lessons/0013-adamw-decoupled-weight-decay.html">Lesson 0013</a>。若正文与本页对同一 term 的含义不一致，以论文原文核验后同步修正两处，不临时创造新的同义叫法。</p>
+    </footer>
+  </main>
+</body>
+</html>

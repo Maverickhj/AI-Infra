@@ -8,6 +8,10 @@
   用于核对作者、版本、引用信息和原始 PDF 入口。
 - [论文原文：Adam: A Method for Stochastic Optimization（Kingma & Ba, arXiv:1412.6980）](https://arxiv.org/abs/1412.6980)
   Adam 支线的一手来源。用于核对 Algorithm 1、moment estimates、bias correction、effective stepsize、原始 convergence assumptions 与 experiments。
+- [论文原文：Decoupled Weight Decay Regularization（Loshchilov & Hutter, arXiv:1711.05101v3）](https://arxiv.org/html/1711.05101v3)
+  AdamW 主线的一手来源。Lesson 0013 使用 §2 与 Appendix A 核对 decoupled update；Lesson 0014 使用 §4.4 与 Appendix B.1–B.2 核对 normalized weight decay、AdamWR 和论文给出的 evidence boundary。
+- [论文原文：SGDR: Stochastic Gradient Descent with Warm Restarts（Loshchilov & Hutter, arXiv:1608.03983v5）](https://arxiv.org/html/1608.03983v5)
+  Warm restarts 的一手来源。用于核对 cosine annealing、restart cycle、$T_i$、$T_{cur}$ 与 $T_{mult}$；AdamWR 的具体组合仍以 AdamW 论文 Appendix B.2 为准。
 - 本地阅读材料：`/Users/jingshao/projects/LLMZeroToHero/translated/00_foundations/1706.03762__Attention_Is_All_You_Need_(Transformer).zh.dual.pdf`
   中英对照阅读入口。该文件元数据显示由 BabelDOC AI 生成，因此只作辅助阅读，关键结论回查论文原文。
 - [LLMZeroToHero 阅读路线](https://github.com/jingyaogong/LLMZeroToHero)
@@ -20,3 +24,4 @@
 ## Gaps
 
 - 首篇只处理论文提出的原始 Encoder–Decoder Transformer。与现代 decoder-only LLM 的对应关系、FlashAttention 等内核实现和 KV cache 的系统后果，留待后续课程建立证据链。
+- AdamW 论文关于 normalized weight decay 与 AdamWR 的实验集中在 CIFAR-10、ImageNet32x32 等图像分类设置；不能直接外推为 LLM training 的 universal scaling rule。

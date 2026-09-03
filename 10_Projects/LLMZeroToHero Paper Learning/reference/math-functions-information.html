@@ -17,7 +17,7 @@
   <main>
     <p class="eyebrow">Math Foundations · Functions and Information</p>
     <h1>Functions 与 Information Measures</h1>
-    <p class="lede">本页解释 exponential、logarithm、softmax、cross-entropy 与 KL divergence 的一般结构。Attention weights、next-token probabilities 和 label smoothing 属于 Lesson 中的应用。</p>
+    <p class="lede">本页解释 exponential、logarithm、proportionality、reparameterization、softmax、cross-entropy 与 KL divergence 的一般结构。具体 architecture、optimizer 与论文映射属于 Lesson 中的应用。</p>
 
     <section id="exp-log">
       <h2>Exponential 与 logarithm</h2>
@@ -34,6 +34,48 @@
 \log(ab)=\log a+\log b.
 \]</div>
       <p>当 \(0&lt;p\leq1\) 时，\(\log p\leq0\)，所以 negative log-probability \(-\log p\) 非负；\(p\) 越接近 \(1\)，该值越接近 \(0\)。</p>
+    </section>
+
+    <section id="proportionality">
+      <h2>Proportionality：\(\propto\) 表示什么</h2>
+      <p>符号 \(\propto\) 读作 proportional to（正比于）。写作：</p>
+      <div class="equation">\[
+y\propto h(x)
+\]</div>
+      <p>表示存在一个在当前比较范围内保持不变的 proportionality constant（比例常数）\(C\)，使得：</p>
+      <div class="equation">\[
+y=C\,h(x).
+\]</div>
+      <p>例如，若 \(y\propto1/\sqrt{x}\)，则：</p>
+      <div class="equation">\[
+y=\frac{C}{\sqrt{x}}.
+\]</div>
+      <p>当 \(x\) 变为原来的四倍时，\(y\) 变为原来的二分之一。只写 \(\propto\) 不会给出 \(C\) 的具体数值，也不能说明该关系在哪些条件之外仍成立；使用 scaling relation 时必须说明哪些 quantities 改变、哪些 quantities 固定。</p>
+    </section>
+
+    <section id="reparameterization">
+      <h2>Reparameterization：换参数，不先假设换对象</h2>
+      <p>Reparameterization（重参数化）是用一组新 parameters \(\phi\) 通过 mapping \(g\) 表示原 parameters \(\theta\)：</p>
+      <div class="equation">\[
+\theta=g(\phi),
+\qquad
+F(x;\theta)=F(x;g(\phi)).
+\]</div>
+      <p>若 \(g\) 可逆，则 \(\theta\) 与 \(\phi\) 是同一 parameter space 的一一对应坐标。更一般地，\(g\) 也可以不是一一对应；此时应明确哪些 \(\phi\) 表示同一个 \(\theta\)，以及新表示是否仍覆盖原来的 object family。</p>
+      <p>一个中性例子是用 unconstrained \(\rho\in\mathbb{R}\) 表示必须为正的 quantity \(\sigma\)：</p>
+      <div class="equation">\[
+\sigma=\exp(\rho)&gt;0.
+\]</div>
+      <p>这样，新 parameter \(\rho\) 可以在整个 real line 上变化，而得到的 \(\sigma\) 自动满足 positivity constraint。</p>
+      <div class="callout caution">
+        <strong>对象相同不等于 optimization dynamics 相同：</strong>若 loss 为 \(L(\theta)\) 且 \(\theta=g(\phi)\)，chain rule 给出
+        \[
+        \nabla_{\phi}L(g(\phi))
+        =J_g(\phi)^{\top}\nabla_{\theta}L(\theta),
+        \]
+        其中 \(J_g\) 是 mapping \(g\) 的 Jacobian matrix（局部导数组成的矩阵）。直接对 \(\theta\) 做 gradient descent 与对 \(\phi\) 做 gradient descent 通常不会产生相同的 trajectory。
+      </div>
+      <p>阅读 reparameterization 时固定检查四件事：原 parameter、新 parameter、conversion mapping，以及为什么新表示更方便。常见目的包括自动满足约束、分离耦合因素、改善解释性或让 hyperparameter 更容易迁移。</p>
     </section>
 
     <section id="softmax">
@@ -102,7 +144,7 @@ H(q,p)=H(q)+D_{\mathrm{KL}}(q\Vert p).
 
     <section id="transfer-check">
       <h2>进入 Lesson 前的 transfer check</h2>
-      <p>遇到 softmax 时指出 normalization axis；遇到 cross-entropy 时指出哪个 distribution 是 fixed target、哪个是 model output；遇到 KL 时保留 argument order。</p>
+      <p>遇到 \(\propto\) 时指出固定的 proportionality constant 与比较范围；遇到 reparameterization 时指出原 parameter、新 parameter 与 conversion mapping；遇到 softmax 时指出 normalization axis；遇到 cross-entropy 时区分 fixed target 与 model output；遇到 KL 时保留 argument order。</p>
     </section>
 
     <footer>

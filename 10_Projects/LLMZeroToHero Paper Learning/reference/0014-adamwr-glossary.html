@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>0014 · AdamWR Glossary</title>
+  <link rel="stylesheet" href="../assets/course.css">
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]']]
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">Reference · Lesson 0014 · Vocabulary</p>
+    <h1>AdamWR：Normalized Weight Decay 与 Warm Restarts 术语表</h1>
+    <p class="lede">本页只收录 Lesson 0014 新增或重新限定的 terms、symbols 与易混边界。Lesson 0013 的 L2 / weight-decay path 术语仍以其独立 glossary 为准。</p>
+    <p class="meta">对应课程：<a href="../lessons/0014-adamw-normalized-weight-decay-warm-restarts.html">Lesson 0014</a> · 前一课术语：<a href="0013-adamw-glossary.html">Lesson 0013 Glossary</a> · 主证据：<a href="https://arxiv.org/html/1711.05101v3">AdamW</a> Appendix B · 调度来源：<a href="https://arxiv.org/html/1608.03983v5">SGDR</a> §3</p>
+
+    <section id="core-terms">
+      <h2>Core terms</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>English term</th><th>中文解释</th><th>Lesson 0014 中的精确定义与边界</th></tr></thead>
+          <tbody>
+            <tr><td>computational budget / training budget</td><td>计划执行的训练工作量</td><td>本课主要用 epochs \(T\) 与 batch-pass count \(N=BT/b\) 表达；不是 FLOPs 的完整定义。</td></tr>
+            <tr><td>batch pass</td><td>处理一个 minibatch 并执行一次 update</td><td>论文用 total batch passes 描述 decay 被施加的次数；忽略尾 batch 时，\(N=BT/b\)。</td></tr>
+            <tr><td>raw weight-decay rate</td><td>实际进入每步 update 的 decay rate</td><td>记作 \(\lambda\) 或第 \(i\) 个 cycle 的 \(\lambda_i\)；它由 \(\lambda_{\mathrm{norm}}\) 和 budget 换算。</td></tr>
+            <tr><td>normalized weight decay</td><td>把 budget 显式纳入 decay 换算</td><td>论文提出 \(\lambda=\lambda_{\mathrm{norm}}\sqrt{b/(BT)}\) 以降低 optimal decay 对 batch passes 的依赖。</td></tr>
+            <tr><td>reparameterization</td><td>换一组 parameters 描述或控制同一对象</td><td>本课从直接调 raw \(\lambda\) 改为调 \(\lambda_{\mathrm{norm}}\)，再根据 \(N\) 换算回 \(\lambda\)；没有引入新的 decay mechanism。</td></tr>
+            <tr><td>cumulative multiplicative shrinkage</td><td>同一个乘性因子重复作用后的总收缩</td><td>纯 decay toy model 给出 \(\theta_N=(1-\lambda)^N\theta_0\)；它不包含 gradient 或 optimizer-state dynamics。</td></tr>
+            <tr><td>cosine annealing</td><td>在一个 cycle 内按余弦曲线降低 schedule multiplier</td><td>\(\eta_t\) 从 \(\eta_{\max}^{(i)}\) 平滑下降到 \(\eta_{\min}^{(i)}\)；不等于 restart 本身。</td></tr>
+            <tr><td>warm restart</td><td>保留已有解并重启 schedule cycle</td><td>重置 \(T_{cur}\) 并提高 \(\eta_t\)；不重新随机初始化 parameters，AdamWR 中也不清空 moments。</td></tr>
+            <tr><td>restart cycle / run</td><td>两次 warm restarts 之间的一段训练</td><td>第 \(i\) 个 cycle 的长度为 \(T_i\)。到达边界后进入下一 cycle。</td></tr>
+            <tr><td>schedule multiplier</td><td>缩放 base update 的全局调度因子</td><td>记作 \(\eta_t\)。AdamW 原论文 Algorithm 2 中，它同时缩放 adaptive step 与 decoupled decay。</td></tr>
+            <tr><td>anytime performance</td><td>在任意中途预算点取得可用结果的能力</td><td>论文引入 warm restarts 的目标；不同于只比较最终预算耗尽后的 final performance。</td></tr>
+            <tr><td>AdamWR</td><td>AdamW 加 normalized decay 与 cosine warm restarts</td><td>不是所有使用 cosine scheduler 的 AdamW run；必须同时满足论文中的组合路径。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="symbols">
+      <h2>Symbols</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Symbol</th><th>含义</th><th>作用范围</th></tr></thead>
+          <tbody>
+            <tr><td>\(B\)</td><td>training points 总数</td><td>Dataset-level count。</td></tr>
+            <tr><td>\(b\)</td><td>batch size</td><td>每次 minibatch update 使用的 examples 数。</td></tr>
+            <tr><td>\(T\)</td><td>总 training epochs</td><td>普通 normalized decay 的 budget；AdamWR 中换成当前 cycle 的 \(T_i\)。</td></tr>
+            <tr><td>\(N=BT/b\)</td><td>batch-pass count</td><td>忽略不完整 batch 时的 update 次数。</td></tr>
+            <tr><td>\(\propto\)</td><td>proportional to（正比于）</td><td>\(y\propto h(x)\) 表示 \(y=Ch(x)\)，其中 \(C\) 在当前比较范围内固定；本课中 \(\lambda\propto1/\sqrt N\) 的 \(C\) 是 \(\lambda_{\mathrm{norm}}\)。</td></tr>
+            <tr><td>\(\lambda_{\mathrm{norm}}\)</td><td>normalized decay hyperparameter</td><td>希望比 raw \(\lambda\) 更容易跨 budgets 复用；不是 universal constant。</td></tr>
+            <tr><td>\(\lambda_i\)</td><td>第 \(i\) 个 cycle 的 raw decay rate</td><td>\(\lambda_i=\lambda_{\mathrm{norm}}\sqrt{b/(BT_i)}\)。</td></tr>
+            <tr><td>\(\alpha\)</td><td>base learning rate</td><td>与 \(\eta_t\) 相乘形成当前 adaptive-step scale。</td></tr>
+            <tr><td>\(\eta_t\)</td><td>schedule multiplier</td><td>在 cycle 内随 \(T_{cur}/T_i\) 按 cosine 改变。</td></tr>
+            <tr><td>\(T_i\)</td><td>第 \(i\) 个 restart cycle 的长度</td><td>可通过 \(T_{i+1}=T_iT_{mult}\) 增长。</td></tr>
+            <tr><td>\(T_{cur}\)</td><td>距上次 restart 已过的 epochs</td><td>每个 batch 更新，因此可为非整数；restart 时归零。</td></tr>
+            <tr><td>\(T_{mult}\)</td><td>cycle-length multiplier</td><td>控制下一 cycle 相对当前 cycle 的长度。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="do-not-conflate">
+      <h2>不要混淆</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>不要混为一谈</th><th>关键区别</th></tr></thead>
+          <tbody>
+            <tr><td>normalized weight decay vs weight normalization</td><td>前者是 decay hyperparameter scaling；后者通常指 parameter reparameterization，是另一类机制。</td></tr>
+            <tr><td>warm restart vs training from scratch</td><td>Warm restart 保留已有 parameters；它重启 schedule，不重新初始化 model。</td></tr>
+            <tr><td>cosine annealing vs warm restart</td><td>Cosine annealing 描述 cycle 内下降；restart 描述 cycle boundary 上 multiplier 的回升。</td></tr>
+            <tr><td>base learning rate \(\alpha\) vs multiplier \(\eta_t\)</td><td>前者是基础尺度，后者是随 schedule 改变的无量纲因子；当前尺度为 \(\eta_t\alpha\)。</td></tr>
+            <tr><td>square-root proposal vs theoretical law</td><td>\(1/\sqrt{N}\) 是论文用有限实验提出的 normalization，不是严格保持累计 shrinkage 的定理。</td></tr>
+            <tr><td>\(1/N\) vs \(1/\sqrt N\)</td><td>前者来自保持纯乘性 toy model 最终收缩近似不变；后者是 AdamW 论文用于提高 hyperparameter transferability 的经验规则。</td></tr>
+            <tr><td>reparameterization vs new mechanism</td><td>\(\lambda_{\mathrm{norm}}\leftrightarrow\lambda\) 改变 hyperparameter 表示；optimizer 最终仍使用 raw \(\lambda\) 执行同一种 decay update。</td></tr>
+            <tr><td>cosine scheduler + AdamW vs AdamWR</td><td>只有再按当前 cycle budget 使用 normalized decay，才对应论文定义的 AdamWR 组合。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer>
+      <p>返回 <a href="../lessons/0014-adamw-normalized-weight-decay-warm-restarts.html">Lesson 0014</a>。若 implementation 的 scheduler 或 optimizer 参数名与本表相同，仍需核对其 update equation，不能只凭名称判定实现了 AdamWR。</p>
+    </footer>
+  </main>
+</body>
+</html>

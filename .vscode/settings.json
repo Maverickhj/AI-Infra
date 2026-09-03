@@ -1,3 +1,4 @@
 {
-    "specstory.cloudSync.enabled": "never"
+    "specstory.cloudSync.enabled": "never",
+    "liveServer.settings.port": 5501
 }
