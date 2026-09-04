@@ -41,7 +41,7 @@ reviewed: false
 
 如果追溯“完整思路”的最早来源，通常应追溯到 **Bridle & Brown, 1974** 的 JSRU 技术报告；如果限定为正式出版、并且希望引用一篇更容易检索的学术文献，则可引用 **Mermelstein, 1976**；而今天最经典、最广泛传播的 MFCC 版本来自 **Davis & Mermelstein, 1980**。
 
-## 三篇关键文献
+## 四组关键文献
 
 ### 1. Stevens、Volkmann、Newman，1937：Mel 尺度
 
