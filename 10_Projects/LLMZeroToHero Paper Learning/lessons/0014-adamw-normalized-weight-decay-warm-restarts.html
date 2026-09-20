@@ -81,6 +81,8 @@ N=\frac{BT}{b}.
 
     <section>
       <h2>Warm restart：重启 schedule，不是从头训练</h2>
+      <p>Warm restart 的直接来源是 Loshchilov 与 Hutter 的 <a href="https://arxiv.org/html/1608.03983v5">SGDR: Stochastic Gradient Descent with Warm Restarts</a>。当时 large DNN training 往往耗时很长，常见的 learning-rate schedule 是按固定间隔阶梯式降低；作者关注的是如何在尚未耗尽训练预算时，也能较早得到可用的低 error model。其目标是改善 anytime performance，而不是通过重新随机初始化来逃离 local minima。</p>
+      <p>SGDR 借鉴了 optimization 中已有的 restart 思路：gradient-free optimization 用 restart 处理 multimodal functions；gradient-based optimization 中的 warm restart 常用于改善 ill-conditioned objectives 的收敛。SGDR 将它具体化为一种 SGD 的 learning-rate schedule：保留已有 parameters，周期性把 learning rate 提高后再次退火。下面的 AdamWR 版本再明确说明 Adam moments 如何处理。</p>
       <p>Warm restart（热重启）把 training 划成多个 restart cycles。第 \(i\) 个 cycle 长度为 \(T_i\)，\(T_{cur}\) 表示距上次 restart 已经过的 epochs。Schedule multiplier（调度乘子）\(\eta_t\) 在 cycle 内按 cosine annealing（余弦退火）从高到低：</p>
       <div class="equation">\[
 \eta_t
