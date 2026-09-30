@@ -1,0 +1,38 @@
+{
+  "name": "megatron-learning-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "data": "env -u PYTHONPATH uv run --no-project python -S tools/build_case_data.py",
+    "predev": "npm run data",
+    "dev": "vite --host 0.0.0.0 --port 5173 --strictPort",
+    "prebuild": "npm run data",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 5173 --strictPort",
+    "test:e2e": "playwright test",
+    "test:metadata": "env -u PYTHONPATH uv run --no-project python -S -m unittest discover -s tests -v && uv run --no-project python -S tools/verify_handoff.py",
+    "format": "prettier --write web tests/browser playwright.config.ts",
+    "pretest:metadata": "npm run data"
+  },
+  "dependencies": {
+    "katex": "0.18.9",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-markdown": "10.1.0",
+    "rehype-katex": "7.0.1",
+    "remark-gfm": "4.0.1",
+    "remark-math": "6.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "prettier": "3.9.9",
+    "typescript": "7.0.2",
+    "vite": "8.3.1"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}

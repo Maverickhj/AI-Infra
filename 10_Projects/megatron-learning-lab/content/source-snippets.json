@@ -1,0 +1,863 @@
+{
+  "schema_version": 1,
+  "ai_generated": true,
+  "reviewed": false,
+  "note": "源码片段逐字摘录；中文讲解独立保存。静态审阅只覆盖片段，不证明执行。原证据范围之外的新片段不扩写历史审阅范围。",
+  "entries": [
+    {
+      "source_id": "B-Q2",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/models/qwen/qwen2_bridge.py",
+      "git_blob_sha": "f62382e0077e76f2020be9ab7d48559204f6b59e",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "Qwen2/Qwen2.5 的配置差异",
+          "start_line": 46,
+          "end_line": 57,
+          "code": "    def provider_bridge(self, hf_pretrained):\n        \"\"\"Convert HuggingFace Qwen2 config to GPTModelProvider.\"\"\"\n        provider = super().provider_bridge(hf_pretrained)\n\n        provider.normalization = \"RMSNorm\"\n        provider.gated_linear_unit = True\n        provider.add_bias_linear = False\n        provider.add_qkv_bias = True\n        provider.hidden_dropout = 0.0\n        provider.autocast_dtype = torch.bfloat16\n\n        return provider\n",
+          "sha256": "3de19e32890162c5d58d548cc8a25c97f604b2c9aced5c90172a7589b4f2b11b",
+          "annotations": [
+            {
+              "line": 53,
+              "text": "QKV bias 在这里显式开启；普通 Linear 无 bias 不意味着 QKV 无 bias。"
+            }
+          ]
+        },
+        {
+          "title": "QKV 与 SwiGLU 的映射",
+          "start_line": 83,
+          "end_line": 102,
+          "code": "                # QKV: Combine separate Q, K, V matrices into single QKV matrix\n                QKVMapping(\n                    megatron_param=\"decoder.layers.*.self_attention.linear_qkv.weight\",\n                    q=\"model.layers.*.self_attn.q_proj.weight\",\n                    k=\"model.layers.*.self_attn.k_proj.weight\",\n                    v=\"model.layers.*.self_attn.v_proj.weight\",\n                ),\n                # QKV bias: Combine separate Q, K, V biases into single QKV bias (Qwen2 specific)\n                QKVMapping(\n                    megatron_param=\"decoder.layers.*.self_attention.linear_qkv.bias\",\n                    q=\"model.layers.*.self_attn.q_proj.bias\",\n                    k=\"model.layers.*.self_attn.k_proj.bias\",\n                    v=\"model.layers.*.self_attn.v_proj.bias\",\n                ),\n                # Gated MLP: Combine gate and up projection matrices into single FC1 matrix\n                GatedMLPMapping(\n                    megatron_param=\"decoder.layers.*.mlp.linear_fc1.weight\",\n                    gate=\"model.layers.*.mlp.gate_proj.weight\",\n                    up=\"model.layers.*.mlp.up_proj.weight\",\n                ),\n",
+          "sha256": "409e247a31966273d1f87854df3e52c42510db655644dbec71f849165207a8b2",
+          "annotations": [
+            {
+              "line": 91,
+              "text": "bias 与 weight 分别经过 QKVMapping；gate/up 采用 GatedMLPMapping。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-Q3",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/models/qwen/qwen3_bridge.py",
+      "git_blob_sha": "e5b1442f1b30860420d7d6bc08407b5b4f351829",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "Qwen3 的 QK norm 与无 QKV bias",
+          "start_line": 43,
+          "end_line": 55,
+          "code": "    def provider_bridge(self, hf_pretrained):\n        \"\"\"Convert HuggingFace Qwen3 config to GPTModelProvider.\"\"\"\n        provider = super().provider_bridge(hf_pretrained)\n\n        provider.normalization = \"RMSNorm\"\n        provider.gated_linear_unit = True\n        provider.add_bias_linear = False\n        provider.add_qkv_bias = False  # Qwen3 does NOT have QKV bias (unlike Qwen2)\n        provider.hidden_dropout = 0.0\n        provider.qk_layernorm = True  # Qwen3 uses QK layernorm\n        provider.autocast_dtype = torch.bfloat16\n\n        return provider\n",
+          "sha256": "3f17757c1788e120505aa51e2c038ccfd69b0ef545edc92746c0c0d0a341589e",
+          "annotations": [
+            {
+              "line": 50,
+              "text": "与 Qwen2 对照读第 50、52 行：关闭 QKV bias，开启 QK layernorm。"
+            }
+          ]
+        },
+        {
+          "title": "语义 norm 与实际参数位置",
+          "start_line": 70,
+          "end_line": 81,
+          "code": "        param_mappings = {\n            # Embedding and output\n            \"embedding.word_embeddings.weight\": \"model.embed_tokens.weight\",\n            \"output_layer.weight\": \"lm_head.weight\",\n            \"decoder.final_layernorm.weight\": \"model.norm.weight\",\n            # Decoder layer attention norms and projections\n            \"decoder.layers.*.self_attention.linear_qkv.layer_norm_weight\": \"model.layers.*.input_layernorm.weight\",\n            \"decoder.layers.*.mlp.linear_fc1.layer_norm_weight\": \"model.layers.*.post_attention_layernorm.weight\",\n            \"decoder.layers.*.self_attention.q_layernorm.weight\": \"model.layers.*.self_attn.q_norm.weight\",  # Qwen3 specific\n            \"decoder.layers.*.self_attention.k_layernorm.weight\": \"model.layers.*.self_attn.k_norm.weight\",  # Qwen3 specific\n            \"decoder.layers.*.self_attention.linear_proj.weight\": \"model.layers.*.self_attn.o_proj.weight\",\n            \"decoder.layers.*.mlp.linear_fc2.weight\": \"model.layers.*.mlp.down_proj.weight\",\n",
+          "sha256": "c7a68c99c9c24fabbeb0f2fd352a4f3b0ea7bcfe5ad9a4fa8aee24f5be3af233",
+          "annotations": [
+            {
+              "line": 76,
+              "text": "input/post-attention norm 可以映射到 fused Linear 的 layer_norm_weight；不能只找独立 norm 模块。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-Q3M",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/models/qwen/qwen3_moe_bridge.py",
+      "git_blob_sha": "a6476f4f49a104ee5f7faf35e2124af526375366",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "MoE 的 provider 配置",
+          "start_line": 51,
+          "end_line": 70,
+          "code": "    def provider_bridge(self, hf_pretrained):\n        \"\"\"Convert HuggingFace Qwen3 MoE config to GPTModelProvider.\"\"\"\n        provider = super().provider_bridge(hf_pretrained)\n\n        provider.normalization = \"RMSNorm\"\n        provider.gated_linear_unit = True\n        provider.add_bias_linear = False\n        provider.add_qkv_bias = False  # Qwen3 MoE does NOT have QKV bias\n        provider.hidden_dropout = 0.0\n        provider.qk_layernorm = True  # Qwen3 MoE uses QK layernorm\n        provider.autocast_dtype = torch.bfloat16\n\n        provider.moe_grouped_gemm = True\n        provider.moe_router_load_balancing_type = \"aux_loss\"\n        provider.moe_aux_loss_coeff = 1e-3\n        provider.moe_router_pre_softmax = not hf_pretrained.config.norm_topk_prob\n        provider.moe_token_dispatcher_type = \"alltoall\"\n        provider.moe_permute_fusion = True\n\n        return provider\n",
+          "sha256": "a5c909de90cceb637503c88db08e572b33dc6bd1b2d5f4c45f2c758cf372a67c",
+          "annotations": [
+            {
+              "line": 63,
+              "text": "Grouped GEMM、辅助 loss 与 alltoall 都是这里的配置选择，不是所有 MoE backend 的通用结论。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-DS3",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/models/deepseek/deepseek_v3_bridge.py",
+      "git_blob_sha": "dbb50f8617e1fd96720c144928a8c09395a9c04f",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "MLA、路由与辅助目标",
+          "start_line": 57,
+          "end_line": 75,
+          "code": "        provider.transformer_layer_spec = partial(get_gpt_decoder_block_spec, use_transformer_engine=HAVE_TE)\n        provider.normalization = \"RMSNorm\"\n        provider.gated_linear_unit = True\n        provider.add_bias_linear = False\n        provider.share_embeddings_and_output_weights = False\n        provider.qk_layernorm = True\n        provider.multi_latent_attention = True\n\n        provider.moe_grouped_gemm = True\n        provider.moe_router_pre_softmax = True\n        provider.moe_token_dispatcher_type = \"alltoall\"\n        provider.moe_router_load_balancing_type = \"seq_aux_loss\"\n        # The released V3 configs omit this training-only hyperparameter, but V3 uses a\n        # small complementary sequence-wise loss alongside expert-bias load balancing.\n        provider.moe_aux_loss_coeff = getattr(hf_config, \"aux_loss_alpha\", 0.0001)\n        provider.moe_shared_expert_overlap = True\n        provider.moe_router_score_function = \"sigmoid\"\n        provider.moe_router_enable_expert_bias = True\n        provider.moe_router_dtype = \"fp32\"\n",
+          "sha256": "7dcaa3ee1c68ffdc3ceb0fb63a44a41fa15af738937918e43cbc5020518b2d75",
+          "annotations": [
+            {
+              "line": 68,
+              "text": "seq_aux_loss 与 expert bias 同时存在；不要把 auxiliary-loss-free 的口号理解为这里没有任何辅助项。"
+            }
+          ]
+        },
+        {
+          "title": "Dense/MoE 层分布与 shared expert",
+          "start_line": 90,
+          "end_line": 97,
+          "code": "        provider.make_vocab_size_divisible_by = 1280\n\n        provider.moe_layer_freq = [0] * hf_config.first_k_dense_replace + [1] * (\n            hf_config.num_hidden_layers - hf_config.first_k_dense_replace\n        )\n        provider.moe_shared_expert_intermediate_size = hf_config.moe_intermediate_size * hf_config.n_shared_experts\n\n        provider.mtp_num_layers = getattr(hf_config, \"num_nextn_predict_layers\", 0) or None\n",
+          "sha256": "b54ae903441f53fcc33315b129feb4e1aa4cbf9688d678e2947e83fd9db163f1",
+          "annotations": [
+            {
+              "line": 92,
+              "text": "前 first_k_dense_replace 层为 dense；随后为 MoE。共享专家的中间宽度由配置相乘得到。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-DSMAP",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/models/deepseek/common.py",
+      "git_blob_sha": "5d0d83e09d7f6d6e9ee6df652eb8befa327f2e6e",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "MLA 与不同 FFN 分支的参数映射",
+          "start_line": 26,
+          "end_line": 61,
+          "code": "    param_mappings = {\n        # Embed\n        \"embedding.word_embeddings.weight\": \"model.embed_tokens.weight\",\n        # Attention\n        \"decoder.layers.*.input_layernorm.weight\": \"model.layers.*.input_layernorm.weight\",\n        \"decoder.layers.*.self_attention.linear_proj.weight\": \"model.layers.*.self_attn.o_proj.weight\",\n        # Reference: https://github.com/NVIDIA/NeMo/blob/50cceb9c90ea1f440d1e14074fa13bd45f60a1c4/nemo/collections/llm/gpt/model/deepseek.py#L637-L650\n        #  In deepseek, HF weight `model.layers.*.post_attention_layernorm.weight` is mapped to the following mcore weights depending on the layer type:\n        #  (a) `decoder.layers.*.pre_mlp_layernorm.weight`, if the layer is MoE\n        #  (b) `decoder.layers.*.mlp.linear_fc1.layer_norm_weight`, if the layer is dense\n        \"decoder.layers.*.pre_mlp_layernorm.weight\": \"model.layers.*.post_attention_layernorm.weight\",\n        \"decoder.layers.*.mlp.linear_fc1.layer_norm_weight\": \"model.layers.*.post_attention_layernorm.weight\",\n        \"decoder.layers.*.self_attention.linear_kv_down_proj.weight\": \"model.layers.*.self_attn.kv_a_proj_with_mqa.weight\",\n        \"decoder.layers.*.self_attention.linear_kv_up_proj.weight\": \"model.layers.*.self_attn.kv_b_proj.weight\",\n        \"decoder.layers.*.self_attention.linear_kv_up_proj.layer_norm_weight\": \"model.layers.*.self_attn.kv_a_layernorm.weight\",\n        # Mcore local spec\n        \"decoder.layers.*.self_attention.kv_layernorm.weight\": \"model.layers.*.self_attn.kv_a_layernorm.weight\",\n        # Dense MLP\n        \"decoder.layers.*.mlp.linear_fc2.weight\": \"model.layers.*.mlp.down_proj.weight\",\n        # MoE\n        \"decoder.layers.*.mlp.router.weight\": \"model.layers.*.mlp.gate.weight\",\n        \"decoder.layers.*.mlp.router.expert_bias\": \"model.layers.*.mlp.gate.e_score_correction_bias\",\n        \"decoder.layers.*.mlp.experts.linear_fc2.weight*\": \"model.layers.*.mlp.experts.*.down_proj.weight\",\n        \"decoder.layers.*.mlp.experts.local_experts.*.linear_fc2.weight\": \"model.layers.*.mlp.experts.*.down_proj.weight\",\n        \"decoder.layers.*.mlp.shared_experts.linear_fc2.weight\": \"model.layers.*.mlp.shared_experts.down_proj.weight\",\n        # LM Head\n        \"decoder.final_layernorm.weight\": \"model.norm.weight\",\n        \"output_layer.weight\": \"lm_head.weight\",\n        # MLA\n        \"decoder.layers.*.self_attention.linear_q_down_proj.weight\": \"model.layers.*.self_attn.q_a_proj.weight\",\n        \"decoder.layers.*.self_attention.linear_q_up_proj.weight\": \"model.layers.*.self_attn.q_b_proj.weight\",\n        \"decoder.layers.*.self_attention.linear_q_up_proj.layer_norm_weight\": \"model.layers.*.self_attn.q_a_layernorm.weight\",\n        # Mcore local spec\n        \"decoder.layers.*.self_attention.q_layernorm.weight\": \"model.layers.*.self_attn.q_a_layernorm.weight\",\n        # For models without MLA\n        \"decoder.layers.*.self_attention.linear_q_proj.weight\": \"model.layers.*.self_attn.q_proj.weight\",\n",
+          "sha256": "f4d8b2fefb1d9ee4a81528d5a7013f428c361c1cc683f3390feffee5e199538a",
+          "annotations": [
+            {
+              "line": 38,
+              "text": "HF 的 kv_a/kv_b 对应 down/up；q_a/q_b 的对应关系见第 55–59 行。不同层的 norm 位置也不同。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-ALIAS",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/recipes/qwen/qwen3.py",
+      "git_blob_sha": "92009bba1105234c2e37909f8e0f34dadace083d",
+      "copyright_header": "# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n# ruff: noqa: F401\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "旧 recipe 名称只是别名",
+          "start_line": 73,
+          "end_line": 81,
+          "code": "from megatron.bridge.recipes.qwen.h100.qwen3 import (\n    qwen3_600m_sft_1gpu_h100_bf16_config as qwen3_600m_sft_config,\n)\nfrom megatron.bridge.recipes.qwen.h100.qwen3 import (\n    qwen3_600m_sft_8gpu_h100_bf16_128k_config as qwen3_600m_sft_128k_config,\n)\nfrom megatron.bridge.recipes.qwen.h100.qwen3 import (\n    qwen3_600m_sft_8gpu_h100_bf16_yarn_128k_config as qwen3_600m_sft_yarn_128k_config,\n)\n",
+          "sha256": "38f7983006a294eafe9f3e935d64fee760d43fd6f6c9248840f341fabc9b9d6e",
+          "annotations": [
+            {
+              "line": 74,
+              "text": "旧 qwen3_600m_sft_config 实际指向显式 H100 recipe；别名不证明当前 GPU 兼容。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-RECIPE",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/recipes/qwen/h100/qwen3.py",
+      "git_blob_sha": "eda55c855f9e4239d2d0ee6f5be5676af8f21570",
+      "copyright_header": "# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "构建 provider 不等于加载权重",
+          "start_line": 597,
+          "end_line": 612,
+          "code": "    cfg = _sft_common()\n\n    # Model config\n    cfg.model = AutoBridge.from_hf_pretrained(\"Qwen/Qwen3-0.6B\").to_megatron_provider(load_weights=False)\n\n    # Tokenizer\n    cfg.tokenizer.tokenizer_model = \"Qwen/Qwen3-0.6B\"\n\n    # Parallelism settings\n    cfg.model.tensor_model_parallel_size = 1\n    cfg.model.pipeline_model_parallel_size = 1\n    cfg.model.pipeline_model_parallel_layout = None\n    cfg.model.pipeline_dtype = None\n    cfg.model.virtual_pipeline_model_parallel_size = None\n    cfg.model.context_parallel_size = 1\n    cfg.model.sequence_parallel = False\n",
+          "sha256": "84532b68f7e1bbcbff19756643f05d02cc4cc2fc4cecbe5e0e215037717dd095",
+          "annotations": [
+            {
+              "line": 600,
+              "text": "load_weights=False 只建立模型配置。SFT 权重前置条件还需沿 finetune 与 setup 检查。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-SFTDATA",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/data/sft_processing.py",
+      "git_blob_sha": "269535e7b1dc37c286a6d253669475b89e4fb6b5",
+      "copyright_header": "# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "三种 chat 监督范围",
+          "start_line": 45,
+          "end_line": 61,
+          "code": "@dataclass(kw_only=True)\nclass ChatSFTPreprocessingConfig:\n    \"\"\"Declarative preprocessing for structured conversation examples.\n\n    Args:\n        loss_mode: Tokens that contribute to the loss. ``assistant`` trains all\n            assistant turns, ``last_turn`` trains only the final assistant span,\n            and ``full`` trains the complete rendered conversation.\n    \"\"\"\n\n    loss_mode: Literal[\"assistant\", \"last_turn\", \"full\"] = \"assistant\"\n\n    def validate(self) -> None:\n        \"\"\"Validate chat preprocessing settings.\"\"\"\n        if self.loss_mode not in {\"assistant\", \"last_turn\", \"full\"}:\n            raise ValueError(\"Chat SFT loss_mode must be assistant, last_turn, or full.\")\n\n",
+          "sha256": "be603da623ee3cb3ede067b8ca2d74fb169bf26edea51c5543eb6920a21a6e33",
+          "annotations": [
+            {
+              "line": 55,
+              "text": "assistant / last_turn / full 是预处理合约。网页角色跨度是说明，不是实际 tokenizer 输出。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-SFTENTRY",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/training/finetune.py",
+      "git_blob_sha": "20b5b923d12c85391755adc4ce2900e29d740658",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "SFT 的 checkpoint 前置条件",
+          "start_line": 50,
+          "end_line": 54,
+          "code": "    assert config.checkpoint.pretrained_checkpoint is not None or config.checkpoint.load is not None, (\n        \"Finetuning requires a loading from a pretrained checkpoint or resuming from a checkpoint\"\n    )\n    config._checkpoint_load_required = True\n    return pretrain(config, forward_step_func, callbacks=callbacks)\n",
+          "sha256": "7e35a8e7d19151fa8d7940bd8f3887ef60b9d521c14ae5bf2cb6dda00518e406",
+          "annotations": [
+            {
+              "line": 50,
+              "text": "必须指定预训练 checkpoint 或 resume checkpoint；满足断言仍不等于已证明权重加载正确。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-PRETRAIN",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/training/pretrain.py",
+      "git_blob_sha": "7c950d62513683437ae0533ecc10fed11ff099c0",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "setup 连接模型、优化器和训练循环",
+          "start_line": 133,
+          "end_line": 161,
+          "code": "    config = state.cfg\n    dataset_provider = get_dataset_provider(config.dataset)\n    try:\n        setup_output = setup(state, dataset_provider, restart_store=store, callback_manager=callback_manager)\n        state = setup_output.state\n        model = setup_output.model\n        optimizer = setup_output.optimizer\n        scheduler = setup_output.scheduler\n        train_data_iterator = setup_output.train_data_iterator\n        valid_data_iterator = setup_output.valid_data_iterator\n        test_data_iterator = setup_output.test_data_iterator\n        checkpoint_manager = setup_output.checkpoint_manager\n        pg_collection = setup_output.pg_collection\n\n        # TRAINING\n        if not config.validation.skip_train:\n            if state.train_state.do_train and config.train.train_iters > 0:\n                train(\n                    forward_step_func,\n                    model,\n                    optimizer,\n                    scheduler,\n                    train_data_iterator,\n                    valid_data_iterator,\n                    state,\n                    checkpoint_manager,\n                    pg_collection,\n                    callback_manager=callback_manager,\n                )\n",
+          "sha256": "b4cb951e57e93ff65164d12fec35783940378b6bc5381d765eedc2790b83554c",
+          "annotations": [
+            {
+              "line": 136,
+              "text": "读取 setup 的产物后进入 train；权重导入与恢复的细节仍在 setup/checkpoint 子链。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-TRAIN",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/training/train.py",
+      "git_blob_sha": "35705a4a6578db187f2e7670a26cbd461185243f",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "调度 forward/backward 后更新参数",
+          "start_line": 914,
+          "end_line": 939,
+          "code": "        # Forward pass.\n        losses_reduced = forward_backward_func(\n            forward_step_func=forward_step_func,\n            data_iterator=forward_backward_data_iterator,\n            model=model,\n            num_microbatches=get_num_microbatches(),\n            seq_length=seq_length,\n            micro_batch_size=train_config.micro_batch_size,\n            decoder_seq_length=seq_length,\n            forward_only=False,\n            adjust_tensor_shapes_fn=adjust_tensor_shapes_fn,\n            p2p_communicator=p2p_communicator,\n            pg_collection=pg_collection,\n        )\n    should_checkpoint, should_exit, exit_code = rerun_state_machine.should_checkpoint_and_exit()\n    if should_exit:\n        return {}, True, should_checkpoint, should_exit, exit_code, None, None, None\n\n    # Empty unused memory.\n    if train_config.empty_unused_memory_level >= 1:\n        torch.cuda.empty_cache()\n\n    # Update parameters.\n    nvtx_range_push(suffix=\"optimizer_step\")\n    timers(\"optimizer\", log_level=1).start(barrier=optim_config.barrier_with_L1_time)\n    update_successful, grad_norm, num_zeros_in_grad = optimizer.step()\n",
+          "sha256": "08cb5f81d97f4e4352e500ab40c339b473b389bf1ebfb53fd39037805689ec2b",
+          "annotations": [
+            {
+              "line": 923,
+              "text": "forward_only=False 表示训练路径；第 939 行执行 optimizer.step。不是单纯 forward 动画反放。"
+            }
+          ]
+        },
+        {
+          "title": "仅在成功更新后推进 scheduler",
+          "start_line": 963,
+          "end_line": 969,
+          "code": "    # Update learning rate.\n    if update_successful:\n        increment = get_num_microbatches() * train_config.micro_batch_size * cfg.data_parallel_size\n        scheduler.step(increment=increment)\n        skipped_iter = 0\n    else:\n        skipped_iter = 1\n",
+          "sha256": "a8fe4f9a135172f65d0802f41146e1e87e59cd6ead25e9b1824ff82efcd9bc61",
+          "annotations": [
+            {
+              "line": 964,
+              "text": "scheduler 的增量由 microbatch 数、micro batch size 与 DP size 决定；失败更新有独立分支。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-STEP",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/training/gpt_step.py",
+      "git_blob_sha": "5d1d42da5349f74c17f24127aba67e52f19bc2f3",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "forward 返回输出及 loss callback",
+          "start_line": 482,
+          "end_line": 490,
+          "code": "    output, loss_mask = _forward_step_common(state, data_iterator, model, return_schedule_plan)\n\n    loss_function = _create_loss_function(\n        loss_mask,\n        check_for_nan_in_loss=state.cfg.rerun_state_machine.check_for_nan_in_loss,\n        check_for_spiky_loss=state.cfg.rerun_state_machine.check_for_spiky_loss,\n    )\n\n    return output, loss_function\n",
+          "sha256": "a026f45acd0c393da869b463184a971ffd629f205bf73bf05a8831a509f53209",
+          "annotations": [
+            {
+              "line": 484,
+              "text": "loss_mask 绑定进 callback；需要继续读取 losses.py 和调度归一化，不能把 output 一律当成 logits。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-LOSS",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/training/losses.py",
+      "git_blob_sha": "41d6ec7db27a3eca593692b73e2bb8f07b4793a5",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "对 token loss 做 mask 与求和",
+          "start_line": 62,
+          "end_line": 68,
+          "code": "    if isinstance(output_tensor, tuple):\n        losses = output_tensor[0].view(-1).float()\n        loss_mask = output_tensor[1].view(-1).float()\n    else:\n        losses = output_tensor.view(-1).float()\n    loss_mask = loss_mask.view(-1).float()\n    loss = torch.sum(losses * loss_mask)\n",
+          "sha256": "587488d72a31444bd3eee3876751f3d1a1fce19b927c9a873d68d71a04dff553",
+          "annotations": [
+            {
+              "line": 68,
+              "text": "这里是加权求和，没有在此除以有效 token 数。tuple 输出还可能携带新的 mask。"
+            }
+          ]
+        },
+        {
+          "title": "返回有效 token 数及报告统计",
+          "start_line": 102,
+          "end_line": 105,
+          "code": "    num_tokens = loss_mask.sum().clone().detach().to(torch.int)\n    reporting_loss = torch.cat([loss.clone().detach().view(1), num_tokens.view(1)])\n\n    return (loss, num_tokens, {\"lm loss\": reporting_loss})\n",
+          "sha256": "94bb14639cc8ba85c5e1ac612ca9ea1f29f39303e81da6f1fe9667bb5c3e740d",
+          "annotations": [
+            {
+              "line": 102,
+              "text": "num_tokens 与 loss 同时交给后续调度；报告张量被 detach，不参与梯度。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-PROVIDER",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/models/gpt_provider.py",
+      "git_blob_sha": "6bb4a9145c3173247ef0031b78f903eecd8caf19",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "HF vocab 与 padded vocab",
+          "start_line": 264,
+          "end_line": 270,
+          "code": "        assert self.vocab_size is not None, \"vocab_size must be configured before calling provide()\"\n        if self.should_pad_vocab:\n            padded_vocab_size = calculate_padded_vocab_size(\n                self.vocab_size, self.make_vocab_size_divisible_by, self.tensor_model_parallel_size\n            )\n        else:\n            padded_vocab_size = self.vocab_size\n",
+          "sha256": "b01d154a3287af18fd8da27557848ef47c59a786aea827af27c41528c8122515",
+          "annotations": [
+            {
+              "line": 266,
+              "text": "padding 同时取决于词表大小、可整除因子与 TP；不能只使用原始 vocab_size 推算本地分片。"
+            }
+          ]
+        },
+        {
+          "title": "stage 设置与 MCore GPT 构建",
+          "start_line": 280,
+          "end_line": 308,
+          "code": "        # Determine pre/post flags if not provided using vp + pp stage\n        if pre_process is None:\n            pre_process = is_vp_first_stage(vp_stage=vp_stage, vp_size=vp_size) and is_pp_first_stage(\n                self._pg_collection.pp\n            )\n        if post_process is None:\n            post_process = is_vp_last_stage(vp_stage=vp_stage, vp_size=vp_size) and is_pp_last_stage(\n                self._pg_collection.pp\n            )\n        # Expose vp stage on config for downstream modules (e.g., TE layers)\n        # so they can compute correct offsets without legacy globals.\n        self._vp_stage = vp_stage\n        with model_init_device_context():\n            model = MCoreGPTModel(\n                self,\n                transformer_layer_spec=transformer_layer_spec,\n                vocab_size=padded_vocab_size,\n                max_sequence_length=self.seq_length,\n                fp16_lm_cross_entropy=self.fp16_lm_cross_entropy,\n                parallel_output=self.parallel_output,\n                share_embeddings_and_output_weights=self.share_embeddings_and_output_weights,\n                position_embedding_type=self.position_embedding_type,\n                rotary_percent=self.rotary_percent,\n                rotary_base=self.rotary_base,\n                rope_scaling=self.rope_scaling,\n                rope_scaling_factor=self.rope_scaling_factor,\n                seq_len_interpolation_factor=self.seq_len_interpolation_factor,\n                pre_process=pre_process,\n                post_process=post_process,\n",
+          "sha256": "6526337cffdc89e9823b35bde7ae3f824d09a1e24fc1db8338be404031f7c440",
+          "annotations": [
+            {
+              "line": 293,
+              "text": "provider 将 spec、padded vocab、共享权重和 pre/post-process 交给 MCoreGPTModel。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-QKV",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/models/conversion/param_mapping.py",
+      "git_blob_sha": "2e626d9777337ece85cbecdc517c171ddd9792a1",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "上游说明中的 GQA interleave 合约",
+          "start_line": 1666,
+          "end_line": 1673,
+          "code": "    **Megatron format**\n    -   Single interleaved tensor following grouped query attention (GQA) pattern\n    -   Interleaving order: `[q1...qn, k1, v1, q1...qn, k2, v2, ...]`\n    -   Where `n = num_attention_heads / num_query_groups`\n\n    **Key features**\n    1.  Format conversion: Handles merging/splitting with proper interleaving\n    2.  Grouped Query Attention: Supports different numbers of Q and KV heads\n",
+          "sha256": "69f154677e7aa48bc94178df88eaef62d28fcdc64d5e5f882f48a0356f275a74",
+          "annotations": [
+            {
+              "line": 1668,
+              "text": "这是上游 docstring 原文：每组 Q heads 后跟对应 K/V；不是全部 Q 后接全部 K/V。"
+            }
+          ]
+        },
+        {
+          "title": "合并参数后再分发",
+          "start_line": 1717,
+          "end_line": 1737,
+          "code": "    def hf_to_megatron(\n        self,\n        hf_weights: Dict[str, torch.Tensor],\n        megatron_module: nn.Module,\n    ) -> torch.Tensor:\n        \"\"\"Merge Q, K, V into interleaved format and distribute.\"\"\"\n        if self.tp_rank == 0:\n            config = self._get_config(megatron_module)\n\n            # Check if we're dealing with biases (1D tensors) or hf_weights (2D tensors)\n            if hf_weights[\"q\"].ndim == 1:\n                # For biases, use the bias-specific merge function\n                merged = merge_qkv_biases(config, hf_weights[\"q\"], hf_weights[\"k\"], hf_weights[\"v\"])\n            else:\n                # For hf_weights, use the standard merge function\n                merged = merge_qkv_weights(config, hf_weights[\"q\"], hf_weights[\"k\"], hf_weights[\"v\"])\n        else:\n            merged = None\n\n        # Delegate the actual sharding/broadcasting to the TP-aware mapping.\n        return self._tp_mapping.hf_to_megatron(merged, megatron_module)\n",
+          "sha256": "f57b858206392038bc94ccfcb12b3a0535b1efd1d09c8950b226ddbed1b7ab8d",
+          "annotations": [
+            {
+              "line": 1727,
+              "text": "一维 bias 与二维 weight 分别选择合并函数，再委托 TP-aware mapping 做分片/广播。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-RLDEMO",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "examples/rl/rlhf_with_bridge.py",
+      "git_blob_sha": "3ea4f2b0eb7aa689a96bd560e05c6161bd6ebff2",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "教学示例的内存权重更新",
+          "start_line": 177,
+          "end_line": 196,
+          "code": "@torch.no_grad()\ndef refit_hf_from_megatron(\n    bridge: AutoBridge,\n    megatron_models: list,\n    hf_model: AutoModelForCausalLM,\n    *,\n    show_progress: bool = False,\n    cpu: bool = False,\n) -> None:\n    \"\"\"Update the in-memory HF policy with current Megatron weights.\n\n    This avoids writing to disk and lets the next rollout use the latest policy.\n    \"\"\"\n    # Map parameter names to Tensors for fast lookup\n    name_to_param = dict(hf_model.named_parameters())\n    for name, tensor in bridge.export_hf_weights(megatron_models, cpu=cpu, show_progress=show_progress):\n        param = name_to_param.get(name)\n        if param is None:\n            continue\n        param.detach().copy_(tensor.to(param.device, dtype=param.dtype))\n",
+          "sha256": "b97d6d2f77865e0568ffe4ccec4e0f13ad3df327c0648f21e332a09b28fda0d9",
+          "annotations": [
+            {
+              "line": 192,
+              "text": "Bridge export 的参数被复制到 HF policy。这里只说明接口，不是 NeMo RL 的完整 PPO/refit 验证。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "C-GPT",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/models/gpt/gpt_model.py",
+      "git_blob_sha": "ff3514b74330cbc86f28e202efad371981e6470f",
+      "copyright_header": "# Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "decoder 到 postprocess 的完整交接",
+          "start_line": 583,
+          "end_line": 618,
+          "code": "        hidden_states = self.decoder(\n            hidden_states=decoder_input,\n            attention_mask=attention_mask,\n            inference_context=inference_context,\n            rotary_pos_emb=rotary_pos_emb,\n            rotary_pos_cos=rotary_pos_cos,\n            rotary_pos_sin=rotary_pos_sin,\n            rotary_pos_cos_sin=rotary_pos_cos_sin,\n            packed_seq_params=packed_seq_params,\n            sequence_len_offset=sequence_len_offset,\n            padding_mask=padding_mask,\n            **(extra_block_kwargs or {}),\n        )\n\n        return self._postprocess(\n            hidden_states=hidden_states,\n            input_ids=input_ids,\n            position_ids=position_ids,\n            labels=labels,\n            rotary_pos_emb=rotary_pos_emb,\n            rotary_pos_cos=rotary_pos_cos,\n            rotary_pos_sin=rotary_pos_sin,\n            mtp_in_postprocess=self.mtp_process,\n            loss_mask=loss_mask,\n            decoder_input=decoder_input,\n            attention_mask=attention_mask,\n            padding_mask=padding_mask,\n            inference_params=inference_params,\n            packed_seq_params=packed_seq_params,\n            sequence_len_offset=sequence_len_offset,\n            runtime_gather_output=runtime_gather_output,\n            extra_block_kwargs=extra_block_kwargs,\n            inference_context=inference_context,\n            output_processor=output_processor,\n            output_processor_context=output_processor_context,\n        )\n",
+          "sha256": "5f3233de8530d53d4b4c1524fe7c9d7419b79dd861db38668f62cfcd63e6087e",
+          "annotations": [
+            {
+              "line": 597,
+              "text": "labels、loss_mask、MTP 和 output_processor 会影响后处理；需要把这些分支条件一起读。"
+            }
+          ]
+        },
+        {
+          "title": "默认 logits / token loss 返回分支",
+          "start_line": 790,
+          "end_line": 796,
+          "code": "        if labels is None:\n            # [s b h] => [b s h]\n            return logits.transpose(0, 1).contiguous()\n\n        loss = self.compute_language_model_loss(labels, logits)\n\n        return loss\n",
+          "sha256": "00934b84107f8742dfed937b0b3691b30355f4eb6380a449d4e9f5807ddf2580",
+          "annotations": [
+            {
+              "line": 790,
+              "text": "无 labels 返回 logits；有 labels 计算并返回 token loss。不要对返回的 loss 再做 cross entropy。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "C-ATTN",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/transformer/attention.py",
+      "git_blob_sha": "3a5876bc0fe69f9c4a467cd3d74ecd303513af25",
+      "copyright_header": "# Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "无 output gate 分支中的 grouped split",
+          "start_line": 1887,
+          "end_line": 1906,
+          "code": "        else:\n            # If no output gate: [sq, b, ng, (np/ng + 2) * hn]\n            # --> [sq, b, ng, np/ng * hn], None, [sq, b, ng, hn], [sq, b, ng, hn]\n            split_arg_list = [\n                num_query_heads_per_group * self.hidden_size_per_attention_head,\n                self.hidden_size_per_attention_head,\n                self.hidden_size_per_attention_head,\n            ]\n\n            # Return unsplit mixed_qkv and split_arg_list\n            if not split_qkv:\n                return mixed_qkv, split_arg_list\n\n            if SplitAlongDim is not None:\n                (query, key, value) = SplitAlongDim(mixed_qkv, 3, split_arg_list)\n            else:\n                (query, key, value) = torch.split(mixed_qkv, split_arg_list, dim=3)\n\n        # Query [sq, b, ng, np/ng * hn] -> [sq, b, np, hn]\n        query = query.reshape(query.size(0), query.size(1), -1, self.hidden_size_per_attention_head)\n",
+          "sha256": "c94ba61c6f7b7a8f0aeeaad7148dbb466720194ccf4bdc108d5e780219e3d848",
+          "annotations": [
+            {
+              "line": 1890,
+              "text": "每组先有若干 Q heads，再有一份 K 和 V；按 group 拆开后才把 Q reshape 为 head 轴。"
+            }
+          ]
+        },
+        {
+          "title": "Q/K 独立归一化",
+          "start_line": 1920,
+          "end_line": 1924,
+          "code": "        if self.q_layernorm is not None:\n            query = apply_module(self.q_layernorm)(query)\n\n        if self.k_layernorm is not None:\n            key = apply_module(self.k_layernorm)(key)\n",
+          "sha256": "fe863966595739573b8815f4538e01cd15fec644cef3fac231da34168517941f",
+          "annotations": [
+            {
+              "line": 1920,
+              "text": "只有相应模块存在才应用 norm；不同模型的 provider 决定它们是否被构建。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "C-MLA",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/transformer/multi_latent_attention.py",
+      "git_blob_sha": "50e11151dcd70a81c101070b8edbdbff6e1d5777",
+      "copyright_header": "# Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "MLA 的 Q/KV down projection",
+          "start_line": 638,
+          "end_line": 663,
+          "code": "        \"\"\"Unfused q/kv down projection path.\"\"\"\n        if self.config.q_lora_rank is not None:\n            # if linear_q_down_proj is ColumnParallelLinear:\n            #     q_compressed: [s, b, q_lora_rank / TP]\n            # elif linear_q_down_proj is Linear:\n            #     q_compressed: [s / TP, b, q_lora_rank]\n            q_compressed, _ = self.linear_q_down_proj(hidden_states)\n\n            # When output is sharded (ColumnParallelLinear), two things are needed to be\n            # identical to a normal Linear.\n            #   1. Manually gather output to restore output dim q_lora_rank;\n            #   2. Scatter sequence back to s / TP if sequence-parallel since it was\n            #      gathered by ColumnParallelLinear.\n            if q_compressed.size(-1) != self.config.q_lora_rank:\n                q_compressed = gather_from_tensor_model_parallel_region(q_compressed)\n                if self.config.sequence_parallel:\n                    q_compressed = scatter_to_sequence_parallel_region(q_compressed)\n        else:\n            q_compressed = hidden_states\n\n        # if linear_kv_down_proj is ColumnParallelLinear:\n        #     kv_combined: [s, b, (kv_lora_rank + qk_pos_emb_head_dim) / TP]\n        # elif linear_kv_down_proj is Linear:\n        #     kv_combined: [s / TP, b, (kv_lora_rank + qk_pos_emb_head_dim)]\n        kv_combined, _ = self.linear_kv_down_proj(hidden_states)\n        return q_compressed, kv_combined\n",
+          "sha256": "514ac3189aad58ad2ff84a43380eec373b2921e4f395001c9c5b325cca4a93e7",
+          "annotations": [
+            {
+              "line": 655,
+              "text": "q_lora_rank 未设置时保留 hidden_states 走直接 Q 路径；KV 仍经过 down projection。"
+            }
+          ]
+        },
+        {
+          "title": "普通 up-projection 分支",
+          "start_line": 853,
+          "end_line": 876,
+          "code": "            if self.config.q_lora_rank is not None:\n                # q_compressed: [num_tokens, q_lora_rank]\n                # q: [num_tokens, n * (qk_head_dim + qk_pos_emb_head_dim)]\n                q, _ = self.linear_q_up_proj(q_compressed)\n            else:\n                # q_compressed: [num_tokens, hidden_size]\n                # q: [num_tokens, n * (qk_head_dim + qk_pos_emb_head_dim)]\n                q, _ = self.linear_q_proj(q_compressed)\n\n            # q: [num_tokens, n, q_head_dim]\n            q = q.view(*q.size()[:-1], self.num_attention_heads_per_partition, self.q_head_dim)\n\n            # kv: [num_tokens, n * (qk_head_dim + v_head_dim)]\n            kv, _ = self.linear_kv_up_proj(kv_compressed)\n\n            # kv: [num_tokens, n, (qk_head_dim + v_head_dim)]\n            kv = kv.view(\n                *kv.size()[:-1],\n                self.num_attention_heads_per_partition,\n                self.config.qk_head_dim + self.config.v_head_dim,\n            )\n\n            # [num_tokens, qk_pos_emb_head_dim] -> [num_tokens, 1, qk_pos_emb_head_dim]\n            k_pos_emb = torch.unsqueeze(k_pos_emb, -2)\n",
+          "sha256": "5ff2f1f0b3d4d7ae515a051c45bbd8c403b3a1e316b6bff54ebaa2abff799384",
+          "annotations": [
+            {
+              "line": 866,
+              "text": "这里展开 KV 为各 head 的内容 K/V；不能用推理 latent cache 的宽度替代训练中间态。"
+            }
+          ]
+        },
+        {
+          "title": "latent cache 的训练/推理边界",
+          "start_line": 321,
+          "end_line": 335,
+          "code": "        assert not rotary_pos_cos_sin, \"Flash-infer rope has not been tested with MLA.\"\n        assert not (\n            self.training and self.cache_mla_latents\n        ), \"cache_mla_latents conflicts with training.\"\n\n        # hidden_states: [sq, b, h]\n\n        inference_context = deprecate_inference_params(inference_context, inference_params)\n        if inference_context and not inference_context.is_static_batching():\n            assert (\n                self.config.cache_mla_latents\n            ), \"currently to use dynamic backend for MLA cache mla latents must be true\"\n\n        if self.config.cache_mla_latents:\n            self.prepare_for_absorption()\n",
+          "sha256": "f3058e5104c497cb9379a8debb27535f21f69d3ba25cf95e581fd0704b1a1828",
+          "annotations": [
+            {
+              "line": 323,
+              "text": "源码明确拒绝 training 与 cache_mla_latents 同时开启；absorption 属于启用缓存的条件路径。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "C-MOE",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/transformer/moe/moe_layer.py",
+      "git_blob_sha": "48e78775a849575a9d46f95d900490ded4a5946d",
+      "copyright_header": "# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "路由产出概率与分配图",
+          "start_line": 437,
+          "end_line": 445,
+          "code": "    @maybe_skip_or_early_return_by_cudagraph(\"route\")\n    def route(self, hidden_states: torch.Tensor, padding_mask: Optional[torch.Tensor] = None):\n        \"\"\"Compute token routing for preprocessing.\n\n        This method uses the router to determine which experts to send each token to,\n        producing routing probabilities and a mapping.\n        \"\"\"\n        probs, routing_map = apply_module(self.router)(hidden_states, padding_mask)\n        return probs, routing_map\n",
+          "sha256": "15b4e6cc0bc639375f1381239cff94781c8d993c4d357d5c4c08d08288d295f6",
+          "annotations": [
+            {
+              "line": 444,
+              "text": "padding_mask 一起交给 router；实际 token-to-expert 分配需要运行采集。"
+            }
+          ]
+        },
+        {
+          "title": "通信组合与 shared expert 相加",
+          "start_line": 566,
+          "end_line": 588,
+          "code": "    def combine(self, output: torch.Tensor):\n        \"\"\"Combines expert outputs via communication and adds shared expert output.\n\n        This method uses the token dispatcher to combine the outputs from different\n        experts (e.g., via an All-to-All communication).\n        \"\"\"\n        output = self.token_dispatcher.token_combine(output)\n        return output\n\n    def postprocess(self, output: torch.Tensor, shared_expert_output: Optional[torch.Tensor]):\n        \"\"\"Project the output back from latent dimension to hidden dimension after combine\n        in latent dimension if needed. Combine expert output with shared_experts if needed.\n\n        _latent_shared_expert_output is inference-only (latent-MoE + NVLS dispatcher with\n        shared-expert overlap). It is populated in preprocess and joined here, after\n        fc2_latent_proj, so the dimensions match the full hidden dim.\"\"\"\n\n        output = self.token_dispatcher.combine_postprocess(output)\n        if self.config.moe_latent_size:\n            output, _ = self.fc2_latent_proj(output)\n\n        if shared_expert_output is not None:\n            output = output + shared_expert_output\n",
+          "sha256": "396b64aaf1e882e97427ebeec31f2cf4b9dddb05acc379deccf23369547253a5",
+          "annotations": [
+            {
+              "line": 587,
+              "text": "token_combine 与 combine_postprocess 是不同阶段；此分支在后处理中叠加 shared_expert_output。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "R-WORKER",
+      "commit": "81aa43dda4765b0429cf31dab44441e4e4383911",
+      "path": "nemo_rl/models/policy/workers/megatron_policy_worker.py",
+      "git_blob_sha": "9ead07baf36315c8568cef4303a950397bd11c98",
+      "copyright_header": "# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "policy worker 连接 setup 与训练组件",
+          "start_line": 66,
+          "end_line": 82,
+          "code": "from nemo_rl.models.megatron.router_replay import router_replay_enabled\nfrom nemo_rl.models.megatron.setup import (\n    finalize_megatron_setup,\n    handle_model_import,\n    setup_distributed,\n    setup_model_and_optimizer,\n    setup_reference_model_state,\n    validate_and_set_config,\n    validate_model_paths,\n)\nfrom nemo_rl.models.megatron.train import (\n    LogprobsPostProcessor,\n    LossPostProcessor,\n    TopkLogitsPostProcessor,\n    aggregate_training_statistics,\n    megatron_forward_backward,\n)\n",
+          "sha256": "64f57b9c4f8145e23dfa2b1b7d3621abed75e5049bb79dc7cff13a7d118133dd",
+          "annotations": [
+            {
+              "line": 76,
+              "text": "worker 复用 LogprobsPostProcessor、LossPostProcessor 和 megatron_forward_backward。此段仅定位依赖，不证明完整 refit 已审阅。"
+            }
+          ]
+        },
+        {
+          "title": "Refit 前准备参数元数据",
+          "start_line": 1187,
+          "end_line": 1198,
+          "code": "    @wrap_with_nvtx_name(\"megatron_policy_worker/prepare_refit_info\")\n    def prepare_refit_info(self) -> None:\n        \"\"\"Prepare state dict metadata for weight refitting and IPC streaming.\"\"\"\n        self.refit_param_info_mcore = self._calculate_refit_param_info()\n\n        # Collect tensor metadata for refit / hf side info\n        refit_param_info_hf = {}\n        # Reuse shared iterator that appends FP8 KV/Q scales when enabled\n        for name, tensor in self._iter_params_with_optional_kv_scales():\n            refit_param_info_hf[name] = (tensor.shape, tensor.dtype)\n\n        return refit_param_info_hf\n",
+          "sha256": "d3d9a0ea6377bf0609aa77fa951a7cd01772e307798aa0934361b9ceb79837f1",
+          "annotations": [
+            {
+              "line": 1195,
+              "text": "HF 侧 shape/dtype 来自待导出的参数迭代器；这只是 refit 准备，还不能证明生成端已更新。"
+            }
+          ]
+        },
+        {
+          "title": "通过 IPC 流式发送权重",
+          "start_line": 1374,
+          "end_line": 1393,
+          "code": "    @torch.no_grad()\n    @wrap_with_nvtx_name(\"megatron_policy_worker/stream_weights_via_ipc_zmq\")\n    def stream_weights_via_ipc_zmq(\n        self, buffer_size_bytes: int = 0, kv_scales: Optional[dict[str, float]] = None\n    ) -> None:\n        \"\"\"Stream model weights to peer process via ZMQ IPC socket.\"\"\"\n        self.maybe_init_zmq()\n\n        from nemo_rl.models.policy.utils import stream_weights_via_ipc_zmq_impl\n\n        # Use the shared implementation to append optional KV scales.\n        stream_weights_via_ipc_zmq_impl(\n            params_generator=self._iter_params_with_optional_kv_scales(\n                kv_scales=kv_scales\n            ),\n            buffer_size_bytes=buffer_size_bytes,\n            zmq_socket=self.zmq_socket,\n            rank=self.rank,\n            worker_name=str(self),\n        )\n",
+          "sha256": "b03021dd411f0568981d55c333dfe69bf09867fd19e9ee019e8adb8daba298fd",
+          "annotations": [
+            {
+              "line": 1385,
+              "text": "worker 委托共享实现传输参数。完整 refit 还需检查接收端、版本切换与固定输入验证。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "R-TRAIN",
+      "commit": "81aa43dda4765b0429cf31dab44441e4e4383911",
+      "path": "nemo_rl/models/megatron/train.py",
+      "git_blob_sha": "d9a1ca6dc70794062588a1a460e574ffbf415ffc",
+      "copyright_header": "# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "RL forward 的返回路径也有条件分支",
+          "start_line": 117,
+          "end_line": 134,
+          "code": "    if defer_fp32_logits:\n        additional_kwargs[\"fp32_output\"] = False\n    if use_linear_ce_fusion_loss:\n        additional_kwargs[\"labels\"] = input_ids_cp_sharded\n        # Only pass this kwarg when linear CE fusion is enabled. Older Megatron-LM\n        # GPTModel.forward signatures do not accept it.\n        additional_kwargs[\"return_logprobs_for_linear_ce_fusion\"] = True\n\n    with straggler_timer() if straggler_timer is not None else nullcontext():\n        output_tensor = model(\n            input_ids=input_ids_cp_sharded,\n            position_ids=position_ids,\n            attention_mask=attention_mask,\n            **additional_kwargs,\n            **multimodal_data,\n        )\n\n    return output_tensor\n",
+          "sha256": "f2eb62f0180491196e06ba81974c8c448d4992a127f3522403c7a99d42d22575",
+          "annotations": [
+            {
+              "line": 119,
+              "text": "linear CE fusion 会传 labels 并请求 logprobs；不要将所有 RL forward 都硬编码解释为 logits。"
+            }
+          ]
+        },
+        {
+          "title": "ProcessedMicrobatch 的数据边界",
+          "start_line": 192,
+          "end_line": 204,
+          "code": "    # Get the pre-processed microbatch from the iterator\n    processed_mb = next(data_iterator)\n\n    # Extract the processed components\n    data_dict = processed_mb.data_dict\n    input_ids = processed_mb.input_ids\n    input_ids_cp_sharded = processed_mb.input_ids_cp_sharded\n    attention_mask = processed_mb.attention_mask\n    position_ids = processed_mb.position_ids\n    packed_seq_params = processed_mb.packed_seq_params\n    cu_seqlens_padded = processed_mb.cu_seqlens_padded\n    mtp_loss_mask = processed_mb.mtp_loss_mask\n    routed_experts_cp_sharded = processed_mb.routed_experts_cp_sharded\n",
+          "sha256": "e3656b8f5c146af59cb926346345a6905acf010fd6aa111f07954314a3c2bcd3",
+          "annotations": [
+            {
+              "line": 198,
+              "text": "CP 分片、packed metadata、MTP mask 和 routed experts 分开保存，不能只传一个普通 tokens 张量。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "R-GRPO",
+      "commit": "81aa43dda4765b0429cf31dab44441e4e4383911",
+      "path": "nemo_rl/algorithms/grpo.py",
+      "git_blob_sha": "76d75c824ebe51a393b133e042aea268c83e8170",
+      "copyright_header": "# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "配置选择 advantage estimator",
+          "start_line": 1785,
+          "end_line": 1809,
+          "code": "    grpo_config = master_config.grpo\n    loss_config = master_config.loss_fn\n\n    # Provide backward-compatible defaults when adv_estimator is not in config.\n    # Fall back to top-level grpo.normalize_rewards / grpo.use_leave_one_out_baseline\n    # which older configs still use.\n    adv_estimator_config = grpo_config.get(\n        \"adv_estimator\",\n        {\n            \"name\": \"grpo\",\n            \"normalize_rewards\": grpo_config.get(\"normalize_rewards\", True),\n            \"use_leave_one_out_baseline\": grpo_config.get(\n                \"use_leave_one_out_baseline\", False\n            ),\n            \"minus_baseline\": True,\n        },\n    )\n\n    adv_estimator_name = adv_estimator_config[\"name\"]\n    if adv_estimator_name == \"gdpo\":\n        adv_estimator = GDPOAdvantageEstimator(adv_estimator_config, loss_config)\n        print(\"  ✓ Using GDPO advantage estimator (multi-reward)\")\n    elif adv_estimator_name == \"grpo\":\n        adv_estimator = GRPOAdvantageEstimator(adv_estimator_config, loss_config)\n        print(\"  ✓ Using GRPO advantage estimator\")\n",
+          "sha256": "2d4fa2bf1e8843c301525f44b9dff1231bb63129b064bcb5fef403bba2c2140d",
+          "annotations": [
+            {
+              "line": 1795,
+              "text": "normalize_rewards 与 leave-one-out 都有配置分支；网页概念公式不能覆盖所有 estimator 设置。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "R-LOSS",
+      "commit": "81aa43dda4765b0429cf31dab44441e4e4383911",
+      "path": "nemo_rl/algorithms/loss/loss_functions.py",
+      "git_blob_sha": "dc45fe647a66b3de30247526c443f606cce38a88",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "旧策略、生成与参考概率的字段",
+          "start_line": 158,
+          "end_line": 168,
+          "code": "class ClippedPGLossDataDict(TypedDict):\n    \"\"\"Required keys for the Clipped Policy Gradient loss function.\"\"\"\n\n    input_ids: torch.Tensor\n    advantages: torch.Tensor\n    prev_logprobs: torch.Tensor\n    generation_logprobs: torch.Tensor\n    reference_policy_logprobs: torch.Tensor\n    token_mask: torch.Tensor\n    sample_mask: torch.Tensor\n    __extra__: Any\n",
+          "sha256": "2eb269f4dc367eca7d9d9dbc7f6344405ce28b84861a5c1f4235fbb9359af7ea",
+          "annotations": [
+            {
+              "line": 163,
+              "text": "当前可导 logprob 不在此字段列表中，而是下一段 __call__ 的 next_token_logprobs 参数。"
+            }
+          ]
+        },
+        {
+          "title": "当前概率、目标偏移与 detach",
+          "start_line": 310,
+          "end_line": 338,
+          "code": "    def __call__(\n        self,\n        next_token_logprobs: Tensor,\n        data: BatchedDataDict[ClippedPGLossDataDict],\n        global_valid_seqs: torch.Tensor,\n        global_valid_toks: torch.Tensor,\n    ) -> tuple[torch.Tensor, dict]:\n        \"\"\"Clipped Policy Gradient RL loss function.\"\"\"\n        curr_logprobs = next_token_logprobs\n        token_mask = data[\"token_mask\"][:, 1:]\n        sample_mask = data[\"sample_mask\"]\n        advantages = data[\"advantages\"][:, 1:]\n        # Skip loading prev_logprobs when force_on_policy_ratio=True (will use curr_logprobs instead)\n        prev_logprobs = (\n            None if self.force_on_policy_ratio else data[\"prev_logprobs\"][:, 1:]\n        )\n        generation_logprobs = data[\"generation_logprobs\"][:, 1:]\n        if self.reference_policy_kl_penalty != 0:\n            reference_policy_logprobs = data[\"reference_policy_logprobs\"][:, 1:]\n            curr_logprobs_unfiltered = data.get(\n                \"curr_logprobs_unfiltered\", curr_logprobs\n            )\n\n        mask = token_mask * sample_mask.unsqueeze(-1)\n\n        # For truly on-policy training, use curr_logprobs as prev_logprobs\n        # This avoids computing prev_logprobs upstream\n        if self.force_on_policy_ratio:\n            prev_logprobs = curr_logprobs.detach()\n",
+          "sha256": "1a0fa0bebb9adafc33c399cf97f2337c026fd17bfcafd1940bcd2e248fbcbf28",
+          "annotations": [
+            {
+              "line": 318,
+              "text": "current 来自 forward；其余概率与 mask 按目标位置对齐。force_on_policy_ratio 用 detach 保留当前梯度，不能替换为常数 1。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "R-PPOCFG",
+      "commit": "81aa43dda4765b0429cf31dab44441e4e4383911",
+      "path": "examples/configs/recipes/llm/ppo-qwen2.5-1.5b-gsm8k-1n8g-megatron-valuetp2sp-dynbatch.yaml",
+      "git_blob_sha": "9f72eeb9f91d5fa8dec4b9c416b41c8f09fc2895",
+      "copyright_header": "",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "PPO 的 policy 与 value loss",
+          "start_line": 16,
+          "end_line": 31,
+          "code": "loss_fn:\n  ratio_clip_max: 0.2\n  ratio_clip_c: 3\nvalue_loss_fn:\n  scale: 1.0\n  cliprange: 0.5\ncheckpointing:\n  checkpoint_dir: results/ppo-qwen2.5-1.5b-gsm8k-1n8g-megatron-valuetp2sp-dynbatch\npolicy:\n  model_name: Qwen/Qwen2.5-1.5B-Instruct\n  train_global_batch_size: 256\n  max_total_sequence_length: 1024\n  megatron_cfg:\n    tensor_model_parallel_size: 2\n    context_parallel_size: 2\n    sequence_parallel: true\n",
+          "sha256": "cd1a75bbad2cbb8eaf97c40fa7bced58fbc5ec339ef9551e845058328b070a55",
+          "annotations": [
+            {
+              "line": 19,
+              "text": "value_loss_fn 与 policy loss 分开；这是一份特定多卡 recipe，不能直接当单卡已验证配置。"
+            }
+          ]
+        },
+        {
+          "title": "生成端与独立 value 配置",
+          "start_line": 40,
+          "end_line": 57,
+          "code": "  generation:\n    max_new_tokens: 512\n    vllm_cfg:\n      gpu_memory_utilization: 0.4\n      max_model_len: 1024\nvalue:\n  model_name: Qwen/Qwen2.5-1.5B-Instruct\n  train_micro_batch_size: 4\n  megatron_cfg:\n    tensor_model_parallel_size: 2\n    sequence_parallel: true\n    optimizer:\n      lr: 1.0e-05\n      weight_decay: 0.01\n    scheduler:\n      lr_warmup_iters: 0\n  dynamic_batching:\n    enabled: true\n",
+          "sha256": "89f8760854542c4b08ebf28e78391a3865fb0009c3614bbad4af68168ab9d5a2",
+          "annotations": [
+            {
+              "line": 45,
+              "text": "value 模型有自己的 microbatch、TP/SP 和 optimizer；它不是换一个 GRPO 标签。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-RUNNER",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "scripts/training/run_recipe.py",
+      "git_blob_sha": "0286ac863f30d366ea3f44d2fd7dfb7d35252ff2",
+      "copyright_header": "#!/usr/bin/env python3\n# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "训练参数及 sequence length 的归属",
+          "start_line": 30,
+          "end_line": 39,
+          "code": "Training:\n  -ms, --max_steps STEPS                 train.train_iters=STEPS\n  -gb, --global_batch_size SIZE          train.global_batch_size=SIZE\n  -mb, --micro_batch_size SIZE           train.micro_batch_size=SIZE\n\nSequence length:\n  -sl, --seq_length LENGTH               dataset.seq_length=LENGTH\n\nThe selected dataset owns the sequence length. After overrides are applied,\nthe runner synchronizes model.seq_length from the dataset field.\n",
+          "sha256": "14661324335bc4eae6801b476f3b7b035dc75e666ddc3e9a3e06f6ebda4f6afe",
+          "annotations": [
+            {
+              "line": 36,
+              "text": "此处是 runner 文档原文：seq_length 先属于 dataset，再同步到 model。实际有效配置仍须检查。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-DATASETUTIL",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/recipes/utils/dataset_utils.py",
+      "git_blob_sha": "9144c286f008d33637113824da1a668e9bc2df83",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "title": "SQuAD 使用 prompt-completion",
+          "start_line": 134,
+          "end_line": 147,
+          "code": "    return _text_hf_dataset_config(\n        source=HFDatasetSourceConfig(dataset_name=\"squad\"),\n        preprocessing=PromptCompletionSFTPreprocessingConfig(\n            prompt_column=\"input\",\n            completion_column=\"output\",\n            separator=\" \",\n        ),\n        seq_length=seq_length,\n        enable_offline_packing=enable_offline_packing,\n        offline_packing_specs=offline_packing_specs,\n        dataset_kwargs=dataset_kwargs,\n        val_proportion=0.1,\n        num_workers=1,\n    )\n",
+          "sha256": "386df0e477e34c442f740f4756362cf797826216b8fcc82dbcb452911071c11b",
+          "annotations": [
+            {
+              "line": 136,
+              "text": "该路径设置 prompt/completion 列与分隔符，不等于多轮 chat template。"
+            }
+          ]
+        },
+        {
+          "title": "Tulu 使用 chat 预处理",
+          "start_line": 169,
+          "end_line": 177,
+          "code": "    return _text_hf_dataset_config(\n        source=HFDatasetSourceConfig(dataset_name=\"tulu3\"),\n        preprocessing=ChatSFTPreprocessingConfig(),\n        seq_length=seq_length,\n        enable_offline_packing=enable_offline_packing,\n        offline_packing_specs=offline_packing_specs,\n        val_proportion=0.05,\n        num_workers=2,\n    )\n",
+          "sha256": "354907b19a404dd8e8d28287d451acc743139e2b9383f3c6d719eeebe33d9751",
+          "annotations": [
+            {
+              "line": 171,
+              "text": "与上一段对照：这里选择 ChatSFTPreprocessingConfig。SQuAD 跑通不能代替 chat mask 验证。"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

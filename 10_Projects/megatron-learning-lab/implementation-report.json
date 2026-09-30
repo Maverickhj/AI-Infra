@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "phase": "P0/P1 · E0",
+  "checked_at": "2026-09-30T13:08:07.407Z",
+  "ai_generated": true,
+  "reviewed": false,
+  "status": "implemented_pending_user_review",
+  "scope": [
+    "Qwen3 complete SFT learning flow",
+    "six model profiles and structural comparison",
+    "role-span assistant/last_turn/full inspector and shift counterexample",
+    "GQA head mapping; MLA train/decode; dense/MoE layer selection",
+    "complete RL course and four independent logprob definitions",
+    "fixed-reference source reader and explicit unavailable runtime mapping",
+    "hash deep links, narrow screen, keyboard, math and independent symbols",
+    "Verbatim offline code snippets, original line numbers and separate Chinese annotations",
+    "Deferred roadmap and trailing-two-year feature study TODO in project entry"
+  ],
+  "validation": {
+    "metadata_unit_tests": {
+      "passed": 32,
+      "command": "npm run test:metadata"
+    },
+    "handoff_metadata": "passed",
+    "typecheck_and_production_build": {
+      "status": "passed",
+      "command": "npm run build"
+    },
+    "browser_routes": {
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "command": "npm run test:e2e",
+      "browser": "Chromium",
+      "report": "runs/browser-report/index.html"
+    },
+    "production_browser_smoke": {
+      "status": "passed",
+      "page_errors": [],
+      "checks": [
+        "production assets loaded",
+        "offline B-LOSS excerpt visible",
+        "source annotation panel loaded"
+      ],
+      "url": "http://127.0.0.1:5174/"
+    },
+    "git_diff_check": "passed",
+    "source_snippets": {
+      "status": "passed",
+      "sources": 27,
+      "excerpts": 45,
+      "checks": [
+        "fixed upstream Git blob verification",
+        "verbatim contiguous line comparison",
+        "excerpt integrity and annotation bounds",
+        "all 45 snippets readable offline in Chromium"
+      ],
+      "command": "uv run --no-project python tools/verify_source_snippets.py --cache runs/source-cache"
+    }
+  },
+  "runtime": {
+    "hf_reference": "not_run",
+    "observed_bridge": "not_run",
+    "observed_rl": "not_run",
+    "runtime_source_mapping": "not_checked",
+    "tokenizer_trace": "not_run"
+  },
+  "source": {
+    "reference_entries": 27,
+    "reference_policy": "Fixed commits and historical review scopes retained; full blobs verified; static excerpt review added, not full-file or runtime audit",
+    "source_text_cache": true,
+    "cached_scope": "45 curated excerpts from 27 files; full source cache only in ignored runs/source-cache"
+  },
+  "environment": {
+    "node": "v22.22.0",
+    "frontend_dependencies": "package-lock.json",
+    "browser_system_dependencies": "Chromium runtime libraries and Chinese fonts installed; Ubuntu HTTP mirror 502 resolved with HTTPS and minimal libraries",
+    "training_dependencies": "No Torch/CUDA/Bridge package installation or upgrade performed"
+  },
+  "artifacts": {
+    "screenshots": [
+      "runs/screenshots/desktop-overview.png",
+      "runs/screenshots/desktop-qwen3.png",
+      "runs/screenshots/desktop-deepseek.png",
+      "runs/screenshots/desktop-rl.png",
+      "runs/screenshots/mobile-qwen3.png",
+      "runs/screenshots/source-reader.png",
+      "runs/screenshots/source-excerpts-desktop.png",
+      "runs/screenshots/source-excerpts-mobile.png"
+    ],
+    "build": "dist/",
+    "generated_cases": "content/generated/model-cases.json"
+  },
+  "limitations": [
+    "Key excerpts are bundled for offline reading; complete upstream files still require network.",
+    "No tokenizer trace, checkpoint loading, GPU training, numerical parity or performance validation.",
+    "HF revisions absent in original model profiles remain unverified.",
+    "Browser verification covers Chromium at desktop and 390px narrow width; no Firefox/WebKit verification.",
+    "Production bundle has a >500 kB minified chunk warning (about 259 kB gzip before transfer headers).",
+    "Container-external port forwarding was not verified; source remains on overlay as requested."
+  ],
+  "blockers_for_E0": [],
+  "launch": {
+    "command": "npm run dev",
+    "port": 5173,
+    "host": "0.0.0.0"
+  },
+  "files": {
+    "created": [
+      "package.json",
+      "package-lock.json",
+      "index.html",
+      "tsconfig.json",
+      "playwright.config.ts",
+      "web/main.tsx",
+      "web/data.ts",
+      "web/style.css",
+      "tests/browser/routes.spec.ts",
+      "implementation-report.json",
+      "content/source-snippets.json",
+      "research/source-licenses.json",
+      "web/SourceExcerpts.tsx",
+      "tools/verify_source_snippets.py",
+      "tests/test_source_snippets.py",
+      "tests/browser/source-snippets.spec.ts"
+    ],
+    "modified": [
+      "README.md",
+      "_Project - megatron-learning-lab.md"
+    ],
+    "deleted": []
+  }
+}

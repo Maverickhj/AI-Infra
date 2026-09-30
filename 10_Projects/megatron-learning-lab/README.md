@@ -13,9 +13,37 @@ reviewed: false
 
 方案版本：2.1，Review 修订日期：2026-09-30。源码研究沿用此前 2026-09-30 的记录；本轮不重新声称核验上游最新版本。替代旧方案的 MLP-first 路线，不替换或删除用户已有工程。
 
+## 首轮实现：本地 review
+
+项目继续保存在当前容器 overlay 目录。前端采用 React/TypeScript + Vite，复用现有模型档案、派生案例与三篇 Markdown 课程；数学公式及其字体随静态构建提供，不依赖在线 CDN。
+
+```bash
+cd /opt/AI-Infra/10_Projects/megatron-learning-lab
+npm ci
+npm run dev
+```
+
+访问 http://localhost:5173。容器外访问需已有端口映射或编辑器端口转发；服务监听 `0.0.0.0:5173`，没有公开部署。当前容器已安装 Node.js；新环境需 Node.js >=22.12、uv 和可用 Python。
+
+默认 Qwen3-0.6B 整模漫游，可切换六个模型档案、全部 decoder 层、SFT 步骤与 RL 周期。模型对照、角色跨度监督模式、一次/重复 shift 反例、MLA 训练/decode 视图、独立符号表和完整课程均可直接访问。地址栏 hash 保存 model/scenario/layer/step/sourceLane 等状态，可复制后直接打开或刷新。
+
+源码侧栏内置 27 个证据入口的 45 段关键代码，保留固定 commit、原始行号和独立中文讲解；需要完整上下文时再打开 GitHub。上游版权头与许可证随片段保留。运行通道明确显示未建立映射。HF、Bridge、RL 实测均为 `not_run`；角色跨度不是 tokenizer trace，shape 是配置推导。完整 Qwen 课程以 Qwen3-0.6B 为演算基线，DeepSeek 课程以 V3 为主并列出 V2-Lite 差异。
+
+```bash
+npm run test:metadata
+npm run build
+# 新浏览器环境只需安装一次
+npx playwright install --with-deps chromium
+npm run test:e2e
+# 生产构建预览（先停止占用 5173 的开发服务）
+npm run preview
+```
+
+浏览器报告位于 `runs/browser-report/index.html`，review 截图位于 `runs/screenshots/`；这些产物沿用现有忽略规则，不入知识库。测试实现见 `tests/browser/routes.spec.ts`。首轮实际验收状态见 `implementation-report.json`，原 `validation-report.json` 仍保留原始交付包的检查记录。
+
 ## 这份交付包含什么
 
-这是新的研究与实施交付包，不是已实现的网站，也不是完成 GPU 验证的训练工程。它包含保留的参考源码快照、27 个源码证据条目、6 个模型档案、三篇整模/训练课程正文、页面验收要求、分阶段 Codex 指令，以及可运行的元数据生成/校验工具。没有附带模型权重或第三方源码。
+原始 v2.1 交付是研究与实施包；当前已增加首轮 E0 静态学习前端，尚未完成 GPU 训练验证。它包含保留的参考源码快照、27 个源码证据条目、6 个模型档案、三篇整模/训练课程正文、页面验收要求、分阶段 Codex 指令，以及可运行的元数据生成/校验工具。没有附带模型权重；仅收录少量固定版本第三方源码摘录与相应许可证。
 
 首先阅读 [实施方案](PLAN.md)、[学习深度](CURRICULUM.md) 与 [最小兼容策略](profiles/minimum-compatibility.md)，然后执行 [Codex 首轮任务](CODEX_START.md)。源码问题按需查 [研究结论](research/FINDINGS.md) 与 [REFERENCES](research/REFERENCES.md)。`source.lock.json` 固定阅读证据，不是运行环境的安装锁。
 
@@ -64,3 +92,18 @@ python tools/verify_handoff.py
 ## 源码锚点与实验结果格式
 
 `tools/audit_sources.py` 可只读检查显式指定的本地仓库，不访问网络或修改worktree。示例和实验数据字段见 [Trace 合约](profiles/trace-contract.md)。本次只对临时Git测试仓库验证了该工具行为，未在本地完整Bridge/Core仓库执行该脚本；源码调研证据来自已固定版本的远程读取。
+
+### 校验源码摘录
+
+源码存于 `content/source-snippets.json`，讲解注释与原文独立保存。原始全文仅缓存在被忽略的 `runs/source-cache/`；浏览器读取随构建打包的片段，无需联网获取代码。
+
+```bash
+# 离线校验来源、行数、片段校验和与注释范围
+uv run --no-project python tools/verify_source_snippets.py
+# 有完整源码缓存时，逐字比对真实行与 Git blob
+uv run --no-project python tools/verify_source_snippets.py --cache runs/source-cache
+# 仅在需要重新获取时显式联网；拒绝不匹配固定 blob 的内容
+uv run --no-project python tools/verify_source_snippets.py --fetch --cache runs/source-cache
+```
+
+后续 roadmap / 近两年关键 feature 研读 TODO 已记录在项目入口的“后续深入研读 TODO”，待基本概念掌握后启动。
