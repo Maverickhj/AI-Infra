@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "policy": "minimum_interface_and_semantic_compatibility",
+  "reference_lock_is_install_requirement": false,
+  "exact_upstream_versions_required": false,
+  "reuse_existing_environment_first": true,
+  "profiles": [
+    "read_only",
+    "hf_reference",
+    "bridge_sft",
+    "parallel_sft",
+    "rl_grpo",
+    "rl_ppo",
+    "moe_mla"
+  ],
+  "capability_statuses": [
+    "not_checked",
+    "supported",
+    "unsupported",
+    "not_applicable"
+  ],
+  "required_checks_for_claimed_support": [
+    "callable_interfaces",
+    "data_semantics",
+    "behavior_smoke",
+    "runtime_source_mapping"
+  ],
+  "optional_capabilities_only_when_enabled": [
+    "packing",
+    "context_parallel",
+    "expert_parallel",
+    "fp8",
+    "router_replay",
+    "async_rollout",
+    "critic",
+    "reference_kl"
+  ],
+  "runtime_compatibility_verified": false,
+  "documentation": "minimum-compatibility.md"
+}

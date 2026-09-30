@@ -1,0 +1,469 @@
+{
+  "schema_version": 1,
+  "note": "静态审阅不等于执行验证；reviewed_ranges是实际已读代码片段，不代表全文件审计。Git blob ID指整文件。",
+  "entries": [
+    {
+      "id": "B-Q2",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/models/qwen/qwen2_bridge.py",
+      "git_blob_sha": "f62382e0077e76f2020be9ab7d48559204f6b59e",
+      "review_scope": "完整文件：Qwen2/Qwen2.5 配置与权重映射",
+      "symbols": [
+        "Qwen2Bridge.provider_bridge",
+        "Qwen2Bridge.mapping_registry"
+      ],
+      "reviewed_ranges": [],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/models/qwen/qwen2_bridge.py"
+    },
+    {
+      "id": "B-Q3",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/models/qwen/qwen3_bridge.py",
+      "git_blob_sha": "e5b1442f1b30860420d7d6bc08407b5b4f351829",
+      "review_scope": "完整文件：QK norm、无 QKV bias、条件 MTP 映射",
+      "symbols": [
+        "Qwen3Bridge.provider_bridge",
+        "Qwen3Bridge.mapping_registry"
+      ],
+      "reviewed_ranges": [],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/models/qwen/qwen3_bridge.py"
+    },
+    {
+      "id": "B-Q3M",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/models/qwen/qwen3_moe_bridge.py",
+      "git_blob_sha": "a6476f4f49a104ee5f7faf35e2124af526375366",
+      "review_scope": "完整文件：MoE router、专家权重、TE/Sequential 分支",
+      "symbols": [
+        "Qwen3MoEBridge.provider_bridge",
+        "Qwen3MoEBridge.mapping_registry"
+      ],
+      "reviewed_ranges": [],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/models/qwen/qwen3_moe_bridge.py"
+    },
+    {
+      "id": "B-DS3",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/models/deepseek/deepseek_v3_bridge.py",
+      "git_blob_sha": "dbb50f8617e1fd96720c144928a8c09395a9c04f",
+      "review_scope": "完整文件：MLA provider、dense/MoE 排布、shared expert、FP8 导入",
+      "symbols": [
+        "DeepSeekV3Bridge.provider_bridge"
+      ],
+      "reviewed_ranges": [],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/models/deepseek/deepseek_v3_bridge.py"
+    },
+    {
+      "id": "B-DSMAP",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/models/deepseek/common.py",
+      "git_blob_sha": "5d0d83e09d7f6d6e9ee6df652eb8befa327f2e6e",
+      "review_scope": "MLA q/kv down/up、norm、shared expert、expert bias 的映射",
+      "symbols": [
+        "get_common_mapping_list"
+      ],
+      "reviewed_ranges": [
+        [
+          1,
+          210
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/models/deepseek/common.py"
+    },
+    {
+      "id": "B-ALIAS",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/recipes/qwen/qwen3.py",
+      "git_blob_sha": "92009bba1105234c2e37909f8e0f34dadace083d",
+      "review_scope": "旧 recipe 名称到 h100 显式 recipe 的兼容别名",
+      "symbols": [],
+      "reviewed_ranges": [],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/recipes/qwen/qwen3.py"
+    },
+    {
+      "id": "B-RECIPE",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/recipes/qwen/h100/qwen3.py",
+      "git_blob_sha": "eda55c855f9e4239d2d0ee6f5be5676af8f21570",
+      "review_scope": "0.6B pretrain/SFT，以及 CP8 128K 配置片段",
+      "symbols": [
+        "qwen3_600m_sft_1gpu_h100_bf16_config"
+      ],
+      "reviewed_ranges": [
+        [
+          1,
+          240
+        ],
+        [
+          560,
+          800
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/recipes/qwen/h100/qwen3.py"
+    },
+    {
+      "id": "B-SFTDATA",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/data/sft_processing.py",
+      "git_blob_sha": "269535e7b1dc37c286a6d253669475b89e4fb6b5",
+      "review_scope": "chat 与 prompt-completion 类型、loss_mode、规范化",
+      "symbols": [
+        "ChatSFTPreprocessingConfig",
+        "normalize_sft_example"
+      ],
+      "reviewed_ranges": [
+        [
+          1,
+          250
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/data/sft_processing.py"
+    },
+    {
+      "id": "B-SFTENTRY",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/training/finetune.py",
+      "git_blob_sha": "20b5b923d12c85391755adc4ce2900e29d740658",
+      "review_scope": "完整文件：checkpoint 前置条件，委托 pretrain",
+      "symbols": [
+        "finetune"
+      ],
+      "reviewed_ranges": [],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/training/finetune.py"
+    },
+    {
+      "id": "B-PRETRAIN",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/training/pretrain.py",
+      "git_blob_sha": "7c950d62513683437ae0533ecc10fed11ff099c0",
+      "review_scope": "setup/训练/验证生命周期片段",
+      "symbols": [
+        "pretrain",
+        "_pretrain"
+      ],
+      "reviewed_ranges": [
+        [
+          1,
+          260
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/training/pretrain.py"
+    },
+    {
+      "id": "B-TRAIN",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/training/train.py",
+      "git_blob_sha": "35705a4a6578db187f2e7670a26cbd461185243f",
+      "review_scope": "train 准备 forward callback、训练模式与调度选择；未逐行审完整 train_step",
+      "symbols": [
+        "train"
+      ],
+      "reviewed_ranges": [
+        [
+          110,
+          320
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/training/train.py"
+    },
+    {
+      "id": "B-STEP",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/training/gpt_step.py",
+      "git_blob_sha": "5d1d42da5349f74c17f24127aba67e52f19bc2f3",
+      "review_scope": "packed metadata/CP 切分，forward 返回 output+loss callback",
+      "symbols": [
+        "forward_step",
+        "_create_loss_function",
+        "_partition_packed_batch_for_cp"
+      ],
+      "reviewed_ranges": [
+        [
+          1,
+          250
+        ],
+        [
+          425,
+          650
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/training/gpt_step.py"
+    },
+    {
+      "id": "B-LOSS",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/training/losses.py",
+      "git_blob_sha": "41d6ec7db27a3eca593692b73e2bb8f07b4793a5",
+      "review_scope": "完整文件：loss sum、num_tokens，非函数内局部均值",
+      "symbols": [
+        "masked_next_token_loss"
+      ],
+      "reviewed_ranges": [],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/training/losses.py"
+    },
+    {
+      "id": "B-PROVIDER",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/models/gpt_provider.py",
+      "git_blob_sha": "6bb4a9145c3173247ef0031b78f903eecd8caf19",
+      "review_scope": "provide 的 spec、vocab padding、pre/post-process 和 MCoreGPTModel 构建",
+      "symbols": [],
+      "reviewed_ranges": [
+        [
+          220,
+          430
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/models/gpt_provider.py"
+    },
+    {
+      "id": "B-QKV",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/models/conversion/param_mapping.py",
+      "git_blob_sha": "2e626d9777337ece85cbecdc517c171ddd9792a1",
+      "review_scope": "AutoMapping 后端识别与 QKVMapping 的 GQA interleave 合约",
+      "symbols": [
+        "QKVMapping"
+      ],
+      "reviewed_ranges": [
+        [
+          1500,
+          1700
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/models/conversion/param_mapping.py"
+    },
+    {
+      "id": "B-RLDEMO",
+      "repo_key": "bridge",
+      "path": "examples/rl/rlhf_with_bridge.py",
+      "git_blob_sha": "3ea4f2b0eb7aa689a96bd560e05c6161bd6ebff2",
+      "review_scope": "教学 REINFORCE 演示声明与 export/refit；非完整 PPO",
+      "symbols": [
+        "refit_hf_from_megatron"
+      ],
+      "reviewed_ranges": [
+        [
+          1,
+          250
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/examples/rl/rlhf_with_bridge.py"
+    },
+    {
+      "id": "C-GPT",
+      "repo_key": "core",
+      "path": "megatron/core/models/gpt/gpt_model.py",
+      "git_blob_sha": "ff3514b74330cbc86f28e202efad371981e6470f",
+      "review_scope": "forward 的 preprocess/decoder/postprocess 与 labels/logits 分支",
+      "symbols": [
+        "GPTModel.forward",
+        "GPTModel._postprocess"
+      ],
+      "reviewed_ranges": [
+        [
+          450,
+          880
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/models/gpt/gpt_model.py"
+    },
+    {
+      "id": "C-ATTN",
+      "repo_key": "core",
+      "path": "megatron/core/transformer/attention.py",
+      "git_blob_sha": "3a5876bc0fe69f9c4a467cd3d74ecd303513af25",
+      "review_scope": "QKV 实例化、分组切分、QK norm、TP>KV heads 分支",
+      "symbols": [
+        "SelfAttention.get_query_key_value_tensors"
+      ],
+      "reviewed_ranges": [
+        [
+          1650,
+          2005
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/transformer/attention.py"
+    },
+    {
+      "id": "C-MLA",
+      "repo_key": "core",
+      "path": "megatron/core/transformer/multi_latent_attention.py",
+      "git_blob_sha": "50e11151dcd70a81c101070b8edbdbff6e1d5777",
+      "review_scope": "down projection、latent norm、up projection 与 cached-latent inference 分支",
+      "symbols": [],
+      "reviewed_ranges": [
+        [
+          700,
+          920
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/transformer/multi_latent_attention.py"
+    },
+    {
+      "id": "C-MOE",
+      "repo_key": "core",
+      "path": "megatron/core/transformer/moe/moe_layer.py",
+      "git_blob_sha": "48e78775a849575a9d46f95d900490ded4a5946d",
+      "review_scope": "route/preprocess/dispatch/experts/combine/postprocess；shared expert overlap",
+      "symbols": [
+        "MoELayer.route",
+        "MoELayer.dispatch",
+        "MoELayer.routed_experts_compute",
+        "MoELayer.combine"
+      ],
+      "reviewed_ranges": [
+        [
+          400,
+          620
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/transformer/moe/moe_layer.py"
+    },
+    {
+      "id": "R-WORKER",
+      "repo_key": "nemo_rl",
+      "path": "nemo_rl/models/policy/workers/megatron_policy_worker.py",
+      "git_blob_sha": "9ead07baf36315c8568cef4303a950397bd11c98",
+      "review_scope": "真实 policy worker 接入 setup/data/train 组件、router replay 数据约束",
+      "symbols": [],
+      "reviewed_ranges": [
+        [
+          1,
+          210
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/RL/blob/81aa43dda4765b0429cf31dab44441e4e4383911/nemo_rl/models/policy/workers/megatron_policy_worker.py"
+    },
+    {
+      "id": "R-TRAIN",
+      "repo_key": "nemo_rl",
+      "path": "nemo_rl/models/megatron/train.py",
+      "git_blob_sha": "d9a1ca6dc70794062588a1a460e574ffbf415ffc",
+      "review_scope": "model_forward、ProcessedMicrobatch、postprocess、replay 生命周期",
+      "symbols": [
+        "model_forward",
+        "forward_with_post_processing_fn"
+      ],
+      "reviewed_ranges": [
+        [
+          1,
+          270
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/RL/blob/81aa43dda4765b0429cf31dab44441e4e4383911/nemo_rl/models/megatron/train.py"
+    },
+    {
+      "id": "R-GRPO",
+      "repo_key": "nemo_rl",
+      "path": "nemo_rl/algorithms/grpo.py",
+      "git_blob_sha": "76d75c824ebe51a393b133e042aea268c83e8170",
+      "review_scope": "导入链、资源划分、policy/ref 初始化与 vLLM/SGLang generation 选择；非完整训练循环逐行审计",
+      "symbols": [],
+      "reviewed_ranges": [
+        [
+          1,
+          165
+        ],
+        [
+          600,
+          900
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/RL/blob/81aa43dda4765b0429cf31dab44441e4e4383911/nemo_rl/algorithms/grpo.py"
+    },
+    {
+      "id": "R-LOSS",
+      "repo_key": "nemo_rl",
+      "path": "nemo_rl/algorithms/loss/loss_functions.py",
+      "git_blob_sha": "dc45fe647a66b3de30247526c443f606cce38a88",
+      "review_scope": "ClippedPGLoss 配置、输入字段、next-token 对齐与 KL/logp 分支",
+      "symbols": [
+        "ClippedPGLossConfig",
+        "ClippedPGLossDataDict",
+        "ClippedPGLossFn.__call__"
+      ],
+      "reviewed_ranges": [
+        [
+          1,
+          245
+        ],
+        [
+          260,
+          440
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/RL/blob/81aa43dda4765b0429cf31dab44441e4e4383911/nemo_rl/algorithms/loss/loss_functions.py"
+    },
+    {
+      "id": "R-PPOCFG",
+      "repo_key": "nemo_rl",
+      "path": "examples/configs/recipes/llm/ppo-qwen2.5-1.5b-gsm8k-1n8g-megatron-valuetp2sp-dynbatch.yaml",
+      "git_blob_sha": "9f72eeb9f91d5fa8dec4b9c416b41c8f09fc2895",
+      "review_scope": "完整配置：Qwen2.5 policy/value、GSM8K、TP/CP、vLLM、8 GPU",
+      "symbols": [],
+      "reviewed_ranges": [],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/RL/blob/81aa43dda4765b0429cf31dab44441e4e4383911/examples/configs/recipes/llm/ppo-qwen2.5-1.5b-gsm8k-1n8g-megatron-valuetp2sp-dynbatch.yaml"
+    },
+    {
+      "id": "B-RUNNER",
+      "repo_key": "bridge",
+      "path": "scripts/training/run_recipe.py",
+      "git_blob_sha": "0286ac863f30d366ea3f44d2fd7dfb7d35252ff2",
+      "review_scope": "正式 recipe runner 的参数与 dataset→model seq_length 同步说明",
+      "symbols": [],
+      "reviewed_ranges": [
+        [
+          1,
+          220
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/scripts/training/run_recipe.py"
+    },
+    {
+      "id": "B-DATASETUTIL",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/recipes/utils/dataset_utils.py",
+      "git_blob_sha": "9144c286f008d33637113824da1a668e9bc2df83",
+      "review_scope": "GPTSFT数据配置与SQuAD prompt-completion、Tulu chat的区别",
+      "symbols": [
+        "default_squad_config",
+        "default_tulu3_config"
+      ],
+      "reviewed_ranges": [
+        [
+          1,
+          200
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/recipes/utils/dataset_utils.py"
+    }
+  ]
+}

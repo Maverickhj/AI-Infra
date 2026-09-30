@@ -1,0 +1,3 @@
+{"id": "arithmetic-multiturn", "origin": "authored_learning_sample", "messages": [{"role": "user", "content": "2+3 等于多少？"}, {"role": "assistant", "content": "5。"}, {"role": "user", "content": "再乘以2呢？"}, {"role": "assistant", "content": "10。"}]}
+{"id": "short-answer", "origin": "authored_learning_sample", "messages": [{"role": "user", "content": "只输出 4+4 的结果。"}, {"role": "assistant", "content": "8"}]}
+{"id": "longer-answer", "origin": "authored_learning_sample", "messages": [{"role": "user", "content": "解释为什么 3×4 等于12。"}, {"role": "assistant", "content": "可以看作三个4相加：4+4+4=12。"}]}

@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+dist/
+runs/
+research/local-source-audit.json
+
+content/generated/
+runs/
+*.resolved.json
+research/local-source-audit.json

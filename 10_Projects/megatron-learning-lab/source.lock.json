@@ -1,0 +1,71 @@
+{
+  "schema_version": 3,
+  "checked_at": "2026-09-30",
+  "release_policy": "调研以稳定 release 及其 gitlink 为引用快照；这些 SHA 不要求与实际运行环境相等。",
+  "repositories": {
+    "bridge": {
+      "repository": "NVIDIA-NeMo/Megatron-Bridge",
+      "ref": "v0.6.2",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec"
+    },
+    "core": {
+      "repository": "NVIDIA/Megatron-LM",
+      "ref": "Bridge v0.6.2 gitlink",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db"
+    },
+    "nemo_rl": {
+      "repository": "NVIDIA-NeMo/RL",
+      "ref": "v0.7.0",
+      "commit": "81aa43dda4765b0429cf31dab44441e4e4383911"
+    },
+    "rl_bridge": {
+      "repository": "yuki-97/Megatron-Bridge",
+      "ref": "NeMo RL v0.7.0 gitlink",
+      "commit": "151168f36372132c8fb8f926501f573019feb967"
+    },
+    "rl_core": {
+      "repository": "yuki-97/Megatron-LM",
+      "ref": "RL Bridge gitlink",
+      "commit": "7b8495881dee1689db9d5ed636d8b6b48eacf260"
+    }
+  },
+  "bridge_dependencies": {
+    "python": ">=3.12,<3.13",
+    "transformers_constraint": ">=5.8,<=5.12.1",
+    "transformer_engine_commit": "15288857644368b8b7bdddd9bead7d6d3d04de80",
+    "runtime_versions": "待实际环境审计，不将 pyproject 约束冒充已安装版本",
+    "scope": "upstream_reference_metadata_only"
+  },
+  "lanes": {
+    "bridge_sft": {
+      "repositories": [
+        "bridge",
+        "core"
+      ],
+      "runtime_verified": false
+    },
+    "nemo_rl_source": {
+      "repositories": [
+        "nemo_rl",
+        "rl_bridge",
+        "rl_core"
+      ],
+      "runtime_verified": false
+    },
+    "nemo_rl_release_image": {
+      "image_tag": "nvcr.io/nvidia/nemo-rl:v0.7.0",
+      "image_digest": null,
+      "release_notes_bridge_version": "0.5.0+554c7b9",
+      "runtime_verified": false
+    }
+  },
+  "compatibility_warning": "来源可不同，兼容须验证；只要求所选 profile 的必要接口和数据/计算语义。不把本文件当安装锁，也不凭相同版本宣布兼容。",
+  "purpose": "reference_source_evidence_not_runtime_install_lock",
+  "runtime_policy": {
+    "mode": "minimum_interface_and_semantic_compatibility",
+    "require_exact_reference_versions": false,
+    "reuse_existing_environment_first": true,
+    "contract": "profiles/compatibility-contract.json",
+    "resolved_environment": "由各实际运行 profile 记录，不由本文件推定"
+  }
+}

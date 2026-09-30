@@ -1,0 +1,35 @@
+{
+  "review_revision": "2.1",
+  "review_date": "2026-09-30",
+  "status": "passed",
+  "scope": "offline_metadata_tools_and_review_policy_only",
+  "unit_tests": {
+    "run": 26,
+    "failures": 0,
+    "errors": 0,
+    "command": "python -m unittest discover -s tests -v"
+  },
+  "source_entries": 27,
+  "model_profiles": 6,
+  "review_checks": [
+    "reference_lock_not_install_lock",
+    "custom_runtime_source_lane_metadata_allowed",
+    "same_version_failed_semantics_rejected",
+    "unused_optional_capability_not_blocking",
+    "compact_skippable_foundations_core_retained"
+  ],
+  "content_checks": {
+    "relative_markdown_links": "passed",
+    "frontmatter": "passed",
+    "git_diff_check": "passed"
+  },
+  "runtime_compatibility_verified": false,
+  "gpu_or_framework_execution": false,
+  "browser_tests_executed": false,
+  "limitations": [
+    "兼容性测试使用明确标记的合成元数据，只测试报告校验逻辑，不证明实际训练环境兼容。",
+    "源码审计工具只在临时 Git fixture 中测试；本轮未重新读取全部上游源码。",
+    "未执行 HF/Bridge/NeMo RL forward、SFT、RL、GPU 或跨版本数值测试。",
+    "前端尚需由 Codex 实现并完成浏览器用户路线测试。"
+  ]
+}
