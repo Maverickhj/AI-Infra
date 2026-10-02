@@ -54,7 +54,9 @@ V3 的 query 每头总打分维度为 $d_n+d_r=192$，value 每头维度128，�
 
 语义上，某 token 的 MoE 输出包含 routed experts 的加权组合以及 shared expert 分支：
 
-$$h_t=\sum_{e\in\mathcal T_t}p_{t,e} f_e(x_t)+f_s(x_t).$$
+$$
+h_t=\sum_{e\in\mathcal T_t}p_{t,e} f_e(x_t)+f_s(x_t).
+$$
 
 $x_t$ 是进入该 MoE 的 token hidden state，$h_t$ 是该 FFN 输出。归一化、缩放、group-limited top-k 和 expert-bias 的细节以选定代码分支为准，不能凭该概念式重写整个 router。
 

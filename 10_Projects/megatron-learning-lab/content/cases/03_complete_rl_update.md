@@ -58,7 +58,9 @@ rollout backend 保存实际生成的 token IDs、停止位置、结束原因、
 
 一个用于教学的组标准化形式为：
 
-$$A_i=\frac{R_i-\mu_R}{\sigma_R+\delta}.$$
+$$
+A_i=\frac{R_i-\mu_R}{\sigma_R+\delta}.
+$$
 
 该式解释组内比较，不声称覆盖所有实现分支。实际 GRPOAdvantageEstimator 的 normalize/leave-one-out 配置、标准差定义、全组同分行为要沿正式版本继续审计并导出结果。页面允许对比“概念式”和“该次运行的 estimator”。
 

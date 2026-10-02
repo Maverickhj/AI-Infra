@@ -49,7 +49,9 @@ reviewed: false
 
 本模型 $d=128$，所以：
 
-$$D_Q=n_qd=2048,\quad D_K=D_V=n_{kv}d=1024.$$
+$$
+D_Q=n_qd=2048,\quad D_K=D_V=n_{kv}d=1024.
+$$
 
 语义步骤：RMSNorm → QKV projection → 按 GQA groups 拆分 → Q/K norm → Q/K RoPE → causal attention → 合并 heads → output projection → residual add。
 
@@ -73,7 +75,9 @@ GQA 中每组2个 Q heads 对应1组 K/V。选中某个 head 时，需要显示�
 
 语义上：
 
-$$g=XW_g,\quad u=XW_u,\quad h=\operatorname{SiLU}(g)\odot u,\quad o=hW_d.$$
+$$
+g=XW_g,\quad u=XW_u,\quad h=\operatorname{SiLU}(g)\odot u,\quad o=hW_d.
+$$
 
 这里 $X$ 指进入 FFN 的归一化 hidden states；$W_g,W_u,W_d$ 分别为 gate、up、down 的逻辑权重，$g,u,h,o$ 为中间结果。代码的 Linear 权重以 `[out,in]` 存储，不等于上式书写的逻辑矩阵方向。
 
@@ -113,7 +117,9 @@ FFN 之后第二次 residual add，使输出仍为 `[S,B,1024]`，再交给下�
 
 SFT 目标的一个明确教学基线为：
 
-$$L_{SFT}=\frac{\sum_t m_t\ell_t}{N},\qquad N=\sum_t m_t.$$
+$$
+L_{SFT}=\frac{\sum_t m_t\ell_t}{N},\qquad N=\sum_t m_t.
+$$
 
 这是选定的全局 token 均值目标，不声称全部 recipe 都采用相同缩放路径。实际 Bridge callback 返回 loss sum 和 num_tokens，最终归一化必须结合调度与梯度 finalize 路径验证。[B-LOSS]
 

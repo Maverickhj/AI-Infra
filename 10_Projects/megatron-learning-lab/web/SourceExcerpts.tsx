@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { sourceExcerptId, type State } from "./data";
 import snippets from "../content/source-snippets.json";
 import licenses from "../research/source-licenses.json";
 
@@ -6,21 +7,16 @@ export function SourceExcerpts({
   sourceId,
   repoKey,
   url,
-  step,
+  state,
 }: {
   sourceId: string;
   repoKey: string;
   url: string;
-  step: string;
+  state: State;
 }) {
   const entry = snippets.entries.find((e) => e.source_id === sourceId);
-  const defaultIndex =
-    sourceId === "C-GPT" && ["lm_head", "loss"].includes(step)
-      ? 1
-      : sourceId === "R-WORKER" && step === "refit"
-        ? 1
-        : 0;
-  const [index, setIndex] = useState(defaultIndex);
+  const defaultExcerptId = sourceExcerptId(state, sourceId);
+  const [excerptId, setExcerptId] = useState(() => defaultExcerptId || "");
   const [activeLine, setActiveLine] = useState<number | null>(null);
   const codeRef = useRef<HTMLPreElement>(null);
   if (!entry)
@@ -29,7 +25,38 @@ export function SourceExcerpts({
         此条目尚未摘录，可通过完整源码链接查看。没有用伪代码代替原文。
       </p>
     );
-  const excerpt = entry.excerpts[index] || entry.excerpts[0];
+  const excerpt = entry.excerpts.find((item) => item.id === excerptId);
+  const picker = (
+    <label>
+      代码片段
+      <select
+        value={excerptId}
+        onChange={(e) => {
+          setExcerptId(e.target.value);
+          setActiveLine(null);
+        }}
+      >
+        <option value="" disabled>
+          请选择相关片段
+        </option>
+        {entry.excerpts.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.title} · L{item.start_line}–L{item.end_line}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+  if (!excerpt)
+    return (
+      <section className="source-excerpts" aria-label="关键源码片段">
+        <p className="notice">
+          相关调用入口 / 实现片段待补：当前模型、步骤或模式尚无匹配摘录。
+          可手动选择下列相关片段；它们不代表本步骤实现。
+        </p>
+        {picker}
+      </section>
+    );
   const lines = excerpt.code.replace(/\n$/, "").split("\n");
   const license = licenses.licenses.find((l) => l.repo_key === repoKey);
   function focusLine(line: number) {
@@ -41,27 +68,21 @@ export function SourceExcerpts({
     });
   }
   return (
-    <section className="source-excerpts" aria-label="关键源码片段">
+    <section
+      className="source-excerpts"
+      aria-label="关键源码片段"
+      data-snippet-id={excerpt.id}
+    >
       <div className="snippet-heading">
         <span className="badge">逐字摘录 · 本地可读</span>
         <span className="small muted">{entry.excerpts.length} 个关键片段</span>
       </div>
-      <label>
-        代码片段
-        <select
-          value={index}
-          onChange={(e) => {
-            setIndex(Number(e.target.value));
-            setActiveLine(null);
-          }}
-        >
-          {entry.excerpts.map((item, i) => (
-            <option key={item.start_line} value={i}>
-              {item.title} · L{item.start_line}–L{item.end_line}
-            </option>
-          ))}
-        </select>
-      </label>
+      {picker}
+      {excerptId !== defaultExcerptId && (
+        <p className="notice">
+          当前为手动浏览的相关片段，不代表当前步骤或模式的实现。
+        </p>
+      )}
       <p className="snippet-boundary">
         仅展示下列连续行；前后代码未展示，不能当作独立可执行程序。静态讲解尚待人工
         review，不代表运行验证。

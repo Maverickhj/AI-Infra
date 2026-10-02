@@ -23,7 +23,8 @@
               "line": 53,
               "text": "QKV bias 在这里显式开启；普通 Linear 无 bias 不意味着 QKV 无 bias。"
             }
-          ]
+          ],
+          "id": "b-q2-l46"
         },
         {
           "title": "QKV 与 SwiGLU 的映射",
@@ -36,7 +37,8 @@
               "line": 91,
               "text": "bias 与 weight 分别经过 QKVMapping；gate/up 采用 GatedMLPMapping。"
             }
-          ]
+          ],
+          "id": "b-q2-l83"
         }
       ]
     },
@@ -59,7 +61,8 @@
               "line": 50,
               "text": "与 Qwen2 对照读第 50、52 行：关闭 QKV bias，开启 QK layernorm。"
             }
-          ]
+          ],
+          "id": "b-q3-l43"
         },
         {
           "title": "语义 norm 与实际参数位置",
@@ -72,7 +75,8 @@
               "line": 76,
               "text": "input/post-attention norm 可以映射到 fused Linear 的 layer_norm_weight；不能只找独立 norm 模块。"
             }
-          ]
+          ],
+          "id": "b-q3-l70"
         }
       ]
     },
@@ -95,7 +99,8 @@
               "line": 63,
               "text": "Grouped GEMM、辅助 loss 与 alltoall 都是这里的配置选择，不是所有 MoE backend 的通用结论。"
             }
-          ]
+          ],
+          "id": "b-q3m-l51"
         }
       ]
     },
@@ -118,7 +123,8 @@
               "line": 68,
               "text": "seq_aux_loss 与 expert bias 同时存在；不要把 auxiliary-loss-free 的口号理解为这里没有任何辅助项。"
             }
-          ]
+          ],
+          "id": "b-ds3-l57"
         },
         {
           "title": "Dense/MoE 层分布与 shared expert",
@@ -131,7 +137,8 @@
               "line": 92,
               "text": "前 first_k_dense_replace 层为 dense；随后为 MoE。共享专家的中间宽度由配置相乘得到。"
             }
-          ]
+          ],
+          "id": "b-ds3-l90"
         }
       ]
     },
@@ -154,7 +161,8 @@
               "line": 38,
               "text": "HF 的 kv_a/kv_b 对应 down/up；q_a/q_b 的对应关系见第 55–59 行。不同层的 norm 位置也不同。"
             }
-          ]
+          ],
+          "id": "b-dsmap-l26"
         }
       ]
     },
@@ -177,7 +185,8 @@
               "line": 74,
               "text": "旧 qwen3_600m_sft_config 实际指向显式 H100 recipe；别名不证明当前 GPU 兼容。"
             }
-          ]
+          ],
+          "id": "b-alias-l73"
         }
       ]
     },
@@ -200,7 +209,8 @@
               "line": 600,
               "text": "load_weights=False 只建立模型配置。SFT 权重前置条件还需沿 finetune 与 setup 检查。"
             }
-          ]
+          ],
+          "id": "b-recipe-l597"
         }
       ]
     },
@@ -223,7 +233,8 @@
               "line": 55,
               "text": "assistant / last_turn / full 是预处理合约。网页角色跨度是说明，不是实际 tokenizer 输出。"
             }
-          ]
+          ],
+          "id": "b-sftdata-l45"
         }
       ]
     },
@@ -246,7 +257,8 @@
               "line": 50,
               "text": "必须指定预训练 checkpoint 或 resume checkpoint；满足断言仍不等于已证明权重加载正确。"
             }
-          ]
+          ],
+          "id": "b-sftentry-l50"
         }
       ]
     },
@@ -269,7 +281,8 @@
               "line": 136,
               "text": "读取 setup 的产物后进入 train；权重导入与恢复的细节仍在 setup/checkpoint 子链。"
             }
-          ]
+          ],
+          "id": "b-pretrain-l133"
         }
       ]
     },
@@ -292,7 +305,8 @@
               "line": 923,
               "text": "forward_only=False 表示训练路径；第 939 行执行 optimizer.step。不是单纯 forward 动画反放。"
             }
-          ]
+          ],
+          "id": "b-train-l914"
         },
         {
           "title": "仅在成功更新后推进 scheduler",
@@ -305,7 +319,8 @@
               "line": 964,
               "text": "scheduler 的增量由 microbatch 数、micro batch size 与 DP size 决定；失败更新有独立分支。"
             }
-          ]
+          ],
+          "id": "b-train-l963"
         }
       ]
     },
@@ -328,7 +343,8 @@
               "line": 484,
               "text": "loss_mask 绑定进 callback；需要继续读取 losses.py 和调度归一化，不能把 output 一律当成 logits。"
             }
-          ]
+          ],
+          "id": "b-step-l482"
         }
       ]
     },
@@ -351,7 +367,8 @@
               "line": 68,
               "text": "这里是加权求和，没有在此除以有效 token 数。tuple 输出还可能携带新的 mask。"
             }
-          ]
+          ],
+          "id": "b-loss-l62"
         },
         {
           "title": "返回有效 token 数及报告统计",
@@ -364,7 +381,8 @@
               "line": 102,
               "text": "num_tokens 与 loss 同时交给后续调度；报告张量被 detach，不参与梯度。"
             }
-          ]
+          ],
+          "id": "b-loss-l102"
         }
       ]
     },
@@ -387,7 +405,8 @@
               "line": 266,
               "text": "padding 同时取决于词表大小、可整除因子与 TP；不能只使用原始 vocab_size 推算本地分片。"
             }
-          ]
+          ],
+          "id": "b-provider-l264"
         },
         {
           "title": "stage 设置与 MCore GPT 构建",
@@ -400,7 +419,8 @@
               "line": 293,
               "text": "provider 将 spec、padded vocab、共享权重和 pre/post-process 交给 MCoreGPTModel。"
             }
-          ]
+          ],
+          "id": "b-provider-l280"
         }
       ]
     },
@@ -423,7 +443,8 @@
               "line": 1668,
               "text": "这是上游 docstring 原文：每组 Q heads 后跟对应 K/V；不是全部 Q 后接全部 K/V。"
             }
-          ]
+          ],
+          "id": "b-qkv-l1666"
         },
         {
           "title": "合并参数后再分发",
@@ -436,7 +457,8 @@
               "line": 1727,
               "text": "一维 bias 与二维 weight 分别选择合并函数，再委托 TP-aware mapping 做分片/广播。"
             }
-          ]
+          ],
+          "id": "b-qkv-l1717"
         }
       ]
     },
@@ -459,7 +481,8 @@
               "line": 192,
               "text": "Bridge export 的参数被复制到 HF policy。这里只说明接口，不是 NeMo RL 的完整 PPO/refit 验证。"
             }
-          ]
+          ],
+          "id": "b-rldemo-l177"
         }
       ]
     },
@@ -482,7 +505,8 @@
               "line": 597,
               "text": "labels、loss_mask、MTP 和 output_processor 会影响后处理；需要把这些分支条件一起读。"
             }
-          ]
+          ],
+          "id": "c-gpt-l583"
         },
         {
           "title": "默认 logits / token loss 返回分支",
@@ -494,6 +518,35 @@
             {
               "line": 790,
               "text": "无 labels 返回 logits；有 labels 计算并返回 token loss。不要对返回的 loss 再做 cross entropy。"
+            }
+          ],
+          "id": "c-gpt-l790"
+        },
+        {
+          "id": "gpt-embedding",
+          "start_line": 336,
+          "end_line": 345,
+          "title": "Embedding 的调用与 pre_process 条件",
+          "code": "        # Decoder embedding.\n        if decoder_input is not None:\n            pass\n        elif self.pre_process:\n            if padding_mask is not None:\n                assert padding_mask.shape == input_ids.shape, (\n                    f\"padding_mask shape {padding_mask.shape} does not match \"\n                    f\"input_ids shape {input_ids.shape}\"\n                )\n            decoder_input = self.embedding(input_ids=input_ids, position_ids=position_ids)\n",
+          "sha256": "87eb141f88a6e5556551753b8a085999449f4d05986126e0f699929b9842afcc",
+          "annotations": [
+            {
+              "line": 336,
+              "text": "只有 pre_process stage 且未提供 decoder_input 时调用 embedding；这里是调用入口，不是查表 kernel。"
+            }
+          ]
+        },
+        {
+          "id": "gpt-output-projection",
+          "start_line": 762,
+          "end_line": 767,
+          "title": "LM head 的词表投影调用",
+          "code": "        logits, _ = self.output_layer(\n            hidden_states, weight=output_weight, runtime_gather_output=runtime_gather_output\n        )\n\n        # Apply MuP output scaling to logits\n        logits = self._scale_logits(logits)\n",
+          "sha256": "4c0b5d475723797be74a46507d28ecb8587c12f3a9d65ae869e199d4c25458ea",
+          "annotations": [
+            {
+              "line": 762,
+              "text": "output_layer 将 hidden states 投影为 logits；共享权重由 output_weight 传入。"
             }
           ]
         }
@@ -518,7 +571,8 @@
               "line": 1890,
               "text": "每组先有若干 Q heads，再有一份 K 和 V；按 group 拆开后才把 Q reshape 为 head 轴。"
             }
-          ]
+          ],
+          "id": "c-attn-l1887"
         },
         {
           "title": "Q/K 独立归一化",
@@ -531,7 +585,8 @@
               "line": 1920,
               "text": "只有相应模块存在才应用 norm；不同模型的 provider 决定它们是否被构建。"
             }
-          ]
+          ],
+          "id": "c-attn-l1920"
         }
       ]
     },
@@ -554,7 +609,8 @@
               "line": 655,
               "text": "q_lora_rank 未设置时保留 hidden_states 走直接 Q 路径；KV 仍经过 down projection。"
             }
-          ]
+          ],
+          "id": "c-mla-l638"
         },
         {
           "title": "普通 up-projection 分支",
@@ -567,7 +623,8 @@
               "line": 866,
               "text": "这里展开 KV 为各 head 的内容 K/V；不能用推理 latent cache 的宽度替代训练中间态。"
             }
-          ]
+          ],
+          "id": "c-mla-l853"
         },
         {
           "title": "latent cache 的训练/推理边界",
@@ -580,7 +637,8 @@
               "line": 323,
               "text": "源码明确拒绝 training 与 cache_mla_latents 同时开启；absorption 属于启用缓存的条件路径。"
             }
-          ]
+          ],
+          "id": "c-mla-l321"
         }
       ]
     },
@@ -603,7 +661,8 @@
               "line": 444,
               "text": "padding_mask 一起交给 router；实际 token-to-expert 分配需要运行采集。"
             }
-          ]
+          ],
+          "id": "c-moe-l437"
         },
         {
           "title": "通信组合与 shared expert 相加",
@@ -616,7 +675,8 @@
               "line": 587,
               "text": "token_combine 与 combine_postprocess 是不同阶段；此分支在后处理中叠加 shared_expert_output。"
             }
-          ]
+          ],
+          "id": "c-moe-l566"
         }
       ]
     },
@@ -639,7 +699,8 @@
               "line": 76,
               "text": "worker 复用 LogprobsPostProcessor、LossPostProcessor 和 megatron_forward_backward。此段仅定位依赖，不证明完整 refit 已审阅。"
             }
-          ]
+          ],
+          "id": "r-worker-l66"
         },
         {
           "title": "Refit 前准备参数元数据",
@@ -652,7 +713,8 @@
               "line": 1195,
               "text": "HF 侧 shape/dtype 来自待导出的参数迭代器；这只是 refit 准备，还不能证明生成端已更新。"
             }
-          ]
+          ],
+          "id": "r-worker-l1187"
         },
         {
           "title": "通过 IPC 流式发送权重",
@@ -665,7 +727,8 @@
               "line": 1385,
               "text": "worker 委托共享实现传输参数。完整 refit 还需检查接收端、版本切换与固定输入验证。"
             }
-          ]
+          ],
+          "id": "r-worker-l1374"
         }
       ]
     },
@@ -688,7 +751,8 @@
               "line": 119,
               "text": "linear CE fusion 会传 labels 并请求 logprobs；不要将所有 RL forward 都硬编码解释为 logits。"
             }
-          ]
+          ],
+          "id": "r-train-l117"
         },
         {
           "title": "ProcessedMicrobatch 的数据边界",
@@ -701,7 +765,8 @@
               "line": 198,
               "text": "CP 分片、packed metadata、MTP mask 和 routed experts 分开保存，不能只传一个普通 tokens 张量。"
             }
-          ]
+          ],
+          "id": "r-train-l192"
         }
       ]
     },
@@ -724,7 +789,8 @@
               "line": 1795,
               "text": "normalize_rewards 与 leave-one-out 都有配置分支；网页概念公式不能覆盖所有 estimator 设置。"
             }
-          ]
+          ],
+          "id": "r-grpo-l1785"
         }
       ]
     },
@@ -747,7 +813,8 @@
               "line": 163,
               "text": "当前可导 logprob 不在此字段列表中，而是下一段 __call__ 的 next_token_logprobs 参数。"
             }
-          ]
+          ],
+          "id": "r-loss-l158"
         },
         {
           "title": "当前概率、目标偏移与 detach",
@@ -760,7 +827,8 @@
               "line": 318,
               "text": "current 来自 forward；其余概率与 mask 按目标位置对齐。force_on_policy_ratio 用 detach 保留当前梯度，不能替换为常数 1。"
             }
-          ]
+          ],
+          "id": "r-loss-l310"
         }
       ]
     },
@@ -783,7 +851,8 @@
               "line": 19,
               "text": "value_loss_fn 与 policy loss 分开；这是一份特定多卡 recipe，不能直接当单卡已验证配置。"
             }
-          ]
+          ],
+          "id": "r-ppocfg-l16"
         },
         {
           "title": "生成端与独立 value 配置",
@@ -796,7 +865,8 @@
               "line": 45,
               "text": "value 模型有自己的 microbatch、TP/SP 和 optimizer；它不是换一个 GRPO 标签。"
             }
-          ]
+          ],
+          "id": "r-ppocfg-l40"
         }
       ]
     },
@@ -819,7 +889,8 @@
               "line": 36,
               "text": "此处是 runner 文档原文：seq_length 先属于 dataset，再同步到 model。实际有效配置仍须检查。"
             }
-          ]
+          ],
+          "id": "b-runner-l30"
         }
       ]
     },
@@ -842,7 +913,8 @@
               "line": 136,
               "text": "该路径设置 prompt/completion 列与分隔符，不等于多轮 chat template。"
             }
-          ]
+          ],
+          "id": "b-datasetutil-l134"
         },
         {
           "title": "Tulu 使用 chat 预处理",
@@ -855,7 +927,8 @@
               "line": 171,
               "text": "与上一段对照：这里选择 ChatSFTPreprocessingConfig。SQuAD 跑通不能代替 chat mask 验证。"
             }
-          ]
+          ],
+          "id": "b-datasetutil-l169"
         }
       ]
     }

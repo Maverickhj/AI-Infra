@@ -33,10 +33,7 @@ function Prose({ text }: { text: string }) {
         remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[rehypeKatex]}
       >
-        {clean(text).replace(
-          /\$\$([^\n]+?)\$\$/g,
-          (_, formula: string) => `\n\n$\n${formula}\n$\n\n`,
-        )}
+        {clean(text)}
       </Markdown>
     </div>
   );
@@ -522,11 +519,11 @@ function App() {
               <h3>{currentSource.id}</h3>
               <p>{currentSource.review_scope}</p>
               <SourceExcerpts
-                key={`${currentSource.id}:${state.step}`}
+                key={`${currentSource.id}:${state.model}:${state.scenario}:${state.step}:${state.layer}:${state.mla}`}
                 sourceId={currentSource.id}
                 repoKey={currentSource.repo_key}
                 url={currentSource.url}
-                step={state.step}
+                state={state}
               />
               <details className="source-metadata">
                 <summary>完整来源与历史审阅信息</summary>
@@ -685,7 +682,12 @@ function Decoder({
   const layer = c.layers[state.layer];
   const isMoE = layer.feed_forward === "moe";
   const [head, setHead] = useState(0);
+  const [headError, setHeadError] = useState(false);
   const currentHead = Math.min(head, m.heads - 1);
+  useEffect(() => {
+    setHead((previous) => Math.min(previous, m.heads - 1));
+    setHeadError(false);
+  }, [m.id, m.heads]);
   return (
     <>
       <p className="lead">
@@ -763,7 +765,7 @@ function Decoder({
             <Fact label="QK norm" value={m.qk_norm ? "开启" : "关闭"} />
           </div>
           <Prose
-            text={`$$D_Q=n_q d=${m.heads}\\times ${m.head_dim}=${m.heads * m.head_dim!},\\qquad D_K=D_V=n_{kv}d=${m.kv_heads! * m.head_dim!}.$$\nQ: \`[B,S,${m.heads},${m.head_dim}]\`；K/V: \`[B,S,${m.kv_heads},${m.head_dim}]\`。$n_q,n_{kv}$ 是 Q/KV head 数，$d$ 是每头维度。${m.head_dim_origin}。`}
+            text={`\n\n$$\nD_Q=n_q d=${m.heads}\\times ${m.head_dim}=${m.heads * m.head_dim!},\\qquad D_K=D_V=n_{kv}d=${m.kv_heads! * m.head_dim!}.\n$$\n\n\nQ: \`[B,S,${m.heads},${m.head_dim}]\`；K/V: \`[B,S,${m.kv_heads},${m.head_dim}]\`。$n_q,n_{kv}$ 是 Q/KV head 数，$d$ 是每头维度。${m.head_dim_origin}。`}
           />
           <div className="exercise">
             <label>
@@ -774,13 +776,23 @@ function Decoder({
                 min="0"
                 max={m.heads - 1}
                 value={currentHead}
-                onChange={(e) =>
-                  setHead(
-                    Math.max(0, Math.min(m.heads - 1, Number(e.target.value))),
-                  )
-                }
+                step="1"
+                aria-invalid={headError}
+                aria-describedby={headError ? "head-error" : undefined}
+                onChange={(e) => {
+                  const value = e.target.valueAsNumber;
+                  const valid =
+                    Number.isInteger(value) && value >= 0 && value < m.heads;
+                  setHeadError(!valid);
+                  if (valid) setHead(value);
+                }}
               />
             </label>
+            {headError && (
+              <p id="head-error" role="alert">
+                请输入 0–{m.heads - 1} 的整数；保留上一个合法 head。
+              </p>
+            )}
             <strong>
               Q head {currentHead} → KV group{" "}
               {Math.floor(currentHead / (m.heads / m.kv_heads!))}
@@ -923,7 +935,7 @@ function Decoder({
           <>
             <Prose
               text={
-                "$$g=XW_g,\\quad u=XW_u,\\quad h=\\operatorname{SiLU}(g)\\odot u,\\quad o=hW_d.$$\n$X$ 为归一化输入；$W_g,W_u,W_d$ 为 gate/up/down 权重；$g,u,h,o$ 为相应中间结果。"
+                "\n\n$$\ng=XW_g,\\quad u=XW_u,\\quad h=\\operatorname{SiLU}(g)\\odot u,\\quad o=hW_d.\n$$\n\n\n$X$ 为归一化输入；$W_g,W_u,W_d$ 为 gate/up/down 权重；$g,u,h,o$ 为相应中间结果。"
               }
             />
             <p>
@@ -1086,7 +1098,7 @@ const sftCopy: Record<string, string> = {
     "### 最后一层之后还有一次归一化\n最后一个 decoder 的 residual 输出进入 final RMSNorm，输出仍为 `[B,S,H]`，再送入词表投影。\n\n**实现分支：** PP 下的 post-process stage 决定 final norm/head 的实际归属。首轮仅解释 TP=PP=CP=1。\n\n**反例与验证：** 不要把最后一层内的 pre-FFN norm 当作 final norm；按 GPTModel 与 provider 的 stage 配置核对实际模块。当前没有对应 activation trace。",
   lm_head:
     "### 从 hidden states 到词表目标\n逻辑 logits 是 `[B,S,V_pad]`。$V_{pad}$ 为 provider padding 后的词表大小；HF 的 $V$ 不能直接替代它。\n\n带 labels 的 MCore GPT 默认后处理可以直接返回 **token loss**。概念上存在 logits，不意味着 forward 返回值就是 logits。\n\n**反例：** 对 token loss 再做一次 cross entropy，会改变含义。\n\n**验证：** 检查 labels、output_processor、MTP 分支与实际返回结构，仅捕获少量所需输出。",
-  loss: "### Mask、sum/count 与全局归一化\n$$L_{SFT}=\\frac{\\sum_t m_t\\ell_t}{N},\\quad N=\\sum_t m_t.$$\n$t$ 为目标位置，$m_t$ 为目标 mask，$\\ell_t$ 为该位置 NLL，$N$ 为全局有效目标数，$L_{SFT}$ 为此教学基线的目标。\n\nBridge callback 返回 loss sum 与 num_tokens；调度、累积和梯度 finalize 的缩放仍需结合实际配置验证。**不能从 callback 独自推断最终训练目标。**\n\n**演算反例（教学数字，非实测）：** rank A 的 loss sum=2、count=1；rank B 的 sum=12、count=3。局部均值再平均是 (2+4)/2=3，全局 sum/count 是 14/4=3.5。\n\n**验证：** 保持同一组有效 tokens，比较单卡与拆分 batch 的 loss/梯度；全 mask rank 的零分母路径单独检查。",
+  loss: "### Mask、sum/count 与全局归一化\n\n\n$$\nL_{SFT}=\\frac{\\sum_t m_t\\ell_t}{N},\\quad N=\\sum_t m_t.\n$$\n\n\n$t$ 为目标位置，$m_t$ 为目标 mask，$\\ell_t$ 为该位置 NLL，$N$ 为全局有效目标数，$L_{SFT}$ 为此教学基线的目标。\n\nBridge callback 返回 loss sum 与 num_tokens；调度、累积和梯度 finalize 的缩放仍需结合实际配置验证。**不能从 callback 独自推断最终训练目标。**\n\n**演算反例（教学数字，非实测）：** rank A 的 loss sum=2、count=1；rank B 的 sum=12、count=3。局部均值再平均是 (2+4)/2=3，全局 sum/count 是 14/4=3.5。\n\n**验证：** 保持同一组有效 tokens，比较单卡与拆分 batch 的 loss/梯度；全 mask rank 的零分母路径单独检查。",
   backward:
     "### 梯度从目标流向整模\nhead 接收 masked loss 的梯度；每次 residual add 把梯度送往恒等分支与子层分支，随后在共享上游表示汇集。attention 与 FFN 分别产生输入和权重梯度。\n\n共享 embedding/head 时，同一份参数汇集输入查表与输出投影两条路径的贡献。不能把 backward 简单理解为 forward 动画反放。\n\n**实现分支：** Full SFT 与 LoRA 的 trainable 参数集合不同；分布式归约、累积与 loss scaling 也会影响梯度。\n\n**验证：** 记录选定层 grad norm、trainable names 和少量参数更新；冻结参数保持不变。fused/custom autograd 内部未暴露的边界标记不可直接观测。",
   update:
@@ -1114,9 +1126,9 @@ const rlCopy: Record<string, string> = {
   reward:
     "### 奖励函数与训练循环分别验证\n算术题可使用可检查的正确性奖励。奖励函数单元测试不证明模型真的生成过这些答案。reward 必须绑定 trajectory、prompt group 与有效 sample mask。\n\n**反例：** 组内丢弃样本却继续使用旧组基线，会改变 advantage。全组同分可能没有有用的组内优势；reward 未上升也不自动说明系统错误。",
   logprobs:
-    "### 两种差异回答不同问题\n$\\ell^{gen}-\\ell^{prev}$ 比较生成与训练后端；$\\ell^{cur}-\\ell^{prev}$ 比较当前与更新前 policy。$\\ell$ 表示 action token 的 logprob，上标分别对应下方四种来源。\n\n$$r_{i,t}=\\exp(\\ell^{cur}_{i,t}-\\ell^{prev}_{i,t}).$$\n$i,t$ 是 trajectory 和 token 位置，$r$ 是更新 ratio。训推校正与 PPO ratio 不是同一概念。\n\n**验证：** 固定同一 token 序列、权重版本和 sampling config，检查 response mask/旧 logprob 的目标位置偏移。不同 backend 或 MoE 路由可能带来差异。",
+    "### 两种差异回答不同问题\n$\\ell^{gen}-\\ell^{prev}$ 比较生成与训练后端；$\\ell^{cur}-\\ell^{prev}$ 比较当前与更新前 policy。$\\ell$ 表示 action token 的 logprob，上标分别对应下方四种来源。\n\n\n\n$$\nr_{i,t}=\\exp(\\ell^{cur}_{i,t}-\\ell^{prev}_{i,t}).\n$$\n\n\n$i,t$ 是 trajectory 和 token 位置，$r$ 是更新 ratio。训推校正与 PPO ratio 不是同一概念。\n\n**验证：** 固定同一 token 序列、权重版本和 sampling config，检查 response mask/旧 logprob 的目标位置偏移。不同 backend 或 MoE 路由可能带来差异。",
   advantage:
-    "### 同一个 prompt 内比较 responses\n$$A_i=\\frac{R_i-\\mu_R}{\\sigma_R+\\delta}.$$\n$i$ 为组内样本，$R_i$ 是 reward，$\\mu_R,\\sigma_R$ 为组内均值、标准差，$\\delta$ 为稳定项，$A_i$ 为教学 advantage。\n\n这只是概念式。实际 estimator 的 normalize、leave-one-out、标准差定义与同分行为需按正式实现核验，不能把该公式视为所有 GRPO 分支。\n\n**验证：** 对固定 reward 向量逐项比较 estimator 输出；PPO 则还需要 value predictions、returns 与 GAE。",
+    "### 同一个 prompt 内比较 responses\n\n\n$$\nA_i=\\frac{R_i-\\mu_R}{\\sigma_R+\\delta}.\n$$\n\n\n$i$ 为组内样本，$R_i$ 是 reward，$\\mu_R,\\sigma_R$ 为组内均值、标准差，$\\delta$ 为稳定项，$A_i$ 为教学 advantage。\n\n这只是概念式。实际 estimator 的 normalize、leave-one-out、标准差定义与同分行为需按正式实现核验，不能把该公式视为所有 GRPO 分支。\n\n**验证：** 对固定 reward 向量逐项比较 estimator 输出；PPO 则还需要 value predictions、returns 与 GAE。",
   policy_update:
     "### Actor loss 不是把所有回复再做一次 SFT\n使用 action logprob、advantage、ratio、clipping 与可选 reference KL；token_mask × sample_mask 决定有效贡献。token-level 和 sequence-level 归约对长短回复的权重不同。\n\n**关键反例：** force_on_policy_ratio 可让 ratio 前向值为 1，同时通过 detach 保留当前梯度。直接替换为字面常数 1 会改变计算图。\n\n实现应复用正式 ClippedPGLossFn 的选定分支；用固定微型输入核对数值与梯度，随后确认 optimizer 真正改变参数。\n\n**PPO 分支：** actor 和 critic 各有梯度路径；增加 value predictions → returns/GAE → value loss 与独立 optimizer，不能只把 GRPO 改个标题。",
   refit:

@@ -149,3 +149,50 @@ export function sourceIds(s: State): string[] {
     ]),
   ];
 }
+
+// Stable excerpt IDs identify curated semantic entry points, never array positions.
+// An absent match deliberately leaves the reader unselected instead of implying
+// that an arbitrary excerpt implements the current step.
+export function sourceExcerptId(
+  s: State,
+  sourceId: string,
+): string | undefined {
+  const model = models.find((m) => m.id === s.model);
+  if (!model) return undefined;
+  if (s.scenario === "rl") {
+    const routes: Record<string, Record<string, string>> = {
+      logprobs: { "R-LOSS": "r-loss-l158", "R-TRAIN": "r-train-l117" },
+      advantage: { "R-GRPO": "r-grpo-l1785" },
+      policy_update: {
+        "R-LOSS": "r-loss-l310",
+        "R-TRAIN": "r-train-l117",
+        "R-PPOCFG": "r-ppocfg-l16",
+      },
+      refit: { "R-WORKER": "r-worker-l1187" },
+    };
+    return routes[s.step]?.[sourceId];
+  }
+  if (s.step === "decoder") {
+    const c = cases.find((c) => c.id === s.model)!;
+    if (sourceId === "C-MLA" && c.attention.source_ids.includes(sourceId))
+      return s.mla === "decode" ? "c-mla-l321" : "c-mla-l638";
+    if (sourceId === "C-ATTN" && c.attention.source_ids.includes(sourceId))
+      return "c-attn-l1887";
+    if (sourceId === "C-MOE" && c.layers[s.layer]?.feed_forward === "moe")
+      return "c-moe-l437";
+    if (sourceId === "C-GPT") return "c-gpt-l583";
+  }
+  const routes: Record<string, Record<string, string>> = {
+    input: { "B-SFTDATA": "b-sftdata-l45" },
+    embedding: { "C-GPT": "gpt-embedding" },
+    lm_head: { "C-GPT": "gpt-output-projection" },
+    loss: {
+      "C-GPT": "c-gpt-l790",
+      "B-LOSS": "b-loss-l62",
+      "B-STEP": "b-step-l482",
+    },
+    backward: { "B-TRAIN": "b-train-l914" },
+    update: { "B-TRAIN": "b-train-l914", "B-PRETRAIN": "b-pretrain-l133" },
+  };
+  return routes[s.step]?.[sourceId];
+}
