@@ -1,0 +1,56 @@
+---
+type: project
+status: draft
+created: 2026-10-02
+updated: 2026-10-02
+ai_generated: true
+reviewed: false
+---
+
+# Codex Goal 工作入口
+
+## 当前目标
+
+本次只激活 [G01-GQA](G01-GQA/GOAL.md)：将现有整模导览中的 attention 展开为有演算、源码定位和验证的 GQA 精讲单元。原有 Qwen/DeepSeek、SFT/RL 页面与已修复问题不得回退。
+
+这不是重建网站，也不是自动完成 PLAN.md 全部 P0–P4。G01 完成后停止，等待用户验收。真实 tokenizer/样本轨迹可作为下一目标，真实 Bridge-SFT、RL 再按资源和接口兼容单独立项；此处没有授权这些后续任务。
+
+## 安装与启动
+
+本包安装工具只新增文件，不覆盖 AGENTS.md、CODEX_START.md、package.json 或用户配置，也不 commit/push。脚手架本身不会启动 Codex Goal。
+
+在 `AI-Infra/10_Projects/megatron-learning-lab/` 作为工作目录打开 Codex，先阅读仓库与项目 AGENTS.md，再使用 [启动 prompt](G01-GQA/START_PROMPT.md)。本次阶段范围由 G01 的 GOAL.md 决定；旧 CODEX_START.md 保留为历史首轮范围，不重复实施 P0。
+
+终端中先执行 `codex --version`。已有客户端显示 `/goal` 时直接使用；没有时按官方说明执行 `codex features enable goals`，重新打开会话。此命令会修改 Codex 功能设置，本包不会代为执行。现有 sandbox/审批策略保持不变，禁止用 bypass/yolo 代替环境修复。
+
+## 文件分工
+
+- GOAL.md：目标、范围、停止条件与迭代规则。
+- acceptance.json：固定验收项、实际命令、期望产物和浏览器测试标识。
+- PROGRESS.md：短进度记录，不是 Codex 自身的 Goal 状态数据库。
+- evidence.json：逐项填写证据路径及 SHA256，初始全部 pending。
+- tools/goal_gate.py：运行质量检查、保存新日志、核对源码指纹与证据。它不调度 Codex，不控制 Goal 生命周期。
+
+不需要额外 AGENTS.override.md、MCP、插件、数据库、循环 shell 或复制整套训练环境。
+
+## 三个检查入口
+
+```bash
+python tools/goal_gate.py preflight
+python tools/goal_gate.py baseline
+python tools/goal_gate.py final
+```
+
+preflight 只检查项目结构和必需工具。baseline 重跑当前 Python、源码完整性、构建、浏览器测试；只能得出 baseline_passed，不能代表 G01 完成。final 另外执行 GQA 数值测试、上游缓存比对、验收文件与证据检查，满足后输出 ready_for_review。
+
+日志保存在被现有 .gitignore 排除的 `runs/goal-g01/`。每次报告都绑定当前源码指纹，不能拿旧 implementation-report.json 作为本次通过证据。`verify <report>` 会检查报告、日志和当前源码是否仍对应。
+
+所有 checks 通过仍不自动证明教学解释正确。Codex 应逐项人工式审读并在 G01 的 REVIEW.md 中记录数学、源码和界面核对；reviewed 仍保持 false，等待用户复核。
+
+## 官方资料
+
+核验于 2026-10-02。Goal 是线程上的持久目标，文件只是项目内的工作约定，不是官方专用的 GOAL.md 自动发现机制。
+
+[Follow a goal](https://learn.chatgpt.com/use-cases/follow-goals)；[Using Goals in Codex](https://developers.openai.com/cookbook/examples/codex/using-goals-in-codex)；[Configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)；[AGENTS.md](https://learn.chatgpt.com/docs/agent-configuration/agents-md)。
+
+官方命令为 `/goal <目标>`、`/goal`、`/goal pause`、`/goal resume`、`/goal clear`。features.goals 当前在配置参考中标为稳定、默认开启。这里不臆造 token_budget 配置字段或无人值守承诺。预算与暂停通过当前客户端支持的控件处理；达到限制不等于目标完成。

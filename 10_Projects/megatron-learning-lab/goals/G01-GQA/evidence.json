@@ -1,0 +1,50 @@
+{
+  "goal_id": "G01-GQA",
+  "status": "pending",
+  "ai_generated": true,
+  "reviewed": false,
+  "criteria": [
+    {
+      "id": "G01-01",
+      "status": "pending",
+      "summary": "",
+      "artifacts": []
+    },
+    {
+      "id": "G01-02",
+      "status": "pending",
+      "summary": "",
+      "artifacts": []
+    },
+    {
+      "id": "G01-03",
+      "status": "pending",
+      "summary": "",
+      "artifacts": []
+    },
+    {
+      "id": "G01-04",
+      "status": "pending",
+      "summary": "",
+      "artifacts": []
+    },
+    {
+      "id": "G01-05",
+      "status": "pending",
+      "summary": "",
+      "artifacts": []
+    },
+    {
+      "id": "G01-06",
+      "status": "pending",
+      "summary": "",
+      "artifacts": []
+    },
+    {
+      "id": "G01-07",
+      "status": "pending",
+      "summary": "",
+      "artifacts": []
+    }
+  ]
+}

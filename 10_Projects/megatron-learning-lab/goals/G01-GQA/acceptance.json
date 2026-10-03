@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "goal_id": "G01-GQA",
+  "baseline_commit": "ed606ee657097431e674785653da77dc6de19306",
+  "mode": "read_only_and_cpu_teaching_reference",
+  "criteria": [
+    {
+      "id": "G01-01",
+      "requirement": "保留 ed606ee 三项修复，当前基线和回归测试实跑通过"
+    },
+    {
+      "id": "G01-02",
+      "requirement": "整模中的 GQA 子步骤、Qwen2.5 对照与数学符号可完整学习"
+    },
+    {
+      "id": "G01-03",
+      "requirement": "独立 Python 与前端共用 TS 计算的中间值对照及反例通过"
+    },
+    {
+      "id": "G01-04",
+      "requirement": "operator/mode 到正确固定源码片段映射及缺口声明"
+    },
+    {
+      "id": "G01-05",
+      "requirement": "浏览器验证 token/head/substep 联动、深链接、窄屏与旧页面"
+    },
+    {
+      "id": "G01-06",
+      "requirement": "reference/derived/observed 标签、无真实训练冒充、可复现记录"
+    },
+    {
+      "id": "G01-07",
+      "requirement": "仅项目范围修改、完整自审、停止在 G01"
+    }
+  ],
+  "required_artifacts": [
+    "content/cases/04_gqa_source_walkthrough.md",
+    "experiments/gqa_reference.py",
+    "content/fixtures/gqa-reference.json",
+    "web/gqa/compute.ts",
+    "tests/test_gqa_reference.py",
+    "tests/browser/gqa.spec.ts",
+    "goals/G01-GQA/REVIEW.md"
+  ],
+  "source_roots": [
+    "web",
+    "content",
+    "research",
+    "tests",
+    "tools",
+    "experiments",
+    "profiles"
+  ],
+  "source_files": [
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "playwright.config.ts",
+    "source.lock.json"
+  ],
+  "browser_markers_existing": [
+    "Step routes select semantic excerpts",
+    "MLA train/decode routes",
+    "Display formulas retain block semantics",
+    "Q head rejects invalid values"
+  ],
+  "browser_markers_goal": [
+    "[G01-GQA]",
+    "[G01-SOURCE]",
+    "[G01-REGRESSION]"
+  ],
+  "numeric_tolerance": {
+    "atol": 1e-10,
+    "rtol": 1e-10,
+    "scope": "authored_float64_fixture_only"
+  },
+  "ready_status": "ready_for_review",
+  "training_execution": "not_run",
+  "note": "本合约不是 Codex 功能配置，不改变原生 Goal 状态。自审或文件校验不能替代数值与浏览器运行。"
+}
