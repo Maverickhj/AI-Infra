@@ -15,33 +15,34 @@ test("All curated snippets remain verbatim and readable without network", async 
   await page.getByRole("button", { name: "查看当前步骤源码 ↗" }).waitFor();
   await context.setOffline(true);
   await page.getByRole("button", { name: "查看当前步骤源码 ↗" }).click();
+  const reader = page.getByRole("dialog");
   for (const entry of snippets.entries) {
     const ids = entry.excerpts.map((excerpt: { id: string }) => excerpt.id);
     expect(
       ids.every((id: string) => typeof id === "string" && id.length > 0),
     ).toBe(true);
     expect(new Set(ids).size).toBe(ids.length);
-    await page
+    await reader
       .getByRole("combobox", { name: "证据条目", exact: true })
       .selectOption(entry.source_id);
     for (let i = 0; i < entry.excerpts.length; i++) {
       const excerpt = entry.excerpts[i];
-      await page
+      await reader
         .getByRole("combobox", { name: "代码片段", exact: true })
         .selectOption(excerpt.id);
-      await expect(page.getByTestId("source-range")).toHaveText(
+      await expect(reader.getByTestId("source-range")).toHaveText(
         `L${excerpt.start_line}–L${excerpt.end_line}`,
       );
       expect(
-        (await page.locator(".source-text").allTextContents()).join(""),
+        (await reader.locator(".source-text").allTextContents()).join(""),
       ).toBe(excerpt.code);
-      await expect(page.getByLabel("中文讲解注释")).toContainText(
+      await expect(reader.getByLabel("中文讲解注释")).toContainText(
         excerpt.annotations[0].text,
       );
     }
   }
-  await page.getByLabel("来源通道").selectOption("runtime");
-  await expect(page.locator(".source-code")).toHaveCount(0);
+  await reader.getByLabel("来源通道").selectOption("runtime");
+  await expect(reader.locator(".source-code")).toHaveCount(0);
   await expect(page.getByRole("dialog")).toContainText("运行来源尚未建立");
 });
 

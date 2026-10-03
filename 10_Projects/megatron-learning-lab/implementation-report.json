@@ -129,5 +129,7 @@
       "_Project - megatron-learning-lab.md"
     ],
     "deleted": []
-  }
+  },
+  "historical_archive": true,
+  "historical_scope_note": "本文件原validation属于2026-09-30 P0/P1，不能作为G01当前执行证据。当前结果以goals/G01-GQA/evidence.json及runs/goal-g01门槛报告为准。"
 }

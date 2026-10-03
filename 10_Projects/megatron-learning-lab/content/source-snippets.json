@@ -587,6 +587,62 @@
             }
           ],
           "id": "c-attn-l1920"
+        },
+        {
+          "id": "gqa-qkv-projection",
+          "title": "QKV 投影及每组 head 数",
+          "start_line": 1830,
+          "end_line": 1838,
+          "code": "        mixed_qkv, _ = apply_module(self.linear_qkv)(hidden_states)\n        num_query_heads_per_group = (\n            self.num_attention_heads_per_partition // self.num_query_groups_per_partition\n        )\n        num_qkv_heads_per_group = num_query_heads_per_group + 2\n        if output_gate:\n            num_qkv_heads_per_group += num_query_heads_per_group\n\n        assert self.config.num_query_groups is not None\n",
+          "sha256": "48db2922c31b9eae8b22326344c1acced955df4784ae1a8500c1e84a81d11f82",
+          "annotations": [
+            {
+              "line": 1830,
+              "text": "真实 linear 调用；权重 storage 按 group interleave。教学独立数组不能冒充此模块输出。"
+            }
+          ]
+        },
+        {
+          "id": "gqa-rope-call",
+          "title": "Q 的 RoPE 调用",
+          "start_line": 1495,
+          "end_line": 1507,
+          "code": "            if split_qkv:\n                if q_pos_emb is not None:\n                    # TODO VIJAY: simplify\n                    if inference_context is None or inference_context.is_static_batching():\n                        query = apply_rotary_pos_emb(\n                            query,\n                            q_pos_emb,\n                            config=self.config,\n                            cu_seqlens=cu_seqlens_q,\n                            mscale=self._yarn_concentration_factor,\n                            cp_group=self.pg_collection.cp,\n                        )\n                    else:\n",
+          "sha256": "34d70d749687ef57db08a7eef81aecbdc1b78571b41476ed628817df0059019c",
+          "annotations": [
+            {
+              "line": 1495,
+              "text": "普通静态路径调用位置旋转；动态推理和 fused QKV 分支另有路径。"
+            }
+          ]
+        },
+        {
+          "id": "gqa-core-boundary",
+          "title": "core attention 后端入口",
+          "start_line": 1555,
+          "end_line": 1567,
+          "code": "            if inference_context is None or inference_context.is_static_batching():\n                # Static batching attention kernel.\n                with core_attn_manager as query:\n                    core_attn_out = apply_module(self.core_attention)(\n                        query,\n                        key,\n                        value,\n                        attention_mask,\n                        attn_mask_type=attn_mask_type,\n                        attention_bias=attention_bias,\n                        packed_seq_params=packed_seq_params,\n                    )\n\n",
+          "sha256": "27eecfc3cfdf7b930eb64c43533dd3af635e6ff670671357e67ba69a68168274",
+          "annotations": [
+            {
+              "line": 1555,
+              "text": "QK→缩放→mask→softmax→V 是教学数学拆解；TE/FlashAttention 不保证物化完整 score 矩阵。"
+            }
+          ]
+        },
+        {
+          "id": "gqa-output-projection",
+          "title": "attention output projection",
+          "start_line": 1613,
+          "end_line": 1621,
+          "code": "        # =================\n        nvtx_range_push(suffix=\"linear_proj\")\n        attn_proj_manager = off_interface(self.offload_attn_proj, core_attn_out, \"attn_proj\")\n        with attn_proj_manager as core_attn_out:\n            output, bias = apply_module(self.linear_proj)(core_attn_out)\n        output = attn_proj_manager.group_offload(output, forced_released_tensors=[core_attn_out])\n        nvtx_range_pop(suffix=\"linear_proj\")\n\n        return output, bias\n",
+          "sha256": "7d84ff6ae7af24a005365ff73e13ffe6dd9109af34aae5090f72725820e24c89",
+          "annotations": [
+            {
+              "line": 1613,
+              "text": "合并 heads 后通过 linear_proj；本教学逻辑权重 [16,8]，上游物理布局按模块配置。"
+            }
+          ]
         }
       ]
     },
@@ -929,6 +985,68 @@
             }
           ],
           "id": "b-datasetutil-l169"
+        }
+      ]
+    },
+    {
+      "source_id": "C-LAYER",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/transformer/transformer_layer.py",
+      "git_blob_sha": "3fa910687691006a69978f77af3e996b91ec7250",
+      "copyright_header": "# Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "gqa-input-norm",
+          "title": "输入 norm 与 residual 保存",
+          "start_line": 616,
+          "end_line": 637,
+          "code": "        # Optional Input Layer norm\n        attn_norm_manager = self.off_interface(self.offload_attn_norm, hidden_states, \"attn_norm\")\n        if self.recompute_input_layernorm:\n            self.input_layernorm_checkpoint = tensor_parallel.CheckpointWithoutOutput()\n            with attn_norm_manager as hidden_states:\n                input_layernorm_output = self.input_layernorm_checkpoint.checkpoint(\n                    apply_module(self.input_layernorm), hidden_states\n                )\n        else:\n            with attn_norm_manager as hidden_states:\n                input_layernorm_output = apply_module(self.input_layernorm)(hidden_states)\n\n        if isinstance(input_layernorm_output, tuple):\n            if len(input_layernorm_output) != 2:\n                raise ValueError(\n                    f\"When the output of input_layernorm is a tuple, it is \"\n                    f\"expected to have 2 elements (output, residual), but \"\n                    f\"got {len(input_layernorm_output)}\"\n                )\n            input_layernorm_output, residual = input_layernorm_output\n        else:\n            residual = hidden_states\n",
+          "sha256": "c203bc72367c3860d16c064f49e4a394ad74b4dbc68aeb6d1cbd50ec282054a0",
+          "annotations": [
+            {
+              "line": 616,
+              "text": "此为调用入口；TE spec 可将 norm 融合到 QKV linear，不能推断总有单独 norm kernel。"
+            }
+          ]
+        },
+        {
+          "id": "gqa-residual",
+          "title": "attention 的 bias/dropout/residual 边界",
+          "start_line": 676,
+          "end_line": 687,
+          "code": "        nvtx_range_push(suffix=\"self_attn_bda\")\n        if using_fused_tp_inference_kernel:\n            # In inference optimized transformer layer, there is no bias and dropout\n            # The remaining residual add is already handled inside the\n            # self attention module.\n            hidden_states = attention_output_with_bias[0]\n        else:\n            with self.bias_dropout_add_exec_handler():\n                hidden_states = self.self_attn_bda(self.training, self.config.bias_dropout_fusion)(\n                    attention_output_with_bias, residual, self.hidden_dropout\n                )\n        nvtx_range_pop(suffix=\"self_attn_bda\")\n",
+          "sha256": "11dbf0f23d183d0e153273e3d0957c780a08e5f250f1657c0acbe445a0450d80",
+          "annotations": [
+            {
+              "line": 676,
+              "text": "教学设置 dropout=0、output bias=0；此真实调用允许融合和不同训练配置。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "C-ROPE",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/models/common/embeddings/rope_utils.py",
+      "git_blob_sha": "9fab25a3fae7a9680c43103b5b2d1cf3493e9da1",
+      "copyright_header": "# Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "gqa-rope-layout",
+          "title": "split-half 与 interleaved 两种布局",
+          "start_line": 82,
+          "end_line": 89,
+          "code": "    if not rotary_interleaved:\n        x1, x2 = torch.chunk(x, 2, dim=-1)\n        return torch.cat((-x2, x1), dim=-1)\n    else:\n        x1 = x[:, :, :, ::2]\n        x2 = x[:, :, :, 1::2]\n        x_new = torch.stack((-x2, x1), dim=-1)\n        return x_new.view(x_new.shape[0], x_new.shape[1], x_new.shape[2], -1)\n",
+          "sha256": "11e91ea0020a795041f33b8c637792e3f0838c1cc16c87f5b569d5b0ec1a4471",
+          "annotations": [
+            {
+              "line": 82,
+              "text": "本教学明确 rotary_interleaved=false：维0与2、维1与3配对，不是相邻配对。"
+            }
+          ]
         }
       ]
     }

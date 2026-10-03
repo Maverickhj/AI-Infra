@@ -31,8 +31,8 @@ class SourceSnippetTests(unittest.TestCase):
 
     def test_all_reference_entries_have_valid_verbatim_archives(self):
         result = validate(self.root)
-        self.assertEqual(result["sources"], 27)
-        self.assertGreaterEqual(result["excerpts"], 27)
+        self.assertEqual(result["sources"], 29)
+        self.assertEqual(result["excerpts"], 54)
 
     def test_code_changes_are_rejected(self):
         self.data["entries"][0]["excerpts"][0]["code"] += "# injected note\n"

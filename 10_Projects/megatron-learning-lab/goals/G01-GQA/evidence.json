@@ -1,50 +1,173 @@
 {
   "goal_id": "G01-GQA",
-  "status": "pending",
+  "status": "verified_pending_final_gate",
   "ai_generated": true,
   "reviewed": false,
   "criteria": [
     {
       "id": "G01-01",
-      "status": "pending",
-      "summary": "",
-      "artifacts": []
+      "status": "verified",
+      "summary": "当前baseline和16项浏览器实跑通过，历史修复保留。",
+      "artifacts": [
+        {
+          "path": "runs/goal-g01/20261003T060256497404Z/report.json",
+          "sha256": "c899ae2b707f3279a4078df42cc50d2084c1b91240d7cb6b8078702a1ae109f4"
+        },
+        {
+          "path": "runs/goal-g01/checkpoint-d/browser.json",
+          "sha256": "ce80f5c2393734b6f887d793d655ec964d47918c63487f6bf75547d1e30860b2"
+        },
+        {
+          "path": "tests/browser/source-snippets.spec.ts",
+          "sha256": "6424021eff53d71fd2bb8927aaf1aa5fd5f07f12451da4c948433be4e012eba9"
+        },
+        {
+          "path": "implementation-report.json",
+          "sha256": "0b6abc7276c634ecee54cb2e90ee1ffbce8aa0695a47932de3a93b6def330bf5"
+        }
+      ]
     },
     {
       "id": "G01-02",
-      "status": "pending",
-      "summary": "",
-      "artifacts": []
+      "status": "verified",
+      "summary": "13步已挂接整模，含Qwen2.5分支和独立课程符号表。",
+      "artifacts": [
+        {
+          "path": "web/gqa/GqaWalkthrough.tsx",
+          "sha256": "33634c531514765d40b17b390929756b725cad4e3248d244ddbf96d2b8abeae7"
+        },
+        {
+          "path": "web/gqa/steps.ts",
+          "sha256": "67435b0a779b4f7afc3b4eabcbc641dccdc8c2778d569de20399c3fedea29bd3"
+        },
+        {
+          "path": "content/cases/04_gqa_source_walkthrough.md",
+          "sha256": "c356c28b6c197af1482325708e8ed89afd9b4e3f57e75fdc949e3736440c7d5c"
+        },
+        {
+          "path": "runs/goal-g01/checkpoint-d/desktop.png",
+          "sha256": "7e56af09ab0e1341af00c6a1ac1e514f29002f159697bc6c97701bd021f30911"
+        }
+      ]
     },
     {
       "id": "G01-03",
-      "status": "pending",
-      "summary": "",
-      "artifacts": []
+      "status": "verified",
+      "summary": "独立Python与页面共用TS比较1872有限值和48mask位置，因果、group、反例及非法输入通过。",
+      "artifacts": [
+        {
+          "path": "experiments/gqa_reference.py",
+          "sha256": "08bf8a064f9c5f37a2968d1e142a8e5499be5a25bd4d3ad2257b60210b7fff9f"
+        },
+        {
+          "path": "web/gqa/compute.ts",
+          "sha256": "bb8448e005cef718d19ab65c4ebd157225c1d81152ef3279ce7416747a89d970"
+        },
+        {
+          "path": "content/fixtures/gqa-reference.json",
+          "sha256": "3003990e266ef8ecf1f0cb77b367563afa70551cfc9ffa821d4b2692c30cf1a1"
+        },
+        {
+          "path": "tests/test_gqa_reference.py",
+          "sha256": "2481a269af25f78727e67665b18eda55ba8ff9e824bfd7fa13456d8cae6d6f11"
+        },
+        {
+          "path": "tests/gqa-numeric.mjs",
+          "sha256": "b6d0bb449934fad590557815ed8b40f18283279b22eff3d13afeda394dfc7524"
+        },
+        {
+          "path": "runs/goal-g01/checkpoint-d/numeric.log",
+          "sha256": "49ae90157d1022cde191e0bf89f354b20915d8ca38704f785f59e12d2fd0b45a"
+        }
+      ]
     },
     {
       "id": "G01-04",
-      "status": "pending",
-      "summary": "",
-      "artifacts": []
+      "status": "verified",
+      "summary": "29个固定源码文件54片段完整blob和连续行通过；每步源码ID、行号和关键代码由浏览器验证。",
+      "artifacts": [
+        {
+          "path": "research/source-evidence.json",
+          "sha256": "983ff3ed1d9a68604b4aae92afeea3d32be9b36adce8af363ea6001c3fc6d4d8"
+        },
+        {
+          "path": "content/source-snippets.json",
+          "sha256": "47805eb9a3ff4147d968cf05b0e7d1a8665aac64c57a08480b28e8afe21f0fed"
+        },
+        {
+          "path": "web/data.ts",
+          "sha256": "91c82b98851e6e17c879b87687c0dee4273d48a9bae2987bb42e8912ee332056"
+        },
+        {
+          "path": "web/SourceExcerpts.tsx",
+          "sha256": "4c7dbefd2e8c087ff1a3ef8e94041c4588370cf6baca041b91e702c46c4a49a4"
+        },
+        {
+          "path": "tests/browser/gqa.spec.ts",
+          "sha256": "baa6ee7c2d7d372f798db3b2cd29471290901fc31bec4c709b4c2e336074d37b"
+        },
+        {
+          "path": "runs/goal-g01/checkpoint-d/sources.log",
+          "sha256": "06538acea018761b8c7479acace2987dd472c17d09fdbb754ab6f3e8fa124f9e"
+        }
+      ]
     },
     {
       "id": "G01-05",
-      "status": "pending",
-      "summary": "",
-      "artifacts": []
+      "status": "verified",
+      "summary": "token/head/substep、模型、深链接、窄屏、键盘、导出和旧页面全量16测试通过。",
+      "artifacts": [
+        {
+          "path": "tests/browser/gqa.spec.ts",
+          "sha256": "baa6ee7c2d7d372f798db3b2cd29471290901fc31bec4c709b4c2e336074d37b"
+        },
+        {
+          "path": "runs/goal-g01/checkpoint-d/browser.json",
+          "sha256": "ce80f5c2393734b6f887d793d655ec964d47918c63487f6bf75547d1e30860b2"
+        },
+        {
+          "path": "runs/goal-g01/checkpoint-d/desktop.png",
+          "sha256": "7e56af09ab0e1341af00c6a1ac1e514f29002f159697bc6c97701bd021f30911"
+        },
+        {
+          "path": "runs/goal-g01/checkpoint-d/mobile.png",
+          "sha256": "14d664f8131db852d74b58ed049acdd649a0130afc0336a4bef910fbc5b90cfa"
+        }
+      ]
     },
     {
       "id": "G01-06",
-      "status": "pending",
-      "summary": "",
-      "artifacts": []
+      "status": "verified",
+      "summary": "reference/derived与not_run明确分开，fixture及导出保留完整参数和来源。",
+      "artifacts": [
+        {
+          "path": "content/fixtures/gqa-reference.json",
+          "sha256": "3003990e266ef8ecf1f0cb77b367563afa70551cfc9ffa821d4b2692c30cf1a1"
+        },
+        {
+          "path": "web/gqa/GqaWalkthrough.tsx",
+          "sha256": "33634c531514765d40b17b390929756b725cad4e3248d244ddbf96d2b8abeae7"
+        },
+        {
+          "path": "content/cases/04_gqa_source_walkthrough.md",
+          "sha256": "c356c28b6c197af1482325708e8ed89afd9b4e3f57e75fdc949e3736440c7d5c"
+        }
+      ]
     },
     {
       "id": "G01-07",
-      "status": "pending",
-      "summary": "",
-      "artifacts": []
+      "status": "verified",
+      "summary": "修改仅项目范围；完成数学/源码/界面自审，待用户审阅，不进入后续训练。",
+      "artifacts": [
+        {
+          "path": "goals/G01-GQA/REVIEW.md",
+          "sha256": "c836083195753148b41f12b952905e704ff75d0474bd50ea3676ed457111e6da"
+        },
+        {
+          "path": "runs/goal-g01/checkpoint-d/scope.json",
+          "sha256": "f588d25911c49adc4fbe5e25548bc9750248378b9758d10609f2324b37b64e07"
+        }
+      ]
     }
   ]
 }

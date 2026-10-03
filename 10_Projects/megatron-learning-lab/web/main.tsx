@@ -1,5 +1,13 @@
+import { GqaWalkthrough } from "./gqa/GqaWalkthrough";
 import { SourceExcerpts } from "./SourceExcerpts";
-import React, { useEffect, useReducer, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useMemo,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+} from "react";
 import { createRoot } from "react-dom/client";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -25,7 +33,7 @@ import {
   type Model,
 } from "./data";
 
-function Prose({ text }: { text: string }) {
+const Prose = React.memo(function Prose({ text }: { text: string }) {
   return (
     <div className="prose">
       <Markdown
@@ -37,7 +45,7 @@ function Prose({ text }: { text: string }) {
       </Markdown>
     </div>
   );
-}
+});
 function Badge({ children }: { children: React.ReactNode }) {
   return <span className="badge">{children}</span>;
 }
@@ -58,8 +66,8 @@ function App() {
   const model = models.find((m) => m.id === state.model)!;
   const steps: readonly string[] = state.scenario === "rl" ? rlSteps : sftSteps;
   const index = steps.indexOf(state.step);
-  const ids = sourceIds(state);
-  const patch = (value: Partial<State>) => dispatch(value);
+  const ids = useMemo(() => sourceIds(state), [state]);
+  const patch = useCallback((value: Partial<State>) => dispatch(value), []);
   useEffect(() => {
     const onHash = () => dispatch(readState());
     window.addEventListener("hashchange", onHash);
@@ -78,10 +86,13 @@ function App() {
       sourceDialog.current?.close();
     }
   }, [sourceOpen]);
-  function openSource(id?: string) {
-    setSourceId(id || ids[0] || "B-Q3");
-    setSourceOpen(true);
-  }
+  const openSource = useCallback(
+    (id?: string) => {
+      setSourceId(id || ids[0] || "B-Q3");
+      setSourceOpen(true);
+    },
+    [ids],
+  );
   const currentSource =
     sources.find((s) => s.id === sourceId) ||
     sources.find((s) => s.id === ids[0]) ||
@@ -395,6 +406,16 @@ function App() {
                   </div>
                 </div>
               </section>
+              {state.scenario === "sft" &&
+                state.step === "decoder" &&
+                model.attention === "gqa" && (
+                  <GqaWalkthrough
+                    model={model}
+                    state={state}
+                    patch={patch}
+                    onSource={openSource}
+                  />
+                )}
             </>
           ) : null}
           {state.view !== "basics" ? (
@@ -519,7 +540,7 @@ function App() {
               <h3>{currentSource.id}</h3>
               <p>{currentSource.review_scope}</p>
               <SourceExcerpts
-                key={`${currentSource.id}:${state.model}:${state.scenario}:${state.step}:${state.layer}:${state.mla}`}
+                key={`${currentSource.id}:${state.model}:${state.scenario}:${state.step}:${state.layer}:${state.mla}:${state.operator}:${state.query}:${state.gqaHead}`}
                 sourceId={currentSource.id}
                 repoKey={currentSource.repo_key}
                 url={currentSource.url}

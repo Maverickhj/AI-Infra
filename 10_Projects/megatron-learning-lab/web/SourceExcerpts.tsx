@@ -1,3 +1,4 @@
+import { stepFor } from "./gqa/steps";
 import { useRef, useState } from "react";
 import { sourceExcerptId, type State } from "./data";
 import snippets from "../content/source-snippets.json";
@@ -78,6 +79,18 @@ export function SourceExcerpts({
         <span className="small muted">{entry.excerpts.length} 个关键片段</span>
       </div>
       {picker}
+      {state.operator !== "overview" &&
+        defaultExcerptId &&
+        excerptId === defaultExcerptId && (
+          <p data-testid="source-relationship">
+            {sourceId === "B-Q2" ||
+            (sourceId === "C-ATTN" && state.operator === "rope")
+              ? "调用入口"
+              : stepFor(state.operator).kind}
+            {" · "}Layer {state.layer} · query {state.query} · head{" "}
+            {state.gqaHead}；静态源码不是该次模型运行。
+          </p>
+        )}
       {excerptId !== defaultExcerptId && (
         <p className="notice">
           当前为手动浏览的相关片段，不代表当前步骤或模式的实现。

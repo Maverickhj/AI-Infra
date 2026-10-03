@@ -290,7 +290,7 @@
       "repo_key": "core",
       "path": "megatron/core/transformer/attention.py",
       "git_blob_sha": "3a5876bc0fe69f9c4a467cd3d74ecd303513af25",
-      "review_scope": "QKV 实例化、分组切分、QK norm、TP>KV heads 分支",
+      "review_scope": "QKV 实例化、分组切分、QK norm、TP>KV heads 分支；G01新增范围仅静态阅读：QKV调用、RoPE调用、core边界与输出投影，AI解释待人工核验",
       "symbols": [
         "SelfAttention.get_query_key_value_tensors"
       ],
@@ -298,6 +298,22 @@
         [
           1650,
           2005
+        ],
+        [
+          1830,
+          1838
+        ],
+        [
+          1495,
+          1507
+        ],
+        [
+          1555,
+          1567
+        ],
+        [
+          1613,
+          1621
         ]
       ],
       "evidence_level": "static_source_read",
@@ -464,6 +480,46 @@
       ],
       "evidence_level": "static_source_read",
       "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/recipes/utils/dataset_utils.py"
+    },
+    {
+      "id": "C-LAYER",
+      "repo_key": "core",
+      "path": "megatron/core/transformer/transformer_layer.py",
+      "git_blob_sha": "3fa910687691006a69978f77af3e996b91ec7250",
+      "review_scope": "G01 指定连续范围静态阅读；AI 注释待人工核验",
+      "symbols": [
+        "TransformerLayer._forward_attention"
+      ],
+      "reviewed_ranges": [
+        [
+          616,
+          637
+        ],
+        [
+          676,
+          687
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/transformer/transformer_layer.py"
+    },
+    {
+      "id": "C-ROPE",
+      "repo_key": "core",
+      "path": "megatron/core/models/common/embeddings/rope_utils.py",
+      "git_blob_sha": "9fab25a3fae7a9680c43103b5b2d1cf3493e9da1",
+      "review_scope": "G01 指定连续范围静态阅读；AI 注释待人工核验",
+      "symbols": [
+        "_rotate_half"
+      ],
+      "reviewed_ranges": [
+        [
+          82,
+          89
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/models/common/embeddings/rope_utils.py"
     }
   ]
 }

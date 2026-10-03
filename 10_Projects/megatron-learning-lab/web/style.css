@@ -1289,3 +1289,24 @@ footer {
     padding-right: 12px;
   }
 }
+
+/* G01 keeps the whole-model context beside the authored numerical reference. */
+.gqa-unit { min-width: 0; }
+.gqa-context { position: sticky; top: 8px; z-index: 2; background: var(--panel, #fff); padding: 12px; border: 1px solid #c9d8d4; border-radius: 8px; }
+.gqa-context p { margin: 6px 0; font-size: .85rem; }
+.gqa-steps, .gqa-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.gqa-steps button[aria-pressed="true"] { background: #164c43; color: #fff; }
+.gqa-controls input { width: 5rem; margin-left: 6px; }
+.gqa-unit article { min-width: 0; padding: 16px; border: 1px solid #c9d8d4; border-radius: 10px; }
+.gqa-unit article > code, .gqa-unit p { overflow-wrap: anywhere; }
+.gqa-unit .gqa-table-wrap { max-width: 100%; overflow-x: auto; }
+.gqa-unit table { font-variant-numeric: tabular-nums; font-size: .82rem; }
+.gqa-unit tr[aria-selected="true"] { background: #dfefe7; }
+.gqa-unit td[data-masked="true"] { color: #526a61; background: #edf0ed; }
+.gqa-json { max-height: 420px; overflow: auto; font-size: .75rem; }
+.gqa-course { margin-top: 20px; }
+.gqa-unit .katex-display { overflow-x: auto; overflow-y: hidden; padding: 8px 0; }
+@media (max-width: 600px) { .gqa-unit article { padding: 10px; } }
+
+.gqa-context label { display: flex; align-items: center; gap: 8px; }
+.gqa-context select { width: auto; min-width: 8rem; padding: 4px; }

@@ -13,7 +13,8 @@
     "test:e2e": "playwright test",
     "test:metadata": "env -u PYTHONPATH uv run --no-project python -S -m unittest discover -s tests -v && uv run --no-project python -S tools/verify_handoff.py",
     "format": "prettier --write web tests/browser playwright.config.ts",
-    "pretest:metadata": "npm run data"
+    "pretest:metadata": "npm run data",
+    "test:gqa": "node --experimental-strip-types tests/gqa-numeric.mjs"
   },
   "dependencies": {
     "katex": "0.18.9",

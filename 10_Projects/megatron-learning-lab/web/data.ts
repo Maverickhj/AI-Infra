@@ -1,3 +1,4 @@
+import { steps as gqaSteps, stepFor } from "./gqa/steps";
 import modelsData from "../content/models.json";
 import caseData from "../content/generated/model-cases.json";
 import sourceData from "../research/source-evidence.json";
@@ -66,6 +67,9 @@ export type State = {
   mode: "assistant" | "last_turn" | "full";
   mla: "train" | "decode";
   sample: number;
+  operator: string;
+  query: number;
+  gqaHead: number;
 };
 export const defaults: State = {
   model: "qwen3-06b",
@@ -77,6 +81,9 @@ export const defaults: State = {
   mode: "assistant",
   mla: "train",
   sample: 0,
+  operator: "overview",
+  query: 0,
+  gqaHead: 0,
 };
 export function normalize(s: State): State {
   const model = models.find((m) => m.id === s.model) || models[1];
@@ -85,6 +92,15 @@ export function normalize(s: State): State {
   return {
     ...defaults,
     ...s,
+    operator: gqaSteps.some((step) => step.id === s.operator)
+      ? s.operator
+      : "overview",
+    query:
+      Number.isInteger(s.query) && s.query >= 0 && s.query < 4 ? s.query : 0,
+    gqaHead:
+      Number.isInteger(s.gqaHead) && s.gqaHead >= 0 && s.gqaHead < 4
+        ? s.gqaHead
+        : 0,
     model: model.id,
     scenario,
     layer: Number.isFinite(s.layer)
@@ -114,6 +130,8 @@ export function readState(): State {
     ...Object.fromEntries(p),
     layer: Number(p.get("layer") || 0),
     sample: Number(p.get("sample") || 0),
+    query: Number(p.get("query") || 0),
+    gqaHead: Number(p.get("gqaHead") || 0),
   } as State);
 }
 export function reducer(s: State, patch: Partial<State>): State {
@@ -142,6 +160,17 @@ export function sourceIds(s: State): string[] {
       )[s.step] || []
     );
   const c = cases.find((c) => c.id === s.model)!;
+  const model = models.find((m) => m.id === s.model)!;
+  if (
+    s.step === "decoder" &&
+    model.attention === "gqa" &&
+    s.operator !== "overview"
+  ) {
+    const substep = stepFor(s.operator);
+    return [
+      substep.id === "qknorm" && !model.qk_norm ? "B-Q2" : substep.sourceId,
+    ];
+  }
   return [
     ...new Set([
       ...(c.pipeline.find((p) => p.id === s.step)?.source_ids || []),
@@ -171,6 +200,21 @@ export function sourceExcerptId(
       refit: { "R-WORKER": "r-worker-l1187" },
     };
     return routes[s.step]?.[sourceId];
+  }
+  if (
+    s.step === "decoder" &&
+    model.attention === "gqa" &&
+    s.operator !== "overview"
+  ) {
+    const substep = stepFor(s.operator);
+    if (substep.id === "qknorm" && !model.qk_norm)
+      return sourceId === "B-Q2"
+        ? "b-q2-l46"
+        : sourceId === "C-ATTN"
+          ? "c-attn-l1920"
+          : undefined;
+    if (substep.id === "rope" && sourceId === "C-ATTN") return "gqa-rope-call";
+    return sourceId === substep.sourceId ? substep.excerptId : undefined;
   }
   if (s.step === "decoder") {
     const c = cases.find((c) => c.id === s.model)!;
