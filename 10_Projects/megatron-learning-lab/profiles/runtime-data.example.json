@@ -1,0 +1,25 @@
+{
+  "sample_id": "authored-arithmetic-smoke",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Answer briefly."
+    },
+    {
+      "role": "user",
+      "content": "What is 2 + 3?"
+    },
+    {
+      "role": "assistant",
+      "content": "5."
+    },
+    {
+      "role": "user",
+      "content": "What is 5 + 1?"
+    },
+    {
+      "role": "assistant",
+      "content": "6."
+    }
+  ]
+}

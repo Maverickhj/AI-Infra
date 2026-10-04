@@ -102,8 +102,8 @@ def bridge_sft_slice(batch, output, *, vocab_size, mapping, output_kind,
         require(output.is_floating_point(), "logits must be floating point")
         raw = output.detach() if mapping == "bridge_bsh_v1" else output.detach().transpose(0, 1)
         raw = raw.double() if raw.dtype == torch.float64 else raw.float()
-        lp = raw.gather(-1, labels.long().unsqueeze(-1)).squeeze(-1) - raw.logsumexp(-1)
-    total = -(lp.double()*mask).sum().item()
+        lp = raw.gather(-1, labels.to(device=raw.device, dtype=torch.long).unsqueeze(-1)).squeeze(-1) - raw.logsumexp(-1)
+    total = -(lp.double()*mask.to(device=lp.device)).sum().item()
     count = int(mask.sum().item())
     measurements = dict(token_logprobs=[row+[0.0] for row in copy_rows(lp)],
                         token_count=count, loss_sum=total, loss_mean=total/count)

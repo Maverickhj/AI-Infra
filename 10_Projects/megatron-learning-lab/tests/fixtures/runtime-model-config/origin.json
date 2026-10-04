@@ -1,0 +1,6 @@
+{
+  "url": "https://huggingface.co/Qwen/Qwen3-0.6B/raw/c1899de289a04d12100db370d81485cdf75e47ca/config.json",
+  "retrieval": "complete JSON values from web read; locally reserialized, not a claim of original raw bytes",
+  "weights_downloaded": false,
+  "container_direct_request": "TLS handshake timed out"
+}

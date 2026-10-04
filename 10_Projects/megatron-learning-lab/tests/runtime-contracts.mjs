@@ -26,10 +26,14 @@ python([
   "unittest",
   "tests.test_runtime_contracts",
   "tests.test_runtime_capture",
+  "tests.test_runtime_plan",
+  "tests.test_runtime_token_data",
+  "tests.test_runtime_launch",
   "-v",
 ]);
 python(["-m", "tests.runtime_adapter_cpu_checks"]);
 python(["-m", "tests.runtime_config_checks"]);
+python(["-m", "tests.runtime_bridge_config_checks"]);
 const fresh = JSON.parse(
   python([
     "-c",
@@ -147,6 +151,10 @@ console.log(
       python_contract_tests: 13,
       python_capture_tests: 7,
       configuration_only_tests: 6,
+      runtime_plan_tests: 7,
+      tokenizer_contract_tests: 4,
+      subprocess_guard_tests: 5,
+      bridge_configuration_and_cpu_tests: 4,
       scope:
         "authored CPU and explicitly synthetic contracts; production runtime not executed",
     },

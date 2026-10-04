@@ -173,3 +173,27 @@ npm run test:runtime-contracts 已通过 24 项跨语言合约、两份新执行
 固定上游 GRPO YAML 原文含尾空格；为保持原文/哈希且通过 Git whitespace 检查，三个固定源码文件以 manifest.json 中的 JSON 字符串逐字归档。测试先验证 SHA256/Git blob，再还原到临时目录调用官方 helper；不修改原文，不关闭 whitespace 检查。提交前完整基线随后再次复验。
 
 最终提交快照（JSON 原文归档后）再次通过111项 Python、92项 Chromium，skipped/flaky/unexpected=0，全部基线检查通过；专项 runtime 合约也再次通过，日志 runs/program-v1/G08/runtime-contracts-commit-archive.log。最终报告 runs/goal-g01/20261004T200900295032Z/report.json，SHA256 6faf808b788721161729f30474aea342fd270dae8b1485baf288babbf9e8d4b0；源码指纹 4863cd7c69b9b36d5b356027c7760a3866fe2e1407592d32edc30ae1212eeecf，全部日志与源码 hash 复核通过。最终核验记录和截图位于 runs/commit-check-runtime-archive/；已实际查看最终桌面/手机截图，布局与局部表格滚动正常。G08 状态及真实运行边界保持不变。
+
+## 2026-10-05 · G08 本地运行入口提交 checkpoint
+
+用户本轮明确授权 commit & push，提交范围为本项目当前 HF/Bridge 入口、plan/tokenizer/进程约束、CLI、测试与小型配置样例，以及本段进度记录。没有启动真实 GPU、下载模型或创建 Ray 集群；G08 仍为 in_progress，NeMo 正式执行接线、完整 G08 验收及 R01/R02 尚未完成。
+
+新增 experiments/runtime/{plan,token_data,launch,worker,hf_entry,bridge_dataset,bridge_entry,config_probe}.py、profiles/runtime-{plan,data}.example.json、tests/test_runtime_{plan,token_data,launch}.py、tests/runtime_bridge_config_checks.py 和完整公开模型 config 样例，接入 tools/runtime_cli.py 与 tests/runtime-contracts.mjs。dry-run 只检查指定元数据、文件存在性和实际源码签名；正式入口要求 plan SHA256 与明确资源授权、路径、GPU、步数和时限一致，worker 再次核对。进程管理保留实际退出码、限制时间与日志大小；子进程退出 0 但缺少完成结果也记为失败。NeMo run 仍明确拒绝，不把配置解析当作训练支持。
+
+HF 入口调用本地完整 checkpoint 与真实 tokenizer；Qwen IM 映射独立核对模板 token IDs/offsets，支持 assistant/last_turn/full，拒绝未知格式和超长样本，不修改模板或截断。Bridge 通过官方 AutoBridge、DatasetProvider、finetune、checkpoint/export 委托实现；显式观测 HF 权重导入完成、训练 callback、选定 activation/gradient/参数片段。BF16 模型权重与 FP32 optimizer master 参数分开记录，CPU 反例验证 master 已更新但 BF16 舍入后可不变；adapter 修正 CPU batch 与设备端输出的 label/mask 对齐。这些真实入口代码尚未经过实际 GPU 训练验证，保存/恢复/导出数值等价性仍待 R01。
+
+真实 Bridge 配置构造 CLI 已完成，报告 runs/program-v1/G08/constructed-bridge-config.json，配置 SHA256 283313578f339b8be0f5d236f0b3b45a561de0cb1e31caeb4d9b4bff3bf75400。阶段明确为 constructed_before_framework_finalize：保留全部 308 个 model 字段，以 JSON 字符串和 hash 归档；运行时最终配置将在 on_train_start 捕获。禁止网络、模型/权重与分布式初始化，拦截一次可选 FlashInfer CUDA 初始化请求，实际 CUDA/model/weights 均未初始化。第一次使用 AssertionError 的失败日志 bridge-entry-config-preflight.log 保留；改为可选模块会处理的 CUDA 不可用 RuntimeError 后四项检查通过，未安装 optional extras。配置嵌套字符串由 trace 外层 hash 绑定，尚未增加独立内层配置 schema/hash 校验，不宣称已验证这些内层语义。
+
+提交前专项日志 runs/program-v1/G08/runtime-entry-commit.log 通过：24 项跨语言合约、2 份新执行 CPU reference、11 项 CPU 适配、13 项 trace 合约、7 项采集器、6 项 NeMo 配置、7 项 plan、4 项 tokenizer、5 项真实/模拟进程管理和4项 Bridge 配置/CPU 检查。完整源码缓存核验通过 49 文件/111 片段；实际 torchrun 参数解析接受所生成的单进程 argv，未执行 launcher。上述数字不代表 GPU 或 NeMo runtime 验证。
+
+可在开发容器内复验：
+
+```bash
+env -u PYTHONPATH uv run --no-project python -S tools/runtime_cli.py dry-run --plan profiles/runtime-plan.example.json
+npm run test:runtime-contracts
+env -u PYTHONPATH uv run --no-project python -S tools/goal_gate.py baseline
+```
+
+样例中的输出路径需按实际计划填写，模型/tokenizer 缓存目前缺失，样例不含任何训练授权。HF profile 需将显式参数名改为 model.norm.weight；Bridge 使用 decoder.final_layernorm.weight。资源授权与实际运行需另行绑定完整计划。日志、截图、缓存、生成数据和临时 Git 认证文件不加入 Git。
+
+提交快照完整基线通过 127 项 Python、92 项 Chromium，skipped/flaky/unexpected 均为 0；数据生成、handoff、片段检查、构建和 diff 检查通过。报告 runs/goal-g01/20261004T205810440656Z/report.json，SHA256 944246ddf7c8bde260a8ebb257f34e98d4522b948f637d47845e3250241f891c；PROGRAM-V1 源码指纹 ef44ea7a2f39ce26d39a2901a3e853dafeb65a33bf2f9f55a546013d3aa36805。已逐项核对当前源码和所有日志 hash，本地核验档案位于 runs/commit-check-runtime-entry/。此次提交不将 G08 或 PROGRAM-V1 标为完成。
