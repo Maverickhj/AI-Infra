@@ -1,0 +1,397 @@
+{
+  "checkpointing": {
+    "checkpoint_dir": "/absolute/path/to/runs/qwen3-grpo-smoke/checkpoints",
+    "checkpoint_must_save_by": null,
+    "enabled": true,
+    "higher_is_better": true,
+    "keep_top_k": 3,
+    "metric_name": "train:reward",
+    "model_save_format": "safetensors",
+    "save_consolidated": false,
+    "save_optimizer": true,
+    "save_period": 1
+  },
+  "cluster": {
+    "gpus_per_node": 1,
+    "master_port_range_high": 28000,
+    "master_port_range_low": 25000,
+    "num_nodes": 1,
+    "segment_size": null
+  },
+  "data": {
+    "default": null,
+    "max_input_seq_length": 96,
+    "num_workers": 0,
+    "shuffle": false,
+    "train": {
+      "data_path": "/opt/AI-Infra/10_Projects/megatron-learning-lab/profiles/runtime-rl-data.example.jsonl",
+      "dataset_name": "ResponseDataset",
+      "env_name": "math",
+      "input_key": "input",
+      "output_key": "output",
+      "processor": "math_hf_data_processor",
+      "prompt_file": null,
+      "seed": 1234,
+      "split_validation_size": 0,
+      "system_prompt_file": null
+    },
+    "use_multiple_dataloader": false,
+    "validation": null
+  },
+  "data_plane": {
+    "backend": "simple",
+    "claim_meta_poll_interval_s": 0.5,
+    "enabled": false,
+    "global_segment_size": 549755813888,
+    "impl": "transfer_queue",
+    "local_buffer_size": 68719476736,
+    "num_storage_units": 2,
+    "storage_capacity": 1000000
+  },
+  "env": {
+    "math": {
+      "math_verify_impl": "hf_math_verify",
+      "num_workers": 1
+    }
+  },
+  "grpo": {
+    "adv_estimator": {
+      "minus_baseline": true,
+      "name": "grpo",
+      "normalize_rewards": true,
+      "use_leave_one_out_baseline": false
+    },
+    "advantage_clip_high": null,
+    "advantage_clip_low": null,
+    "async_grpo": {
+      "enabled": false,
+      "in_flight_weight_updates": false,
+      "max_trajectory_age_steps": 1,
+      "recompute_kv_cache_after_weight_updates": false
+    },
+    "batch_multiplier": 1,
+    "dynamic_sampling_max_gen_batches": 10,
+    "invalid_tool_call_advantage": null,
+    "malformed_thinking_advantage": null,
+    "max_num_epochs": 1,
+    "max_num_steps": 2,
+    "max_rollout_turns": 1,
+    "max_val_samples": 256,
+    "normalize_rewards": true,
+    "num_generations_per_prompt": 2,
+    "num_prompts_per_step": 1,
+    "overlong_filtering": false,
+    "reward_scaling": {
+      "enabled": false,
+      "source_max": 1.0,
+      "source_min": 0.0,
+      "target_max": 1.0,
+      "target_min": 0.0
+    },
+    "reward_shaping": {
+      "enabled": false,
+      "max_response_length": 512,
+      "overlong_buffer_length": 128,
+      "overlong_buffer_penalty": 1,
+      "stop_properly_penalty_coef": null
+    },
+    "seed": 1234,
+    "seq_logprob_error_threshold": null,
+    "use_dynamic_sampling": false,
+    "use_leave_one_out_baseline": false,
+    "val_at_end": false,
+    "val_at_start": false,
+    "val_batch_size": 256,
+    "val_period": 0
+  },
+  "logger": {
+    "gpu_monitoring": {
+      "collection_interval": 10,
+      "flush_interval": 10
+    },
+    "log_dir": "/absolute/path/to/runs/qwen3-grpo-smoke/logs",
+    "mlflow": {
+      "experiment_name": "grpo-dev",
+      "run_name": "grpo-dev-logger",
+      "tracking_uri": "http://localhost:5000"
+    },
+    "mlflow_enabled": false,
+    "monitor_gpus": false,
+    "num_val_samples_to_print": 0,
+    "swanlab": {
+      "name": "grpo-dev-logger",
+      "project": "grpo-dev"
+    },
+    "swanlab_enabled": false,
+    "tensorboard": {},
+    "tensorboard_enabled": false,
+    "wandb": {
+      "name": "grpo-dev-logger",
+      "project": "grpo-dev"
+    },
+    "wandb_enabled": false
+  },
+  "loss_fn": {
+    "disable_ppo_ratio": false,
+    "force_on_policy_ratio": false,
+    "kl_input_clamp_value": 20.0,
+    "kl_output_clamp_value": 10.0,
+    "positive_example_nll_weight": 0.0,
+    "ratio_clip_c": null,
+    "ratio_clip_max": 0.2,
+    "ratio_clip_min": 0.2,
+    "reference_policy_kl_penalty": 0.01,
+    "reference_policy_kl_type": "k3",
+    "sequence_level_importance_ratios": false,
+    "token_level_loss": true,
+    "truncated_importance_sampling_ratio": null,
+    "truncated_importance_sampling_ratio_min": null,
+    "truncated_importance_sampling_type": null,
+    "use_cispo": false,
+    "use_importance_sampling_correction": false,
+    "use_kl_in_reward": false,
+    "use_on_policy_kl_approximation": false
+  },
+  "on_policy_distillation": null,
+  "policy": {
+    "draft": {
+      "aux_layer_indices": null,
+      "enabled": false,
+      "loss_weight": 0.1,
+      "model_name": null,
+      "num_layers": null
+    },
+    "dtensor_cfg": {
+      "_v2": true,
+      "activation_checkpointing": false,
+      "automodel_kwargs": {},
+      "context_parallel_size": 1,
+      "cpu_offload": false,
+      "custom_parallel_plan": null,
+      "enabled": false,
+      "lora_cfg": {
+        "alpha": 32,
+        "dim": 8,
+        "dropout": 0.0,
+        "dropout_position": "post",
+        "enabled": false,
+        "exclude_modules": [],
+        "lora_A_init": "xavier",
+        "match_all_linear": true,
+        "target_modules": [],
+        "use_triton": true
+      },
+      "sequence_parallel": false,
+      "tensor_parallel_size": 1
+    },
+    "dynamic_batching": {
+      "enabled": false,
+      "logprob_mb_tokens": 2048,
+      "sequence_length_round": 64,
+      "train_mb_tokens": 2048
+    },
+    "generation": {
+      "backend": "vllm",
+      "colocated": {
+        "enabled": true,
+        "resources": {
+          "gpus_per_node": null,
+          "num_nodes": null
+        }
+      },
+      "max_new_tokens": 32,
+      "mcore_generation_config": {
+        "async_engine": false,
+        "block_size_tokens": 256,
+        "buffer_size_gb": 10,
+        "cuda_graph_impl": "local",
+        "enable_chunked_prefill": true,
+        "enable_prefix_caching": false,
+        "expose_http_server": false,
+        "inference_cuda_graph_scope": "block",
+        "kv_cache_management_mode": "persist",
+        "materialize_only_last_token_logits": true,
+        "max_model_len": 512,
+        "max_tokens": 16384,
+        "num_cuda_graphs": 4,
+        "num_speculative_tokens": 0,
+        "parsers": [],
+        "refit_backend": "nvshmem",
+        "use_cuda_graphs_for_non_decode_steps": true
+      },
+      "port_range_high": 15000,
+      "port_range_low": 11001,
+      "stop_strings": null,
+      "stop_token_ids": null,
+      "temperature": 1.0,
+      "top_k": null,
+      "top_p": 1.0,
+      "vllm_cfg": {
+        "async_engine": false,
+        "enable_vllm_metrics_logger": true,
+        "enforce_eager": true,
+        "expert_parallel_size": 1,
+        "gpu_memory_utilization": 0.6,
+        "kv_cache_dtype": "auto",
+        "max_model_len": 128,
+        "num_first_layers_in_bf16": 0,
+        "num_last_layers_in_bf16": 0,
+        "pipeline_parallel_size": 1,
+        "precision": "bfloat16",
+        "tensor_parallel_size": 1,
+        "use_deep_gemm": false,
+        "use_tqdm": true,
+        "vllm_metrics_logger_interval": 0.5
+      },
+      "vllm_kwargs": {}
+    },
+    "generation_batch_size": 1,
+    "hf_config_overrides": {},
+    "logprob_batch_size": 1,
+    "logprob_chunk_size": null,
+    "make_sequence_length_divisible_by": 1,
+    "max_grad_norm": 1.0,
+    "max_total_sequence_length": 128,
+    "megatron_cfg": {
+      "activation_checkpointing": false,
+      "apply_rope_fusion": true,
+      "bias_activation_fusion": true,
+      "context_parallel_size": 1,
+      "defer_fp32_logits": false,
+      "distributed_data_parallel_config": {
+        "data_parallel_sharding_strategy": "optim_grads_params",
+        "grad_reduce_in_fp32": false,
+        "overlap_grad_reduce": true,
+        "overlap_param_gather": true,
+        "use_custom_fsdp": false
+      },
+      "empty_unused_memory_level": 1,
+      "enabled": true,
+      "env_vars": null,
+      "expert_model_parallel_size": 1,
+      "expert_tensor_parallel_size": 1,
+      "force_reconvert_from_hf": false,
+      "fp8_cfg": {
+        "enabled": false,
+        "fp8": "e4m3",
+        "fp8_param": false,
+        "fp8_recipe": "blockwise"
+      },
+      "freeze_moe_router": true,
+      "gradient_accumulation_fusion": false,
+      "moe_enable_deepep": false,
+      "moe_per_layer_logging": false,
+      "moe_permute_fusion": true,
+      "moe_router_bias_update_rate": 0.0,
+      "moe_router_dtype": "fp64",
+      "moe_router_load_balancing_type": "none",
+      "moe_shared_expert_overlap": false,
+      "moe_token_dispatcher_type": "alltoall",
+      "mtp_detach_heads": false,
+      "mtp_loss_scaling_factor": 0.0,
+      "mtp_num_layers": 0,
+      "mtp_use_repeated_layer": false,
+      "num_layers_in_first_pipeline_stage": null,
+      "num_layers_in_last_pipeline_stage": null,
+      "optimizer": {
+        "adam_beta1": 0.9,
+        "adam_beta2": 0.999,
+        "adam_eps": 1e-08,
+        "bf16": true,
+        "clip_grad": 1.0,
+        "fp16": false,
+        "lr": 1e-05,
+        "min_lr": 5e-07,
+        "optimizer": "adam",
+        "optimizer_cpu_offload": false,
+        "optimizer_offload_fraction": 0.0,
+        "params_dtype": "float32",
+        "sgd_momentum": 0.9,
+        "use_distributed_optimizer": false,
+        "use_precision_aware_optimizer": false,
+        "weight_decay": 0.01
+      },
+      "peft": {
+        "a2a_experimental": false,
+        "alpha": 32,
+        "dim": 8,
+        "dropout": 0.0,
+        "dropout_position": "post",
+        "enabled": false,
+        "exclude_modules": [],
+        "lora_A_init_method": "xavier",
+        "lora_B_init_method": "zero",
+        "lora_dtype": "None",
+        "target_modules": []
+      },
+      "pipeline_dtype": "bfloat16",
+      "pipeline_model_parallel_size": 1,
+      "recompute_granularity": "full",
+      "recompute_modules": null,
+      "scheduler": {
+        "end_weight_decay": 0.01,
+        "lr_decay_iters": 2,
+        "lr_decay_style": "constant",
+        "lr_warmup_init": 5e-07,
+        "lr_warmup_iters": 0,
+        "start_weight_decay": 0.01,
+        "weight_decay_incr_style": "constant"
+      },
+      "sequence_parallel": false,
+      "tensor_model_parallel_size": 1,
+      "use_fused_weighted_squared_relu": false
+    },
+    "model_name": "/data/hf/hub/models--Qwen--Qwen3-0.6B/snapshots/c1899de289a04d12100db370d81485cdf75e47ca",
+    "offload_optimizer_for_logprob": false,
+    "optimizer": {
+      "kwargs": {
+        "betas": [
+          0.9,
+          0.999
+        ],
+        "eps": 1e-08,
+        "lr": 5e-06,
+        "weight_decay": 0.01
+      },
+      "name": "torch.optim.AdamW"
+    },
+    "precision": "bfloat16",
+    "scheduler": [
+      {
+        "kwargs": {
+          "end_factor": 1.0,
+          "start_factor": 0.1,
+          "total_iters": 50
+        },
+        "name": "torch.optim.lr_scheduler.LinearLR"
+      },
+      {
+        "kwargs": {
+          "factor": 1.0,
+          "total_iters": 10000000000
+        },
+        "name": "torch.optim.lr_scheduler.ConstantLR"
+      },
+      {
+        "milestones": [
+          50
+        ]
+      }
+    ],
+    "sequence_packing": {
+      "algorithm": "modified_first_fit_decreasing",
+      "enabled": false,
+      "logprob_mb_tokens": 2048,
+      "sequence_length_round": 64,
+      "train_mb_tokens": 2048
+    },
+    "tokenizer": {
+      "chat_template_kwargs": {
+        "enable_thinking": false
+      },
+      "name": "/data/hf/hub/models--Qwen--Qwen3-0.6B/snapshots/c1899de289a04d12100db370d81485cdf75e47ca"
+    },
+    "train_global_batch_size": 2,
+    "train_micro_batch_size": 1
+  }
+}

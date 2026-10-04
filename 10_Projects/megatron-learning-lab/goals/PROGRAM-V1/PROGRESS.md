@@ -197,3 +197,19 @@ env -u PYTHONPATH uv run --no-project python -S tools/goal_gate.py baseline
 样例中的输出路径需按实际计划填写，模型/tokenizer 缓存目前缺失，样例不含任何训练授权。HF profile 需将显式参数名改为 model.norm.weight；Bridge 使用 decoder.final_layernorm.weight。资源授权与实际运行需另行绑定完整计划。日志、截图、缓存、生成数据和临时 Git 认证文件不加入 Git。
 
 提交快照完整基线通过 127 项 Python、92 项 Chromium，skipped/flaky/unexpected 均为 0；数据生成、handoff、片段检查、构建和 diff 检查通过。报告 runs/goal-g01/20261004T205810440656Z/report.json，SHA256 944246ddf7c8bde260a8ebb257f34e98d4522b948f637d47845e3250241f891c；PROGRAM-V1 源码指纹 ef44ea7a2f39ce26d39a2901a3e853dafeb65a33bf2f9f55a546013d3aa36805。已逐项核对当前源码和所有日志 hash，本地核验档案位于 runs/commit-check-runtime-entry/。此次提交不将 G08 或 PROGRAM-V1 标为完成。
+
+## G08 · NeMo 配置与同步入口接线范围
+
+上一轮完成源码提交和当前快照完整回归，属于有效进展。本轮重新 fetch 后 HEAD 与 origin/main 均为 a0290a2，工作区干净，planner 仍指向 G08。计划修改 experiments/runtime/{plan,launch,worker}.py、tools/runtime_cli.py 与现有专项入口/测试，新增 nemo_config.py、nemo_entry.py、对应配置/委托测试、小型 GRPO/PPO frozen config 与 JSONL 样例，并更新课程、源码档案和本进度。验收包括：配置 hash 变更拒绝；GPU/节点/步数/模型/数据/日志路径与授权绑定；PPO critic 独立授权；真实官方 setup/train 委托仅在授权后导入；同步 loss/refit 采集不改变返回对象；所有 synthetic 测试明确标记，未知分支继续拒绝。
+
+## 2026-10-05 · G08 NeMo 配置与 CPU 观察器提交 checkpoint
+
+用户明确授权 commit & push，本次仅提交本项目已完成的配置约束、入口委托边界、loss/参数观察器、CLI、测试与小型样例；不启动 GPU 或 Ray，不下载模型。G08 保持 in_progress，生产 NeMo observer、supervisor 接线、真实 rollout/refit 与最终阶段验收仍未完成。正式 launch 和直接 nemo_entry.run 都明确拒绝未完成的 RL 路径；不存在通过缺失模块导入间接失败的入口。
+
+freeze-nemo 只读解析 YAML 后独占写入 frozen JSON，返回实际文件 SHA256；inspect-nemo-config 核对 exact bytes、路径、单卡/单节点、两轮样例、生成长度、batch、优化器和 loss 分支。PPO critic 使用独立身份及授权字段，policy/value tokenizer 均绑定本地同一 snapshot；不允许运行时 overrides、采样过滤、动态 batch、packing、量化和远程 logger。两份样例输出路径仍为占位符，未赋予资源授权；调整配置后须重新计算文件 hash 并重新绑定计划。
+
+nemo_entry 的可注入委托边界执行固定官方 launcher 函数体，依赖显式 synthetic；检查原 setup/train 参数、配置变更拒绝、只创建本地 Ray context 的参数及异常恢复。nemo_capture 对固定官方 actor/critic loss 函数体执行真实 CPU forward/backward，接口为 synthetic，比较独立标量计算；用 2 token/1 token 的不等 mask 验证全局 token 归约，拒绝微批均值的平均值。worker mixin 委托实际 CPU SGD 测试 worker，核对返回对象、梯度、选定参数更新、失败后的 hook 清理和已有记录提前拒绝；这不证明实际 NeMo worker 或 GPU 兼容。
+
+提交预检已通过 25 项 plan/授权/委托/进程检查、9 项 loss/worker CPU 检查、7 项配置解析/冻结检查，日志 runs/program-v1/G08/nemo-commit-{plan,capture,freeze}-preflight.log。新测试已接入常规发现和 test:runtime-contracts，固定 loss 原文块保留行号、SHA256、Git blob 与许可证。运行日志、截图、源码缓存与认证材料不加入 Git。
+
+最终提交快照已在开发容器内完成完整基线：141 项 Python、92 项 Chromium 全部通过，skipped/flaky/unexpected=0；数据生成、handoff、源码片段、构建及 diff 检查通过。报告 runs/goal-g01/20261004T214617560389Z/report.json，SHA256 1f7aa0d2a9ea6e1bbc1f8de519eaaa6d1a2b64ecef89dd41ea9d4317bc474bda；PROGRAM-V1 源码指纹 1cd12ec17a6346eaa47473c90db5cb423a659069bc46263ef7cc432a84b21d1d。全部日志 hash 与当前源码快照一致，核验记录在 runs/commit-check-nemo-contracts/。专项 test:runtime-contracts 全部通过，完整源码缓存 49 文件/111 片段与新 loss 2 文件/7 原文块逐字核验通过。G08、R01/R02 的未完成状态不变。

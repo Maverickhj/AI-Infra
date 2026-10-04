@@ -55,9 +55,11 @@ def _keys(value, allowed, name):
 
 def validate_plan(plan):
     """Validate the narrow, local, one-rank first runtime profile."""
+    require(isinstance(plan, dict), "plan must be an object")
+    extra = {"critic"} if plan.get("profile") == "rl_ppo" else set()
     _keys(plan, {"schema", "schema_version", "profile", "run_id", "model",
                  "tokenizer", "data", "execution", "sources", "training",
-                 "capture", "tolerances"}, "plan")
+                 "capture", "tolerances"} | extra, "plan")
     require(plan["schema"] == "megatron-learning-lab.runtime-plan"
             and type(plan["schema_version"]) is int and plan["schema_version"] == 1,
             "unknown runtime plan version")
@@ -65,7 +67,7 @@ def validate_plan(plan):
     require(isinstance(plan["run_id"], str)
             and re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", plan["run_id"]),
             "invalid run_id")
-    for name in ("model", "tokenizer"):
+    for name in ("model", "tokenizer") + (("critic",) if extra else ()):
         obj = plan[name]
         _keys(obj, {"id", "revision", "snapshot"}, name)
         require(isinstance(obj["id"], str) and obj["id"], name + " id missing")
@@ -79,7 +81,10 @@ def validate_plan(plan):
             "input file SHA256 missing")
     require(plan["data"]["mask_mode"] in ("assistant", "last_turn", "full"),
             "unknown mask mode")
-    require(plan["data"]["mapping"] == "qwen_im_chat_v1", "unknown tokenizer mapping")
+    expected_mapping = "nemo_response_jsonl_v1" if plan["profile"].startswith("rl_") else "qwen_im_chat_v1"
+    require(plan["data"]["mapping"] == expected_mapping, "unknown tokenizer mapping")
+    if plan["profile"].startswith("rl_"):
+        require(plan["data"]["mask_mode"] == "assistant", "RL masks come from generated assistant actions")
     execution = plan["execution"]
     _keys(execution, {"location", "devices", "max_wall_seconds", "output_path",
                      "allow_model_download", "allow_remote_jobs"}, "execution")
@@ -102,13 +107,15 @@ def validate_plan(plan):
     training = plan["training"]
     _keys(training, {"steps", "sequence_length", "micro_batch_size", "global_batch_size",
                      "dtype", "learning_rate", "seed", "resume_from",
-                     "nemo_config", "nemo_overrides"}, "training")
+                     "nemo_config", "nemo_overrides"} | ({"nemo_config_sha256"} if plan["profile"].startswith("rl_") else set()), "training")
     require(integer(training["steps"]) and 1 <= training["steps"] <= 100, "invalid steps")
     require(integer(training["sequence_length"])
             and 8 <= training["sequence_length"] <= 511, "invalid sequence capture bound")
-    require(training["micro_batch_size"] == 1 and type(training["micro_batch_size"]) is int
-            and training["global_batch_size"] == 1 and type(training["global_batch_size"]) is int,
-            "initial SFT capture requires micro/global batch size one")
+    require(type(training["micro_batch_size"]) is int and training["micro_batch_size"] == 1,
+            "initial capture requires micro batch size one")
+    global_batch = training["global_batch_size"]
+    require(integer(global_batch) and (2 <= global_batch <= 8 if plan["profile"].startswith("rl_") else global_batch == 1),
+            "invalid global batch bound for profile")
     require(training["dtype"] in ("float32", "bfloat16"), "unsupported runtime dtype")
     require(type(training["learning_rate"]) in (int, float)
             and 0 < training["learning_rate"] <= 1, "invalid learning rate")
@@ -119,9 +126,10 @@ def validate_plan(plan):
         require(training["nemo_config"] is not None and plan["sources"]["nemo_rl"] is not None,
                 "RL source and effective config are required")
         absolute_path(training["nemo_config"], "nemo_config")
-        require(isinstance(training["nemo_overrides"], list)
-                and all(isinstance(x, str) for x in training["nemo_overrides"]),
-                "invalid NeMo overrides")
+        require(training["nemo_overrides"] == [], "freeze all NeMo overrides before authorizing the plan")
+        require(isinstance(training["nemo_config_sha256"], str)
+                and re.fullmatch(r"[a-f0-9]{64}", training["nemo_config_sha256"]),
+                "frozen NeMo config SHA256 missing")
     else:
         require(training["nemo_config"] is None and training["nemo_overrides"] == [],
                 "NeMo settings are not applicable to this profile")
@@ -151,6 +159,7 @@ def inspect_plan(plan):
     """Read only explicitly named small files and source symbols."""
     validate_plan(plan)
     issues, files, sources = [], [], []
+    runtime_config = None
     def small_file(path, required=True):
         path = Path(path)
         if not path.is_file():
@@ -227,11 +236,27 @@ def inspect_plan(plan):
             sources.append(observed["source"])
         except (ValueError, OSError, SyntaxError) as exc:
             issues.append(str(exc))
+    if plan["profile"].startswith("rl_"):
+        try:
+            from .nemo_config import read_bound_config, response_rows
+            _, record, runtime_config = read_bound_config(plan)
+            files.append(record)
+            require(len(response_rows(data_path)) >= runtime_config["min_dataset_rows"],
+                    "local dataset cannot supply all planned iterations")
+        except (ValueError, OSError) as exc:
+            issues.append(str(exc))
+        if plan["profile"] == "rl_ppo":
+            critic = Path(plan["critic"]["snapshot"])
+            small_file(critic / "config.json")
+            # The first critic profile deliberately accepts only one local
+            # safetensors file; unknown sharded critics fail instead of guessing.
+            if not (critic / "model.safetensors").is_file():
+                issues.append("local single-file critic checkpoint missing")
     resume = plan["training"]["resume_from"]
     if resume is not None and not Path(resume).is_dir():
         issues.append("resume checkpoint directory missing")
     return dict(status="not_ready" if issues else "configuration_ready",
-                issues=issues, files=files, runtime_sources=sources,
+                issues=issues, files=files, runtime_sources=sources, runtime_config=runtime_config,
                 compatibility="not_checked", behavior="not_run")
 
 
@@ -265,6 +290,11 @@ def check_grant(plan, resources):
                        ("output_path", plan["execution"]["output_path"])):
         require(absolute_path(execution.get(field), field) == absolute_path(used, field),
                 field + " differs from grant")
+    if plan["profile"] == "rl_ppo":
+        require(absolute_path(execution.get("critic_snapshot"), "critic_snapshot")
+                == absolute_path(plan["critic"]["snapshot"], "critic.snapshot"),
+                "critic snapshot differs from grant")
+        require(execution.get("allow_critic_training") is True, "separate critic training authorization missing")
     require(execution.get("allow_model_download") is False
             and execution.get("allow_remote_jobs") is False, "grant must bind the local-only profile")
     # The declared plan remains untouched; this check cannot grant permission.
@@ -292,9 +322,7 @@ def dry_run(plan_path, resources_path=None):
                                  "resolve-bridge", "--plan", str(path)]
     elif plan["profile"].startswith("rl_"):
         configuration_command = [sys.executable, str(ROOT/"tools/runtime_cli.py"),
-            "resolve-nemo", "--root", plan["sources"]["nemo_rl"], "--config", plan["training"]["nemo_config"]]
-        for override in plan["training"]["nemo_overrides"]:
-            configuration_command += ["--override", override]
+            "inspect-nemo-config", "--plan", str(path)]
     return dict(schema="megatron-learning-lab.runtime-dry-run", plan_sha256=digest(plan),
                 plan=plan, inspection=observed, resources=grant, command=command,
                 configuration_command=configuration_command,

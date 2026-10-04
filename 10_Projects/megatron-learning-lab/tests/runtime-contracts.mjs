@@ -29,11 +29,14 @@ python([
   "tests.test_runtime_plan",
   "tests.test_runtime_token_data",
   "tests.test_runtime_launch",
+  "tests.test_runtime_nemo_plan",
+  "tests.test_runtime_nemo_entry",
   "-v",
 ]);
 python(["-m", "tests.runtime_adapter_cpu_checks"]);
 python(["-m", "tests.runtime_config_checks"]);
 python(["-m", "tests.runtime_bridge_config_checks"]);
+python(["-m", "tests.runtime_nemo_capture_checks"]);
 const fresh = JSON.parse(
   python([
     "-c",
@@ -150,7 +153,10 @@ console.log(
       adapter_cpu_tests: 11,
       python_contract_tests: 13,
       python_capture_tests: 7,
-      configuration_only_tests: 6,
+      configuration_only_tests: 7,
+      nemo_bound_plan_tests: 7,
+      nemo_launcher_delegation_tests: 6,
+      nemo_loss_and_worker_cpu_tests: 9,
       runtime_plan_tests: 7,
       tokenizer_contract_tests: 4,
       subprocess_guard_tests: 5,

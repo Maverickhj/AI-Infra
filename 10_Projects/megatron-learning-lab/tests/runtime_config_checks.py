@@ -95,6 +95,32 @@ class ReadOnlyConfigChecks(unittest.TestCase):
             with self.assertRaises(InterpolationKeyError):
                 module.load_config(child)
 
+    def test_freeze_cli_binds_exact_bytes_and_refuses_to_overwrite(self):
+        import hashlib
+        import os
+        import subprocess
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            config = root/"example.yaml"
+            config.write_text("steps: 2\n")
+            output = root/"frozen.json"
+            command = [sys.executable, "tools/runtime_cli.py", "freeze-nemo",
+                       "--root", str(root), "--config", str(config),
+                       "--override", "steps=3", "--output", str(output)]
+            env = {k:v for k,v in os.environ.items() if k != "PYTHONPATH"}
+            env["CUDA_VISIBLE_DEVICES"] = ""
+            result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            response = json.loads(result.stdout)
+            raw = output.read_bytes()
+            self.assertEqual(json.loads(raw), {"steps": 3})
+            self.assertEqual(response["sha256"], hashlib.sha256(raw).hexdigest())
+            self.assertEqual(response["bytes"], len(raw))
+            self.assertEqual(response["execution"], "not_run")
+            again = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True, timeout=30)
+            self.assertEqual(again.returncode, 2)
+            self.assertEqual(output.read_bytes(), raw)
+
     def test_no_launcher_import_during_read_only_resolution(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)

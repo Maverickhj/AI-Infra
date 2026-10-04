@@ -32,6 +32,13 @@ def main():
     resolve.add_argument("--root",type=Path,required=True)
     resolve.add_argument("--config",type=Path,required=True)
     resolve.add_argument("--override",action="append",default=[])
+    freeze=sub.add_parser("freeze-nemo",help="Freeze resolved configuration bytes before requesting runtime resources")
+    freeze.add_argument("--root",type=Path,required=True)
+    freeze.add_argument("--config",type=Path,required=True)
+    freeze.add_argument("--override",action="append",default=[])
+    freeze.add_argument("--output",type=Path,required=True)
+    inspect=sub.add_parser("inspect-nemo-config",help="Check a frozen RL configuration against its bounded plan")
+    inspect.add_argument("--plan",type=Path,required=True)
     constructed=sub.add_parser("resolve-bridge",help="Isolated config construction; blocks network, weights and GPU initialization")
     constructed.add_argument("--plan",type=Path,required=True)
     args=parser.parse_args()
@@ -46,6 +53,14 @@ def main():
         result=inspect_nemo_cli(args.root,args.algorithm)
     elif args.command=="dry-run":
         result=dry_run(args.plan,args.resources)
+    elif args.command=="freeze-nemo":
+        from experiments.runtime.nemo_config import freeze_config
+        result=freeze_config(args.config,source_root=args.root,overrides=args.override,output=args.output)
+    elif args.command=="inspect-nemo-config":
+        from experiments.runtime.nemo_config import read_bound_config
+        from experiments.runtime.plan import read_document,validate_plan
+        config,source,mapping=read_bound_config(validate_plan(read_document(args.plan)))
+        result=dict(status="configuration_bound",source=source,mapping=mapping,execution="not_run")
     elif args.command=="resolve-bridge":
         from experiments.runtime.config_probe import probe_bridge
         result=probe_bridge(args.plan)

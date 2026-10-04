@@ -110,6 +110,9 @@ class RuntimePlanTests(unittest.TestCase):
         self.plan["profile"]="rl_grpo"
         self.plan["sources"]["nemo_rl"]=str(self.root/"nemo")
         self.plan["training"]["nemo_config"]=str(self.root/"config.yaml")
+        self.plan["training"]["nemo_config_sha256"]="0"*64
+        self.plan["training"]["global_batch_size"]=2
+        self.plan["data"]["mapping"]="nemo_response_jsonl_v1"
         launcher=self.root/"nemo/examples/run_grpo.py"
         launcher.parent.mkdir(parents=True)
         launcher.write_text("raise RuntimeError('this launcher must not execute')")
