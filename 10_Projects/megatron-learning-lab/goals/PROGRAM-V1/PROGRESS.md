@@ -9,7 +9,7 @@ reviewed: false
 
 # PROGRAM-V1 进度
 
-当前：M00/G02/G03/G04/G05/G06 validated，G07 in_progress。2026-10-05 用户再次授权 commit & push，提交前 HEAD `7cff80b`；本次保存 G06 成果和 G07 数值核心，G07 课程与页面尚未完成。所有代码/测试在 `minimind-megatron-bridge-dev-1` 执行。
+当前：M00/G02/G03/G04/G05/G06/G07 validated，G08 in_progress。HEAD b9f4780；后续改动保留工作区，不自动提交。所有代码/测试在 minimind-megatron-bridge-dev-1 执行。
 
 ## M00 · 2026-10-04
 
@@ -114,3 +114,30 @@ G03/G04/G05公共decoder扩展点已立即通过各独立数值检查，本轮�
 npm run test:rl-reference 通过 12 组配置、41221 数值、8 项真实 CPU 检查，最大误差 7.993605777301127e-15，atol=rtol=1e-10。日志 runs/commit-check-hMEIzm65/rl-reference.log。完整源码缓存校验通过 46 文件/98 片段。所有结果属于 reference/software 验证，没有 GPU 或真实 rollout；PROGRAM-V1 尚未全部完成。
 
 运行报告、截图、源码缓存和生成数据留在本地，不加入 Git。下一步继续 G07 的课程、交互、固定源码档案与完整浏览器验收。
+
+G07 首轮新浏览器路径五项通过、一项失败：测试请求 force=true/KL=false，但 CPU --forward 清单尚未导出该组合，导致找不到参考行。已保留失败 trace 至 runs/program-v1/G07/preflight-missing-force-kl-off，并将真实 CPU 导出矩阵从12组扩展为完整16组，不移除 force/KL-off 行为断言。其余数值、GAE、独立 critic、参数导出、错误 refit 拒绝与实际内存复制、离线源码/数学及窄屏路径已通过；仍需完整阶段门槛。
+
+G07 扩展后的16组54957数值最大误差7.993605777301127e-15、8项CPU检查与六条新浏览器路径全部通过。已实际查看桌面/窄屏截图，发现数字和 token 可被折行，补数字表格 nowrap 并保持局部横向滚动；增加对应样式断言，由完整门槛复验。49完整源码/111片段逐字检查通过。
+
+## G07 · 完整阶段验收完成
+
+报告 runs/program-v1/G07/20261004T183620097709Z/report.json，源码指纹 1f9669f279adec5ceeb38c9f5a57881e58b515720da876c406378dfe73ad1b52，报告 SHA256 26ed98a0a886b56a51ca8389b1a100c2239f846344dc1385d3cd90db1b8a316a。89项Python、88项Chromium通过，skipped/flaky/unexpected=0；构建、handoff、GQA回归、RL16组54957数值/8项CPU检查、49完整源码/111片段和自审全部通过。当前源码指纹及每条日志hash已复核；最终桌面/窄屏截图实际查看，数字保持单行、局部横向滚动，已复制到不可变报告目录并加入hash。R01/R02仍未执行，进入G08。
+
+## G08 · 开工范围与行为验收
+
+计划新增 experiments/runtime/ 下的 trace合约、来源探针、HF/Bridge/NeMo-RL薄适配器与采集器，tools/runtime_cli.py、profiles/runtime-plan.example.json、content/cases/11_runtime_contracts.md、content/fixtures/runtime-reference.json、web/runtime/{trace.ts,RuntimeLab.tsx}、tests/{test_runtime_contracts.py,runtime-contracts.mjs,browser/runtime.spec.ts}，接入现有状态/入口/package/源码档案。
+
+验收：①只读dry-run不下载、不初始化GPU/训练/集群，按实际CLI签名生成命令并输出显式配置和未核验项；②保留HF/Bridge/RL不同运行来源，适配字段不改变shift/mask/归约/版本语义；③同版本语义错拒绝、异版本经显式适配和行为验证接受，未知映射拒绝，test double明确synthetic；④统一trace记录revision、input/config hash、backend/dtype/groups/layout/版本/采集边界，非法来源/缺mask/无效输入拒绝；⑤前端仅只读导入与比较，不执行JSON内命令，参考导入、错误反馈、离线/键盘/窄屏与旧路线通过。
+
+G08只读盘点已保存 runs/program-v1/G08/research/environment-metadata.json：本地Bridge editable HEAD 2c173377b584acf1d92d6d1f09d9b150d1773139，包metadata0.5.1；Core0.18.2、Torch2.12.0a0、Transformers5.8.1等。NeMo RL未安装。Bridge仓库已有无关devcontainer/docs/AGENTS改动，本任务不修改。本地run_recipe.py是dataset推断mode的新CLI，Qwen3 recipe无hf_path参数且内部固定HF ID；不能照抄参考旧CLI或把--hf_path当离线保证。固定NeMo RL官方两个run脚本已缓存，尚待审读与适配，不声称其runtime兼容。
+
+
+## 2026-10-05 · G07 与 G08 trace 合约提交 checkpoint
+
+用户明确授权 commit & push，范围仅本项目源文件、课程、测试和进度记录。G07 保持已验证；G08 已有 Python/TypeScript 只读 trace 校验、实际 CPU reference 样例和 AST CLI 探针，仍为 in_progress。HF/Bridge/NeMo RL 薄适配器、采集器、完整配置与 dry-run、导入页面及完整 G08 阶段验收尚未完成；R01/R02 未运行，PROGRAM-V1 未全部完成。
+
+当前快照在 minimind-megatron-bridge-dev-1 内复跑 tools/goal_gate.py baseline：102 项 Python、88 项 Chromium 全部通过，skipped/flaky/unexpected=0；数据生成、handoff、片段检查、生产构建和 diff 检查通过。报告 runs/goal-g01/20261004T190659876534Z/report.json，SHA256 c9a24a9c7bb3887ffa58c98f979850717457ced74e78d3f00e52bafdbded06b2。当前 PROGRAM-V1 源码指纹 181c3acb59f253b4946656c08f3fa2250a6523810a7131c563ed320fb3dbc826 已复核，基线日志 hash 全部匹配。
+
+另通过 npm run test:rl-reference：16 组配置、54957 数值、8 项真实 CPU 检查，最大误差 7.993605777301127e-15，atol=rtol=1e-10。TypeScript trace 检查接受 2 份 CPU reference，拒绝 15 个损坏/不合法输入；Python 新增 13 项合约测试包含在上述 102 项中。完整源码缓存校验通过 49 文件/111 片段。补充日志与源码清单在 runs/commit-check-_soev9ou/。
+
+这些检查证明当前参考数值和软件行为，不证明生产 runtime 兼容；导入元数据仍标 imported_claim，不作为真实运行证明。日志、截图、源码缓存、生成数据及临时凭据不加入 Git。下一步继续 G08 适配器、采集器、显式配置与只读导入交互。

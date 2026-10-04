@@ -2,7 +2,7 @@
 type: knowledge
 status: draft
 created: 2026-09-30
-updated: 2026-09-30
+updated: 2026-10-05
 ai_generated: true
 reviewed: false
 ---
@@ -62,7 +62,7 @@ $$
 A_i=\frac{R_i-\mu_R}{\sigma_R+\delta}.
 $$
 
-该式解释组内比较，不声称覆盖所有实现分支。实际 GRPOAdvantageEstimator 的 normalize/leave-one-out 配置、标准差定义、全组同分行为要沿正式版本继续审计并导出结果。页面允许对比“概念式”和“该次运行的 estimator”。
+该式解释组内比较，不覆盖所有实现分支。G07 已静态审读固定 GRPOAdvantageEstimator 和组统计源码：关闭 leave-one-out 时标准差带 Bessel 修正，同分组不强行标准化。[R-ADV][R-UTIL] 下方 RL 数值参考展示 authored 轨迹的完整演算；真实运行仍须记录所选 estimator 配置和输出。详见本项目 10_rl_reference.md 的独立符号、手算、PPO GAE 与梯度章节。
 
 group 全部同分时可没有有用的组内优势；两次迭代 reward 没上涨不自动说明系统错误。Smoke test 验证闭环与数值，不声称证明训练有效。
 

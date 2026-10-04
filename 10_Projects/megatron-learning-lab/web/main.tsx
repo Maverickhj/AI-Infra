@@ -1,3 +1,4 @@
+import { RLJourney } from "./rl/RLJourney";
 import { FamilyWalkthrough } from "./family/FamilyWalkthrough";
 import { SequenceJourney } from "./sequence/SequenceJourney";
 import { ParallelInspector } from "./parallel/ParallelInspector";
@@ -419,6 +420,9 @@ function App() {
                   </div>
                 </div>
               </section>
+              {state.scenario === "rl" && (
+                <RLJourney state={state} patch={patch} onSource={openSource} />
+              )}
               {state.scenario === "sft" &&
                 state.step !== "input" &&
                 model.routed_experts > 0 && (
@@ -1162,7 +1166,8 @@ function RLStep({ step }: { step: string }) {
     <>
       <p className="notice">
         同步 RL 教学路线 · 真实 rollout / update / refit 全部{" "}
-        <code>not_run</code>。未生成 trajectory、奖励或 logprob 数值。
+        <code>not_run</code>。真实 trajectory、奖励和 logprob
+        尚未采集；下方可演算 authored CPU reference。
       </p>
       <div className="logprob-grid">
         {[

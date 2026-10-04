@@ -422,7 +422,7 @@
       "repo_key": "nemo_rl",
       "path": "nemo_rl/algorithms/grpo.py",
       "git_blob_sha": "76d75c824ebe51a393b133e042aea268c83e8170",
-      "review_scope": "导入链、资源划分、policy/ref 初始化与 vLLM/SGLang generation 选择；非完整训练循环逐行审计",
+      "review_scope": "导入链、资源划分、policy/ref 初始化与 vLLM/SGLang generation 选择；非完整训练循环逐行审计；G07 补读 generation refit 传输、完成确认与错误分支",
       "symbols": [],
       "reviewed_ranges": [
         [
@@ -432,6 +432,10 @@
         [
           600,
           900
+        ],
+        [
+          1853,
+          1975
         ]
       ],
       "evidence_level": "static_source_read",
@@ -442,7 +446,7 @@
       "repo_key": "nemo_rl",
       "path": "nemo_rl/algorithms/loss/loss_functions.py",
       "git_blob_sha": "dc45fe647a66b3de30247526c443f606cce38a88",
-      "review_scope": "ClippedPGLoss 配置、输入字段、next-token 对齐与 KL/logp 分支",
+      "review_scope": "ClippedPGLoss 配置、输入字段、next-token 对齐与 KL/logp 分支；G07 补读 KL 采样权重导数、ratio/clip 与独立 value loss",
       "symbols": [
         "ClippedPGLossConfig",
         "ClippedPGLossDataDict",
@@ -456,6 +460,14 @@
         [
           260,
           440
+        ],
+        [
+          405,
+          503
+        ],
+        [
+          1160,
+          1240
         ]
       ],
       "evidence_level": "static_source_read",
@@ -949,6 +961,66 @@
       ],
       "evidence_level": "static_source_read",
       "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/transformer/moe/experts.py"
+    },
+    {
+      "id": "R-ADV",
+      "repo_key": "nemo_rl",
+      "path": "nemo_rl/algorithms/advantage_estimator.py",
+      "git_blob_sha": "59fd0f1ed013d979425c4ed8b2e393c373dc8e60",
+      "review_scope": "GRPO 标准化；PPO terminal reward、GAE mask carry 与 returns",
+      "symbols": [
+        "GRPOAdvantageEstimator",
+        "GAEAdvantageEstimator"
+      ],
+      "reviewed_ranges": [
+        [
+          47,
+          83
+        ],
+        [
+          343,
+          511
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/RL/blob/81aa43dda4765b0429cf31dab44441e4e4383911/nemo_rl/algorithms/advantage_estimator.py"
+    },
+    {
+      "id": "R-UTIL",
+      "repo_key": "nemo_rl",
+      "path": "nemo_rl/algorithms/utils.py",
+      "git_blob_sha": "1aaaa457de1fa7cd7cf51d059cc06251db451110",
+      "review_scope": "组内 Bessel 修正与 k3 KL/clamp/importance-weight 梯度",
+      "symbols": [
+        "calculate_kl",
+        "calculate_baseline_and_std_per_prompt"
+      ],
+      "reviewed_ranges": [
+        [
+          41,
+          199
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/RL/blob/81aa43dda4765b0429cf31dab44441e4e4383911/nemo_rl/algorithms/utils.py"
+    },
+    {
+      "id": "R-PPO",
+      "repo_key": "nemo_rl",
+      "path": "nemo_rl/algorithms/ppo.py",
+      "git_blob_sha": "d2d1af676d4bd682ae0b4223387c37ab7d87149b",
+      "review_scope": "PPO logprob、advantage/returns、独立 value/policy train 与 stale/refit 分支；非完整循环审计",
+      "symbols": [
+        "ppo_train"
+      ],
+      "reviewed_ranges": [
+        [
+          1175,
+          1338
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/RL/blob/81aa43dda4765b0429cf31dab44441e4e4383911/nemo_rl/algorithms/ppo.py"
     }
   ]
 }

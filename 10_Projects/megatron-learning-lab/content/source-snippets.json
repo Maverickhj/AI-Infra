@@ -917,6 +917,20 @@
             }
           ],
           "id": "r-grpo-l1785"
+        },
+        {
+          "id": "rl-refit-ack",
+          "title": "跨引擎 refit 必须检查更新成功",
+          "start_line": 1939,
+          "end_line": 1971,
+          "code": "            if isinstance(policy_generation, MegatronGeneration):\n                futures_train = policy.swap_weights_via_reshard(is_source=True)\n            else:\n                futures_train = policy.broadcast_weights_for_collective(\n                    kv_scales=kv_scales\n                )\n            futures_inference = policy_generation.update_weights_from_collective()\n            # wait for all futures to complete\n            ray.get(futures_train)\n            results = ray.get(futures_inference)\n            update_success = all(result for result in results if result is not None)\n\n        # check if update is successful\n        if not update_success:\n            error_tag = \"cuda-ipc\" if colocated_inference else \"nccl\"\n            error_message = (\n                \"❌ Error: Updating weights for the generation policy failed during refit.\\n\"\n                f\"This often indicates an issue with {error_tag} or \"\n                \"a problem within the generation backend (e.g., vLLM worker).\\n\"\n            )\n            raise RuntimeError(error_message)\n\n    if colocated_inference:\n        policy.offload_after_refit()\n    # Colocated inference needs to prepare for generation.\n    # Megatron non-colocated inference needs to enter inference mode after refit.\n    if colocated_inference or isinstance(policy_generation, MegatronGeneration):\n        policy_generation.prepare_for_generation(tags=[\"kv_cache\"])\n\n    if isinstance(policy_generation, MegatronGeneration):\n        policy_generation.resume_after_refit()\n\n\n",
+          "sha256": "a6e80e77eb76d8abe3a007d40d9de258c848ecef8d8580154e0c55afb1c0536d",
+          "annotations": [
+            {
+              "line": 1952,
+              "text": "真实实现等待异步结果并检查 update_success；课程的 hash/ack 是参考合约，不是这个后端的实测。"
+            }
+          ]
         }
       ]
     },
@@ -955,6 +969,48 @@
             }
           ],
           "id": "r-loss-l310"
+        },
+        {
+          "id": "rl-kl-score-gradient",
+          "title": "KL 的 score-function 梯度",
+          "start_line": 418,
+          "end_line": 439,
+          "code": "            if self.use_on_policy_kl_approximation:\n                # See: docs/guides/grpo.md#on-policy-kl-approximation\n                kl_importance_weights = torch.exp(\n                    curr_logprobs_unfiltered - generation_logprobs\n                )\n            else:\n                kl_importance_weights = torch.exp(\n                    curr_logprobs_unfiltered - curr_logprobs_unfiltered.detach()\n                )\n            kl_importance_weights = torch.nan_to_num(\n                kl_importance_weights, nan=0.0, posinf=0.0, neginf=0.0\n            )\n\n            # Compute KL loss\n            kl = self.reference_policy_kl_penalty * calculate_kl(\n                logprobs=curr_logprobs_unfiltered,\n                logprobs_reference=reference_policy_logprobs,\n                kl_type=self.reference_policy_kl_type,\n                input_clamp_value=self.kl_input_clamp_value,\n                output_clamp_value=self.kl_output_clamp_value,\n                importance_sampling_weights=kl_importance_weights,\n            )\n",
+          "sha256": "9a6e1c1bee29166540cd6b05cdd8d3561140e7cf87351200d1b7c18f159ac42b",
+          "annotations": [
+            {
+              "line": 424,
+              "text": "非 IS 分支 exp(curr-curr.detach()) 前向为一，但不能替成常数。"
+            }
+          ]
+        },
+        {
+          "id": "rl-ratio-clip",
+          "title": "正负优势 ratio clipping",
+          "start_line": 454,
+          "end_line": 493,
+          "code": "\n        # Calculate clipped loss function if ppo ratio is enabled.\n        if self.force_on_policy_ratio:\n            # Force ratio to 1.0 for truly on-policy behavior\n            # Use curr_logprobs twice so ratio=1 but gradients still flow\n            log_ratios = curr_logprobs - curr_logprobs.detach()\n            ratios = log_ratios.exp()  # = exp(0) = 1.0, but depends on curr_logprobs\n            ratios_clamped = ratios\n        elif not self.disable_ppo_ratio:\n            log_ratios = curr_logprobs - prev_logprobs\n            if self.sequence_level_importance_ratios:\n                seq_log_ratio_mean = masked_mean(\n                    log_ratios,\n                    token_mask,\n                    dim=-1,\n                ).unsqueeze(-1)\n                seq_ratio = seq_log_ratio_mean.exp()\n                ratios = seq_ratio.repeat(1, advantages.shape[1])\n            else:\n                ratios = log_ratios.exp()\n            ratios_clamped = ratios.clamp(\n                1.0 - self.ratio_clip_min, 1.0 + self.ratio_clip_max\n            )\n        else:\n            ratios = curr_logprobs\n            ratios_clamped = curr_logprobs\n\n        if self.use_cispo:\n            clip_loss = -advantages * ratios_clamped.detach() * curr_logprobs\n        else:\n            loss1 = -advantages * ratios\n            loss2 = -advantages * ratios_clamped\n\n            # Determine which value to use for clipping (max for pessimistic estimate)\n            clip_loss = torch.max(loss1, loss2)\n        # Dual-clipping see https://arxiv.org/pdf/1912.09729\n        if self.ratio_clip_c is not None:\n            assert self.ratio_clip_c > 1, (\n                f\"ratio_clip_c must exceed 1 representing a lower bound of the ratios, got {self.ratio_clip_c}.\"\n            )\n",
+          "sha256": "64e07494050ee0f3f618e572d6518edc52ecb65fc4dbe6e060bc643529d75230",
+          "annotations": [
+            {
+              "line": 458,
+              "text": "force 分支保留导数；标准策略损失选 max(-A*r,-A*clip(r))。"
+            }
+          ]
+        },
+        {
+          "id": "rl-value-loss",
+          "title": "PPO 独立 value clipping",
+          "start_line": 1175,
+          "end_line": 1200,
+          "code": "        values = logits\n\n        token_mask = data[\"token_mask\"]\n        sample_mask = data[\"sample_mask\"]\n        returns = data[\"returns\"]\n        mask = token_mask * sample_mask.unsqueeze(-1)\n\n        if self.cliprange and self.cliprange > 0:\n            old_values = data[\"values\"]\n            vpred_clipped = torch.clamp(\n                values,\n                old_values - self.cliprange,\n                old_values + self.cliprange,\n            )\n            vf_losses_unclipped = (values - returns) ** 2\n            vf_losses_clipped = (vpred_clipped - returns) ** 2\n            vf_losses = torch.max(vf_losses_unclipped, vf_losses_clipped)\n            loss = (\n                0.5\n                * self.scale\n                * masked_mean(\n                    vf_losses,\n                    mask,\n                    global_normalization_factor=global_valid_toks,\n                )\n            )\n",
+          "sha256": "71d055383eee47f65b317060088892416b6d92a4e17b19ec3ddf693fa95dd125",
+          "annotations": [
+            {
+              "line": 1191,
+              "text": "value loss 取两项平方误差的较大值，再按全局有效 token 数归约。"
+            }
+          ]
         }
       ]
     },
@@ -1831,6 +1887,162 @@
             {
               "line": 1291,
               "text": "使用 expt_tp 与 expt_dp；页面只显示已数值验证的参考 rank 编号，不映射任意生产 world。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "R-ADV",
+      "commit": "81aa43dda4765b0429cf31dab44441e4e4383911",
+      "path": "nemo_rl/algorithms/advantage_estimator.py",
+      "git_blob_sha": "59fd0f1ed013d979425c4ed8b2e393c373dc8e60",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "rl-grpo-advantage",
+          "title": "GRPO 组优势",
+          "start_line": 68,
+          "end_line": 83,
+          "code": "            rewards,\n            torch.ones_like(rewards),\n            leave_one_out_baseline=self.use_leave_one_out_baseline,\n        )\n        advantages = (rewards - baseline).unsqueeze(-1)\n\n        if self.normalize_rewards:\n            # don't sharpen the ones with no variation\n            epsilon = 1e-6\n            non_zero_std_mask = std > 0\n            advantages[non_zero_std_mask] = advantages[non_zero_std_mask] / (\n                std.unsqueeze(-1)[non_zero_std_mask] + epsilon\n            )\n\n        return advantages.expand(mask.shape)\n\n",
+          "sha256": "de2ec882411de6376c8f4e91bbb28d305e8cd72cc7ed709bba6801e0f319bd2f",
+          "annotations": [
+            {
+              "line": 75,
+              "text": "std>0 才除以 std+1e-6；同分组不会被强行放大。"
+            }
+          ]
+        },
+        {
+          "id": "rl-terminal-reward",
+          "title": "最后有效 response token 接收奖励",
+          "start_line": 364,
+          "end_line": 377,
+          "code": "        last_response_idx = mask.shape[1] - 1 - mask.fliplr().argmax(dim=1)\n        has_response = mask.any(dim=1)\n        token_level_rewards[has_response, last_response_idx[has_response]] += rewards[\n            has_response\n        ]\n\n        # Zero out prompt/padding positions\n        token_level_rewards = token_level_rewards * mask\n\n        return token_level_rewards\n\n    def _resolve_lambda_policy(self, mask: torch.Tensor) -> float | torch.Tensor:\n        \"\"\"Return the λ to use for policy advantages.\n\n",
+          "sha256": "6edaaf3cb5d8d791a712860e317f80a35fd58e035560beae8bc2bbf32e907f8f",
+          "annotations": [
+            {
+              "line": 367,
+              "text": "使用 mask 的最后一个有效位置；不能简单用物理长度减一。"
+            }
+          ]
+        },
+        {
+          "id": "rl-gae-carry",
+          "title": "GAE 跨 masked 位置保留 carry",
+          "start_line": 486,
+          "end_line": 511,
+          "code": "        lam = gae_lambda if gae_lambda is not None else self.gae_lambda\n\n        gen_len = token_level_rewards.shape[-1]\n        next_values: torch.Tensor = torch.zeros(\n            values.shape[0], device=values.device, dtype=values.dtype\n        )\n        last_gae_lam: torch.Tensor = torch.zeros_like(next_values)\n        advantages_reversed = []\n\n        for t in reversed(range(gen_len)):\n            delta = (\n                token_level_rewards[:, t] + self.gae_gamma * next_values - values[:, t]\n            )\n            new_gae_lam = delta + self.gae_gamma * lam * last_gae_lam\n\n            # Carry-forward: at masked positions, preserve accumulators from\n            # the last valid token instead of updating them.\n            m = mask[:, t]\n            next_values = values[:, t] * m + (1 - m) * next_values\n            last_gae_lam = new_gae_lam * m + (1 - m) * last_gae_lam\n\n            advantages_reversed.append(last_gae_lam)\n\n        advantages = torch.stack(advantages_reversed[::-1], dim=1)\n        returns = advantages + values\n        return advantages, returns\n",
+          "sha256": "b7d4f16e273362a02424c14575080a63bc40bafe857a062f089401c6c0a6795c",
+          "annotations": [
+            {
+              "line": 504,
+              "text": "masked 位置保留 next_values 和 last_gae_lam；returns 由原始优势加 value。"
+            }
+          ]
+        },
+        {
+          "id": "rl-gae-output-mask",
+          "title": "GAE 的最终优势 mask",
+          "start_line": 455,
+          "end_line": 459,
+          "code": "        # Whiten advantages (optional) and zero out masked positions (always)\n        if self.normalize_advantages:\n            advantages = self._reward_whiten(advantages, mask)\n        advantages = torch.masked_fill(advantages, ~(mask.bool()), 0)\n        return advantages, returns\n",
+          "sha256": "a92038e351734b7a4b087cd9ac1a355306c18479997f7612f29a83c151912f37",
+          "annotations": [
+            {
+              "line": 458,
+              "text": "最后仅把 masked advantage 置零；returns 的 masked 槽位不能据此假定为零。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "R-UTIL",
+      "commit": "81aa43dda4765b0429cf31dab44441e4e4383911",
+      "path": "nemo_rl/algorithms/utils.py",
+      "git_blob_sha": "1aaaa457de1fa7cd7cf51d059cc06251db451110",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "rl-group-std",
+          "title": "Bessel 标准差",
+          "start_line": 175,
+          "end_line": 194,
+          "code": "                )\n                / num_valid\n            )\n            std_prompt_baseline_square = (\n                torch.matmul(\n                    baseline_mask_matrix,\n                    torch.pow(std_rewards[prompt_idx], 2) * valid_mask[prompt_idx],\n                )\n                / num_valid\n            )\n\n            baseline[prompt_idx] = prompt_baseline\n            sq_baseline[prompt_idx] = std_prompt_baseline_square\n            std[prompt_idx] = (\n                (\n                    (std_prompt_baseline_square - std_prompt_baseline.square())\n                    * (num_valid / (num_valid - 1))\n                )\n                .sqrt()\n                .nan_to_num(0)\n",
+          "sha256": "4b266ea5e1c287215dbfe10762bf19fa5bfd4c2b6885eca7d3768f89d6f5df0d",
+          "annotations": [
+            {
+              "line": 189,
+              "text": "本课程关闭 leave-one-out；方差乘 num_valid/(num_valid-1)，并非总体标准差。"
+            }
+          ]
+        },
+        {
+          "id": "rl-kl-clamp",
+          "title": "KL 与采样权重的 clamp",
+          "start_line": 70,
+          "end_line": 100,
+          "code": "    \"\"\"\n    logr = logprobs_reference - logprobs\n    if input_clamp_value is not None:\n        logr_clamped = logr.clamp(min=-input_clamp_value, max=input_clamp_value)\n        if importance_sampling_weights is not None:\n            importance_sampling_weights = torch.where(\n                logr == logr_clamped,\n                importance_sampling_weights,\n                importance_sampling_weights.detach(),\n            )\n        logr = logr_clamped\n\n    if kl_type == \"k1\":\n        kl = -logr\n\n    elif kl_type == \"k2\":\n        kl = torch.square(logr) / 2\n\n    elif kl_type == \"k3\":\n        kl = torch.exp(logr) - 1 - logr\n\n    else:\n        raise ValueError(f\"Invalid KL type: {kl_type}\")\n\n    if importance_sampling_weights is not None:\n        kl = importance_sampling_weights * kl\n\n    if output_clamp_value is not None:\n        kl = kl.clamp(min=-output_clamp_value, max=output_clamp_value)\n\n    return kl\n",
+          "sha256": "e106cf5c3aa4dab687f2cf968243fc6967e28b07aebbbe4ad29f7e34e4c25b8b",
+          "annotations": [
+            {
+              "line": 74,
+              "text": "输入 clamp 生效时同时 detach 采样权重；输出 clamp 在乘权重后。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "R-PPO",
+      "commit": "81aa43dda4765b0429cf31dab44441e4e4383911",
+      "path": "nemo_rl/algorithms/ppo.py",
+      "git_blob_sha": "d2d1af676d4bd682ae0b4223387c37ab7d87149b",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "rl-ppo-advantages",
+          "title": "PPO 用旧 value 计算优势与 returns",
+          "start_line": 1227,
+          "end_line": 1245,
+          "code": "                    adv_kwargs = dict(\n                        prompt_ids=prompt_ids_for_adv,\n                        rewards=train_data[\"rewards\"],\n                        mask=train_data[\"token_mask\"],\n                        reference_logprobs=train_data.get(\"reference_policy_logprobs\"),\n                        logprobs=train_data[\"prev_logprobs\"],\n                    )\n                    if \"values\" in train_data:\n                        adv_kwargs[\"values\"] = train_data[\"values\"]\n                    result = adv_estimator.compute_advantage(**adv_kwargs)\n                    if isinstance(result, tuple):\n                        advantages, returns = result\n                    else:\n                        advantages, returns = result, None\n                    del prompt_ids_for_adv\n\n                    train_data[\"advantages\"] = advantages\n                    if returns is not None:\n                        train_data[\"returns\"] = returns\n",
+          "sha256": "c9d02b43cab7b7797a625f2db854a0b5022046919a281ea1a1be07bfa051d3d1",
+          "annotations": [
+            {
+              "line": 1235,
+              "text": "批次 values 进入 GAE；returns 单独保存给 critic。"
+            }
+          ]
+        },
+        {
+          "id": "rl-ppo-critic",
+          "title": "PPO critic 独立训练入口",
+          "start_line": 1255,
+          "end_line": 1267,
+          "code": "                    # Train value model first (critic before actor, matching veRL).\n                    with timer.time(\"value_training_prep\"):\n                        value_model.prepare_for_training()\n\n                    with timer.time(\"value_training\"):\n                        print(\"▶ Training value...\", flush=True)\n                        value_results = value_model.train(\n                            train_data,\n                            value_loss_fn,\n                            timer=timer,\n                        )\n\n                        value_model.finish_training()\n",
+          "sha256": "7998db5e1f064736bb8d7a705a04330f85c876d8564237c8651786c181506805",
+          "annotations": [
+            {
+              "line": 1261,
+              "text": "固定实现先训练 value_model，再进入 policy.train；教学参考的图相互独立。"
+            }
+          ]
+        },
+        {
+          "id": "rl-ppo-actor",
+          "title": "PPO policy 更新与 stale 状态",
+          "start_line": 1280,
+          "end_line": 1292,
+          "code": "                        print(\"▶ Preparing for training...\", flush=True)\n                        with timer.time(\"training_prep\"):\n                            policy.prepare_for_training()\n                            POLICY_GENERATION_STALE = True\n\n                        print(\"▶ Training policy...\", flush=True)\n                        with timer.time(\"policy_training\"):\n                            train_results = policy.train(\n                                train_data,\n                                loss_fn,\n                                timer=timer,\n                            )\n                            if step < ppo_epochs - 1:\n",
+          "sha256": "7bd039b37963dfaa59595289899f2b79b3d02e11f18a17181bf23f55247d294e",
+          "annotations": [
+            {
+              "line": 1283,
+              "text": "训练准备阶段将生成权重标 stale；optimizer 完成不自动说明 generation 已同步。"
             }
           ]
         }

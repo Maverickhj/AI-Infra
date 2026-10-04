@@ -58,6 +58,14 @@ export const labels: Record<string, string> = {
   refit: "Export / refit",
 };
 export type State = {
+  rlAlgorithm: "grpo" | "ppo";
+  rlTrajectory: number;
+  rlToken: number;
+  rlReduction: "token" | "sequence";
+  rlKl: "on" | "off";
+  rlForce: "on" | "off";
+  rlEqual: "on" | "off";
+  rlFault: "none" | "constant_ratio" | "detach_kl_weight" | "wrong_clip";
   ep: number;
   etp: number;
   familyToken: number;
@@ -107,6 +115,14 @@ export type State = {
   sequenceFault: "none" | "local_kv" | "leak";
 };
 export const defaults: State = {
+  rlAlgorithm: "grpo",
+  rlTrajectory: 0,
+  rlToken: 8,
+  rlReduction: "token",
+  rlKl: "on",
+  rlForce: "off",
+  rlEqual: "off",
+  rlFault: "none",
   ep: 1,
   etp: 1,
   familyToken: 7,
@@ -155,6 +171,24 @@ export function normalize(s: State): State {
   return {
     ...defaults,
     ...s,
+    rlAlgorithm: s.rlAlgorithm === "ppo" ? "ppo" : "grpo",
+    rlTrajectory: [0, 1, 2, 3].includes(s.rlTrajectory) ? s.rlTrajectory : 0,
+    rlToken:
+      Number.isInteger(s.rlToken) && s.rlToken >= 0 && s.rlToken < 13
+        ? s.rlToken
+        : 8,
+    rlReduction: s.rlReduction === "sequence" ? "sequence" : "token",
+    rlKl: s.rlKl === "off" ? "off" : "on",
+    rlForce: s.rlForce === "on" ? "on" : "off",
+    rlEqual: s.rlEqual === "on" ? "on" : "off",
+    rlFault: [
+      "none",
+      "constant_ratio",
+      "detach_kl_weight",
+      "wrong_clip",
+    ].includes(s.rlFault)
+      ? s.rlFault
+      : "none",
     ep: s.ep === 2 ? 2 : 1,
     etp: s.etp === 2 ? 2 : 1,
     familyToken:
@@ -309,6 +343,8 @@ export function readState(): State {
     sftQuery: Number(p.get("sftQuery") || 0),
     decoderToken: Number(p.get("decoderToken") || 7),
     tinyLayer: Number(p.get("tinyLayer") || 0),
+    rlTrajectory: Number(p.get("rlTrajectory") ?? 0),
+    rlToken: Number(p.get("rlToken") ?? 8),
     ep: Number(p.get("ep") || 1),
     etp: Number(p.get("etp") || 1),
     familyToken: Number(p.get("familyToken") ?? 7),

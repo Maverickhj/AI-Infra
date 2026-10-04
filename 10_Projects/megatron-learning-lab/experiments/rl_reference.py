@@ -213,6 +213,6 @@ if __name__=='__main__':
         result=[]
         for algorithm in ('grpo','ppo'):
             for reduction in ('token','sequence'):
-                for kl,force in ((False,False),(True,False),(True,True)):
+                for kl,force in ((False,False),(True,False),(False,True),(True,True)):
                     result.append(plain_trace(reference_run(algorithm,reduction,kl,force)))
         print(json.dumps(result,allow_nan=False))

@@ -1363,3 +1363,19 @@ footer {
 .family-ops button[aria-pressed="true"] { background:#dceae1; border-color:#285c4a; }
 .family-reference table td { font-variant-numeric:tabular-nums; white-space:nowrap; }
 .family-course { margin-top:1rem; }
+
+.rl-reference { margin-top:1rem; }
+.rl-reference p,.rl-reference td { overflow-wrap:anywhere; }
+.rl-actions { display:flex; flex-wrap:wrap; gap:.5rem; align-items:end; margin:1rem 0; }
+.rl-controls { display:grid; grid-template-columns:repeat(auto-fit,minmax(155px,1fr)); gap:.7rem; margin:1rem 0; }
+.rl-controls label,.rl-actions label { display:grid; gap:.3rem; min-width:0; }
+.rl-controls select,.rl-controls input { width:100%; min-width:0; }
+.rl-reference table td { font-variant-numeric:tabular-nums; }
+.rl-reference tr[data-selected="true"] { background:#edf4ef; }
+.rl-reference .small { word-break:break-word; }
+.rl-version { margin-top:1.2rem; border-top:1px solid var(--line); padding-top:1rem; }
+.rl-head,.rl-course { margin-top:1rem; }
+
+.rl-reference table:not([data-testid="rl-trajectories"]) td,
+.rl-reference table th { white-space:nowrap; overflow-wrap:normal; }
+.rl-reference td button { white-space:nowrap; }
