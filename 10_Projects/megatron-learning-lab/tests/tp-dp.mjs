@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {spawnSync} from 'node:child_process';
+import {groups} from '../web/parallel/layout.ts';
+assert.deepEqual(groups(2,2,3),{world:4,tpRank:1,dpRank:1,tpMembers:[2,3],dpMembers:[1,3]});
+assert.deepEqual(groups(1,2,1),{world:2,tpRank:0,dpRank:1,tpMembers:[1],dpMembers:[0,1]});
+for(const args of [[3,1,0],[2,3,0],[2,2,4],[2,1,-1],[1.5,1,0],[2,2,1.5]])assert.throws(()=>groups(...args));
+const env={...process.env,CUDA_VISIBLE_DEVICES:''};delete env.PYTHONPATH;
+const p=spawnSync('python',['-m','tests.tp_dp_cpu_checks'],{encoding:'utf8',env});
+assert.equal(p.status,0,p.stderr);process.stdout.write(p.stderr);
+console.log(JSON.stringify({status:'passed',scope:'actual CPU full-model TP/DP checks and UI group mapping; no NCCL'},null,2));

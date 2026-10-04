@@ -4,25 +4,25 @@
   "updated_at": "2026-10-04",
   "stages": {
     "M00": {
-      "status": "pending",
-      "report": null,
-      "report_sha256": null,
+      "status": "validated",
+      "report": "runs/program-v1/M00/20261004T150812693403Z/report.json",
+      "report_sha256": "684e6b85b000a5009d8cab2f265d297b42fb7d8279a4164509665ae366cacf3c",
       "blocker": null
     },
     "G02": {
-      "status": "pending",
-      "report": null,
-      "report_sha256": null,
+      "status": "validated",
+      "report": "runs/program-v1/G02/20261004T153109683149Z/report.json",
+      "report_sha256": "665388bd6bbef213efeab1f68ea1edba209f574e36930c4c205b657f3bbedceb",
       "blocker": null
     },
     "G03": {
-      "status": "pending",
-      "report": null,
-      "report_sha256": null,
+      "status": "validated",
+      "report": "runs/program-v1/G03/20261004T155324142852Z/report.json",
+      "report_sha256": "341f259d8256295e3cf29a625b218a1527fcb465904d3da888e59ef0f3b0e9c0",
       "blocker": null
     },
     "G04": {
-      "status": "pending",
+      "status": "in_progress",
       "report": null,
       "report_sha256": null,
       "blocker": null

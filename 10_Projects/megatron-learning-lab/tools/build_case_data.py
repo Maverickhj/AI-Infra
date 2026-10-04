@@ -108,7 +108,7 @@ def derive_case(model: dict[str, Any]) -> dict[str, Any]:
             {"id": "input", "label": "样本、tokenizer、roles 与单次 label shift", "source_ids": ["B-SFTDATA"], "shape": ["B", "S"]},
             {"id": "embedding", "label": "词嵌入", "source_ids": ["C-GPT"], "shape": ["B", "S", hidden]},
             {"id": "decoder", "label": f"完整 {layers} 层 decoder，含 attention/残差/FFN", "source_ids": ["C-GPT"], "shape": ["B", "S", hidden]},
-            {"id": "final_norm", "label": "最后的 RMSNorm", "source_ids": model["sources"], "shape": ["B", "S", hidden]},
+            {"id": "final_norm", "label": "最后的 RMSNorm", "source_ids": ["C-BLOCK"] + model["sources"], "shape": ["B", "S", hidden]},
             {"id": "lm_head", "label": "词表投影；推导形状，不物化大矩阵", "source_ids": ["C-GPT"], "shape": ["B", "S", vocab]},
             {"id": "loss", "label": "模型 token loss → mask sum/count → 调度归一化", "source_ids": ["C-GPT", "B-LOSS", "B-STEP"]},
             {"id": "backward", "label": "独立解释反向路径，非 forward 动画反放", "source_ids": ["B-TRAIN"]},

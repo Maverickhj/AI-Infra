@@ -1310,3 +1310,33 @@ footer {
 
 .gqa-context label { display: flex; align-items: center; gap: 8px; }
 .gqa-context select { width: auto; min-width: 8rem; padding: 4px; }
+
+/* G02: token rows stay local to the sample journey. */
+.sft-journey { margin-top: 2rem; min-width: 0; }
+.sft-controls, .sft-summary { display: flex; flex-wrap: wrap; gap: .8rem; margin: 1rem 0; }
+.sft-controls label { flex: 1 1 170px; }
+.sft-controls select, .sft-controls input { width: 100%; }
+.sft-boundaries { display: flex; flex-wrap: wrap; gap: .6rem; margin: 1rem 0; }
+.sft-boundaries > div { flex: 1 1 200px; border: 1px solid var(--line); border-left: 4px solid #3c806d; padding: .8rem; display: grid; gap: .4rem; }
+.sft-table-scroll { overflow-x: auto; max-width: 100%; margin: 1rem 0; }
+.sft-table-scroll table { min-width: 680px; width: 100%; border-collapse: collapse; }
+.sft-table-scroll td, .sft-table-scroll th { padding: .55rem; text-align: left; border-bottom: 1px solid var(--line); }
+.sft-table-scroll small { display: block; color: #586a62; }
+.sft-table-scroll tr[data-mask="1"] { background: #edf6ed; }
+.sft-table-scroll tr[data-valid="false"] { opacity: .5; }
+.sft-table-scroll tr[data-boundary="true"] { border-top: 3px solid #3c806d; }
+.sft-keys { display: flex; flex-wrap: wrap; gap: .3rem; }
+.sft-keys span { padding: .25rem .4rem; border: 1px solid #ccd2cd; color: #53635a; font-size: .8rem; }
+.sft-keys [data-allowed="true"] { background: #dcebdc; color: #163d2e; border-color: #638273; }
+.sft-summary { padding: 1rem; background: #edf3ea; }
+.sft-journey textarea { display: block; width: 100%; min-height: 140px; }
+.sft-journey pre, .sft-journey code, .sft-journey p { overflow-wrap: anywhere; }
+.sft-journey pre { white-space: pre-wrap; }
+.sft-course { margin-top: 1.5rem; }
+
+.decoder-reference { min-width: 0; }
+.decoder-ops { display: flex; flex-wrap: wrap; gap: .4rem; margin: 1rem 0; }
+.decoder-ops [aria-pressed="true"] { background: #254f40; color: white; }
+.decoder-reference p, .decoder-reference td { overflow-wrap: anywhere; }
+.decoder-reference .sft-table-scroll td { max-width: 550px; }
+.decoder-course { margin-top: 1rem; }

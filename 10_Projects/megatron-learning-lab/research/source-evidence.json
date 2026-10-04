@@ -498,6 +498,14 @@
         [
           676,
           687
+        ],
+        [
+          749,
+          762
+        ],
+        [
+          970,
+          982
         ]
       ],
       "evidence_level": "static_source_read",
@@ -520,6 +528,114 @@
       ],
       "evidence_level": "static_source_read",
       "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/models/common/embeddings/rope_utils.py"
+    },
+    {
+      "id": "B-DIRECTSFT",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/data/datasets/direct_sft.py",
+      "git_blob_sha": "a800ccef9cc2266cbbdae5df97aaffae805f94f9",
+      "review_scope": "G02 已读连续范围；静态源码，不代表 tokenizer/Bridge 执行",
+      "symbols": [],
+      "reviewed_ranges": [
+        [
+          100,
+          113
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/data/datasets/direct_sft.py"
+    },
+    {
+      "id": "B-SFTCOLLATE",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/data/collators/sft.py",
+      "git_blob_sha": "b6e69f1f6f4688a6c54b80ddab5c4518c9811e68",
+      "review_scope": "G02 已读连续范围；静态源码，不代表 tokenizer/Bridge 执行",
+      "symbols": [],
+      "reviewed_ranges": [
+        [
+          107,
+          163
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/data/collators/sft.py"
+    },
+    {
+      "id": "B-CONVERSATION",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/data/conversation_processing.py",
+      "git_blob_sha": "479394253923372adde15a34cbec878ec8b3b584",
+      "review_scope": "G02 已读连续范围；静态源码，不代表 tokenizer/Bridge 执行",
+      "symbols": [],
+      "reviewed_ranges": [
+        [
+          1626,
+          1651
+        ],
+        [
+          861,
+          886
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/data/conversation_processing.py"
+    },
+    {
+      "id": "B-PACK",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/data/packing/in_batch.py",
+      "git_blob_sha": "701b55ec27fa73cf08ccc48d7879e2d1373a9b3d",
+      "review_scope": "G02 已读连续范围；静态源码，不代表 tokenizer/Bridge 执行",
+      "symbols": [],
+      "reviewed_ranges": [
+        [
+          159,
+          217
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/data/packing/in_batch.py"
+    },
+    {
+      "id": "C-BLOCK",
+      "repo_key": "core",
+      "path": "megatron/core/transformer/transformer_block.py",
+      "git_blob_sha": "0415035ffbe4c0e8e772e9dd3597195a777db4ce",
+      "review_scope": "G03 已读连续范围；Core 调用/分支不等于 GPU 实测",
+      "symbols": [],
+      "reviewed_ranges": [
+        [
+          373,
+          402
+        ],
+        [
+          692,
+          700
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/transformer/transformer_block.py"
+    },
+    {
+      "id": "C-MLP",
+      "repo_key": "core",
+      "path": "megatron/core/transformer/mlp.py",
+      "git_blob_sha": "f5659d21a6e59eb30ebc0739bafa67c754f87ba5",
+      "review_scope": "G03 已读连续范围；Core 调用/分支不等于 GPU 实测",
+      "symbols": [],
+      "reviewed_ranges": [
+        [
+          261,
+          273
+        ],
+        [
+          308,
+          349
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/transformer/mlp.py"
     }
   ]
 }

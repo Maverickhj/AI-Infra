@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "data": "env -u PYTHONPATH uv run --no-project python -S tools/build_case_data.py",
+    "data": "env -u PYTHONPATH uv run --no-project python -S tools/build_case_data.py && npm run data:decoder",
     "predev": "npm run data",
     "dev": "vite --host 0.0.0.0 --port 5173 --strictPort",
     "prebuild": "npm run data",
@@ -14,7 +14,12 @@
     "test:metadata": "env -u PYTHONPATH uv run --no-project python -S -m unittest discover -s tests -v && uv run --no-project python -S tools/verify_handoff.py",
     "format": "prettier --write web tests/browser playwright.config.ts",
     "pretest:metadata": "npm run data",
-    "test:gqa": "node --experimental-strip-types tests/gqa-numeric.mjs"
+    "test:gqa": "node --experimental-strip-types tests/gqa-numeric.mjs",
+    "test:sft-data": "node --experimental-strip-types tests/sft-data.mjs",
+    "test:decoder": "node --experimental-strip-types tests/decoder-numeric.mjs",
+    "data:decoder": "env -u PYTHONPATH CUDA_VISIBLE_DEVICES= python -m experiments.decoder_reference --export content/generated/decoder-cpu.json",
+    "test:tp-dp": "node --experimental-strip-types tests/tp-dp.mjs",
+    "data:parallel": "env -u PYTHONPATH CUDA_VISIBLE_DEVICES= python -m experiments.tp_dp_reference --export content/generated/tp-dp-cpu.json"
   },
   "dependencies": {
     "katex": "0.18.9",

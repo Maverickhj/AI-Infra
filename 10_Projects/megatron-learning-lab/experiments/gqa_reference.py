@@ -33,8 +33,10 @@ def authored_fixture():
 
 
 def validate(f):
-    if f.get('dimensions') != dict(B=1, S=4, H=8, nq=4, nkv=2, d=4):
-        raise ValueError('Only the declared B1/S4/H8/nq4/nkv2/d4 fixture is supported')
+    dims = f.get('dimensions', {})
+    size = dims.get('S')
+    if any(dims.get(k) != v for k,v in dict(B=1,H=8,nq=4,nkv=2,d=4).items()) or type(size) is not int or not 1 <= size <= 64:
+        raise ValueError('Supported: B1/H8/nq4/nkv2/d4 with integer sequence length 1–64')
     if f.get('rotary_layout') != 'split_half':
         raise ValueError('RoPE layout must be split_half')
     def check(value, shape):
@@ -45,9 +47,9 @@ def validate(f):
                 check(child, shape[1:])
         elif type(value) not in (int, float) or not math.isfinite(value):
             raise ValueError('Tensor entries must be finite numbers')
-    for key, shape in [('x', [4,8]), ('wqkv', [8,32]), ('wo', [16,8]),
+    for key, shape in [('x', [size,8]), ('wqkv', [8,32]), ('wo', [16,8]),
                        ('input_gain',[8]), ('q_gain',[4]), ('k_gain',[4]),
-                       ('qkv_bias',[32]), ('output_bias',[8]), ('positions',[4])]:
+                       ('qkv_bias',[32]), ('output_bias',[8]), ('positions',[size])]:
         check(f.get(key), shape)
     for key in ('epsilon', 'theta'):
         if type(f.get(key)) not in (int, float) or not math.isfinite(f[key]) or f[key] <= 0:
@@ -62,8 +64,8 @@ def validate_selection(head, token):
     return head // 2
 
 
-def rms(row, gain, epsilon):
-    denominator = math.sqrt(sum(v*v for v in row) / len(row) + epsilon)
+def rms(row, gain, epsilon, sqrt=math.sqrt):
+    denominator = sqrt(sum(v*v for v in row) / len(row) + epsilon)
     return [v * g / denominator for v, g in zip(row, gain)]
 
 
@@ -78,49 +80,55 @@ def rotate(row, position, theta):
     return out
 
 
-def softmax(row):
+def softmax(row, exp=math.exp):
     if not row or all(v == -math.inf for v in row):
         raise ValueError('All-masked row: no allowed keys in this teaching reference')
-    if any(math.isnan(v) or v == math.inf for v in row):
+    if any(math.isnan(float(v.detach()) if hasattr(v, 'detach') else v) or v == math.inf for v in row):
         raise ValueError('Invalid softmax input')
     maximum = max(row)
-    exps = [math.exp(v-maximum) for v in row]
+    exps = [exp(v-maximum) for v in row]
     total = sum(exps)
     return [v/total for v in exps]
 
 
 def compute(f, variant='qwen3', fault='none'):
     validate(f)
+    return compute_graph(f, variant, fault)
+
+
+def compute_graph(f, variant='qwen3', fault='none', *, sqrt=math.sqrt, exp=math.exp, qkv_project=None, output_project=None):
+    """Shared GQA graph; differentiable adapter validates tensor shapes before entry."""
     if variant not in ('qwen3', 'qwen25') or fault not in ('none','omit_scale','wrong_group'):
         raise ValueError('Unknown variant/fault')
     x = f['x']
-    norm = [rms(row, f['input_gain'], f['epsilon']) for row in x]
-    mixed = [[sum(norm[t][i]*f['wqkv'][i][j] for i in range(8)) +
-              (f['qkv_bias'][j] if variant == 'qwen25' else 0) for j in range(32)] for t in range(4)]
+    size = f['dimensions']['S']
+    norm = [rms(row, f['input_gain'], f['epsilon'], sqrt) for row in x]
+    mixed = qkv_project(norm) if qkv_project else [[sum(norm[t][i]*f['wqkv'][i][j] for i in range(8)) +
+              (f['qkv_bias'][j] if variant == 'qwen25' else 0) for j in range(32)] for t in range(size)]
     q, k, v = [], [], []
     for row in mixed:
         q.append([row[g*16+h*4:g*16+h*4+4] for g in range(2) for h in range(2)])
         k.append([row[g*16+8:g*16+12] for g in range(2)])
         v.append([row[g*16+12:g*16+16] for g in range(2)])
-    qnorm = [[rms(head, f['q_gain'], f['epsilon']) if variant == 'qwen3' else head[:] for head in token] for token in q]
-    knorm = [[rms(head, f['k_gain'], f['epsilon']) if variant == 'qwen3' else head[:] for head in token] for token in k]
+    qnorm = [[rms(head, f['q_gain'], f['epsilon'], sqrt) if variant == 'qwen3' else head[:] for head in token] for token in q]
+    knorm = [[rms(head, f['k_gain'], f['epsilon'], sqrt) if variant == 'qwen3' else head[:] for head in token] for token in k]
     qr = [[rotate(head, f['positions'][t], f['theta']) for head in token] for t, token in enumerate(qnorm)]
     kr = [[rotate(head, f['positions'][t], f['theta']) for head in token] for t, token in enumerate(knorm)]
     scores, scaled, masked, probs, heads = [], [], [], [], []
-    for t in range(4):
+    for t in range(size):
         st, sc, ma, pr, ho = [], [], [], [], []
         for h in range(4):
             group = (h//2 + (fault == 'wrong_group')) % 2
-            row = [sum(qr[t][h][i]*kr[j][group][i] for i in range(4)) for j in range(4)]
+            row = [sum(qr[t][h][i]*kr[j][group][i] for i in range(4)) for j in range(size)]
             scale = [n / (1 if fault == 'omit_scale' else 2) for n in row]
             mask = [n if j <= t else -math.inf for j, n in enumerate(scale)]
-            p = softmax(mask)
-            out = [sum(p[j]*v[j][group][i] for j in range(4)) for i in range(4)]
+            p = softmax(mask, exp)
+            out = [sum(p[j]*v[j][group][i] for j in range(size)) for i in range(4)]
             st.append(row); sc.append(scale); ma.append(mask); pr.append(p); ho.append(out)
         scores.append(st); scaled.append(sc); masked.append(ma); probs.append(pr); heads.append(ho)
     merged = [[value for head in token for value in head] for token in heads]
-    projected = [[sum(merged[t][i]*f['wo'][i][j] for i in range(16))+f['output_bias'][j] for j in range(8)] for t in range(4)]
-    residual = [[x[t][j]+projected[t][j] for j in range(8)] for t in range(4)]
+    projected = output_project(merged) if output_project else [[sum(merged[t][i]*f['wo'][i][j] for i in range(16))+f['output_bias'][j] for j in range(8)] for t in range(size)]
+    residual = [[x[t][j]+projected[t][j] for j in range(8)] for t in range(size)]
     return dict(input=x, norm=norm, mixed=mixed, q=q, k=k, v=v, qnorm=qnorm, knorm=knorm,
                 qrope=qr, krope=kr, scores=scores, scaled=scaled, masked=masked,
                 probabilities=probs, heads=heads, merged=merged, projected=projected, residual=residual)

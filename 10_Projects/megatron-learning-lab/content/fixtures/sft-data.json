@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "provenance": "authored token fixture",
+  "note": "人工拆分可见片段，非 Qwen tokenizer IDs 或官方 chat template。数字 ID 仅索引教学词表。",
+  "vocabulary": [
+    "<pad>",
+    "<bos>",
+    "<user>",
+    "<assistant>",
+    "<eos>",
+    "<turn>",
+    "2",
+    "+",
+    "3",
+    " 等于多少？",
+    "5",
+    "。",
+    "再乘以",
+    "呢？",
+    "10",
+    "只输出 ",
+    "4",
+    " 的结果。",
+    "8",
+    "解释为什么 ",
+    "×",
+    " 等于",
+    "12",
+    "可以看作三个",
+    "相加：",
+    "=",
+    "<system>"
+  ],
+  "samples": [
+    {
+      "id": "arithmetic-multiturn",
+      "messages": [
+        {
+          "role": "user",
+          "content": "2+3 等于多少？",
+          "pieces": [
+            "2",
+            "+",
+            "3",
+            " 等于多少？"
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": "5。",
+          "pieces": [
+            "5",
+            "。"
+          ]
+        },
+        {
+          "role": "user",
+          "content": "再乘以2呢？",
+          "pieces": [
+            "再乘以",
+            "2",
+            "呢？"
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": "10。",
+          "pieces": [
+            "10",
+            "。"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "short-answer",
+      "messages": [
+        {
+          "role": "user",
+          "content": "只输出 4+4 的结果。",
+          "pieces": [
+            "只输出 ",
+            "4",
+            "+",
+            "4",
+            " 的结果。"
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": "8",
+          "pieces": [
+            "8"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "longer-answer",
+      "messages": [
+        {
+          "role": "user",
+          "content": "解释为什么 3×4 等于12。",
+          "pieces": [
+            "解释为什么 ",
+            "3",
+            "×",
+            "4",
+            " 等于",
+            "12",
+            "。"
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": "可以看作三个4相加：4+4+4=12。",
+          "pieces": [
+            "可以看作三个",
+            "4",
+            "相加：",
+            "4",
+            "+",
+            "4",
+            "+",
+            "4",
+            "=",
+            "12",
+            "。"
+          ]
+        }
+      ]
+    }
+  ]
+}

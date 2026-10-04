@@ -70,6 +70,14 @@ export type State = {
   operator: string;
   query: number;
   gqaHead: number;
+  sftLayout: "single" | "unpacked" | "packed";
+  sftLimit: number;
+  sftPadding: number;
+  sftQuery: number;
+  decoderOp: string;
+  decoderToken: number;
+  tinyLayer: number;
+  decoderTied: "tied" | "untied";
 };
 export const defaults: State = {
   model: "qwen3-06b",
@@ -84,6 +92,14 @@ export const defaults: State = {
   operator: "overview",
   query: 0,
   gqaHead: 0,
+  sftLayout: "single",
+  sftLimit: 128,
+  sftPadding: 1,
+  sftQuery: 0,
+  decoderOp: "ffn_norm",
+  decoderToken: 7,
+  tinyLayer: 0,
+  decoderTied: "tied",
 };
 export function normalize(s: State): State {
   const model = models.find((m) => m.id === s.model) || models[1];
@@ -101,6 +117,39 @@ export function normalize(s: State): State {
       Number.isInteger(s.gqaHead) && s.gqaHead >= 0 && s.gqaHead < 4
         ? s.gqaHead
         : 0,
+    sftLayout: ["single", "unpacked", "packed"].includes(s.sftLayout)
+      ? s.sftLayout
+      : "single",
+    sftLimit:
+      Number.isInteger(s.sftLimit) && s.sftLimit >= 2 && s.sftLimit <= 128
+        ? s.sftLimit
+        : 128,
+    sftPadding: s.sftPadding === 8 ? 8 : 1,
+    sftQuery:
+      Number.isInteger(s.sftQuery) && s.sftQuery >= 0 && s.sftQuery < 256
+        ? s.sftQuery
+        : 0,
+    decoderOp: [
+      "input_norm",
+      "attention",
+      "ffn_norm",
+      "gate",
+      "up",
+      "silu",
+      "product",
+      "down",
+      "residual",
+    ].includes(s.decoderOp)
+      ? s.decoderOp
+      : "ffn_norm",
+    decoderToken:
+      Number.isInteger(s.decoderToken) &&
+      s.decoderToken >= 0 &&
+      s.decoderToken < 64
+        ? s.decoderToken
+        : 7,
+    tinyLayer: s.tinyLayer === 1 ? 1 : 0,
+    decoderTied: s.decoderTied === "untied" ? "untied" : "tied",
     model: model.id,
     scenario,
     layer: Number.isFinite(s.layer)
@@ -132,6 +181,11 @@ export function readState(): State {
     sample: Number(p.get("sample") || 0),
     query: Number(p.get("query") || 0),
     gqaHead: Number(p.get("gqaHead") || 0),
+    sftLimit: Number(p.get("sftLimit") || 128),
+    sftPadding: Number(p.get("sftPadding") || 1),
+    sftQuery: Number(p.get("sftQuery") || 0),
+    decoderToken: Number(p.get("decoderToken") || 7),
+    tinyLayer: Number(p.get("tinyLayer") || 0),
   } as State);
 }
 export function reducer(s: State, patch: Partial<State>): State {
@@ -188,6 +242,21 @@ export function sourceExcerptId(
 ): string | undefined {
   const model = models.find((m) => m.id === s.model);
   if (!model) return undefined;
+  if (s.scenario === "sft" && sourceId === "C-BLOCK")
+    return "decoder-final-norm";
+  if (s.scenario === "sft" && s.step === "decoder" && sourceId === "C-MLP")
+    return "decoder-swiglu";
+  if (
+    s.scenario === "sft" &&
+    s.step === "decoder" &&
+    s.operator === "overview" &&
+    sourceId === "C-LAYER"
+  )
+    return s.decoderOp === "residual"
+      ? "decoder-ffn-residual"
+      : s.decoderOp === "ffn_norm"
+        ? "decoder-pre-ffn-norm"
+        : "gqa-input-norm";
   if (s.scenario === "rl") {
     const routes: Record<string, Record<string, string>> = {
       logprobs: { "R-LOSS": "r-loss-l158", "R-TRAIN": "r-train-l117" },
@@ -227,7 +296,15 @@ export function sourceExcerptId(
     if (sourceId === "C-GPT") return "c-gpt-l583";
   }
   const routes: Record<string, Record<string, string>> = {
-    input: { "B-SFTDATA": "b-sftdata-l45" },
+    input: {
+      "B-SFTDATA": "b-sftdata-l45",
+      "B-DIRECTSFT": "sft-dataset-collate",
+      "B-SFTCOLLATE": "sft-collate-shift",
+      "B-CONVERSATION": "sft-shift",
+      "B-PACK": "sft-pack-boundaries",
+      "B-STEP": "b-step-l482",
+      "B-LOSS": "b-loss-l62",
+    },
     embedding: { "C-GPT": "gpt-embedding" },
     lm_head: { "C-GPT": "gpt-output-projection" },
     loss: {

@@ -79,7 +79,8 @@ export function SourceExcerpts({
         <span className="small muted">{entry.excerpts.length} 个关键片段</span>
       </div>
       {picker}
-      {state.operator !== "overview" &&
+      {state.step === "decoder" &&
+        state.operator !== "overview" &&
         defaultExcerptId &&
         excerptId === defaultExcerptId && (
           <p data-testid="source-relationship">

@@ -7,16 +7,16 @@ const snippets = JSON.parse(
   ),
 );
 
-test("All curated snippets remain verbatim and readable without network", async ({
-  page,
-  context,
-}) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "查看当前步骤源码 ↗" }).waitFor();
-  await context.setOffline(true);
-  await page.getByRole("button", { name: "查看当前步骤源码 ↗" }).click();
-  const reader = page.getByRole("dialog");
-  for (const entry of snippets.entries) {
+for (const entry of snippets.entries) {
+  test(`All curated snippets remain verbatim and readable without network [${entry.source_id}]`, async ({
+    page,
+    context,
+  }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "查看当前步骤源码 ↗" }).waitFor();
+    await context.setOffline(true);
+    await page.getByRole("button", { name: "查看当前步骤源码 ↗" }).click();
+    const reader = page.getByRole("dialog");
     const ids = entry.excerpts.map((excerpt: { id: string }) => excerpt.id);
     expect(
       ids.every((id: string) => typeof id === "string" && id.length > 0),
@@ -40,11 +40,11 @@ test("All curated snippets remain verbatim and readable without network", async 
         excerpt.annotations[0].text,
       );
     }
-  }
-  await reader.getByLabel("来源通道").selectOption("runtime");
-  await expect(reader.locator(".source-code")).toHaveCount(0);
-  await expect(page.getByRole("dialog")).toContainText("运行来源尚未建立");
-});
+    await reader.getByLabel("来源通道").selectOption("runtime");
+    await expect(reader.locator(".source-code")).toHaveCount(0);
+    await expect(page.getByRole("dialog")).toContainText("运行来源尚未建立");
+  });
+}
 
 test("Annotation anchors, license, full-file fallback and narrow-screen code scrolling", async ({
   page,
@@ -132,6 +132,16 @@ test("Step routes select semantic excerpts and disclose missing implementations"
   }
   await flow.getByRole("button", { name: /Final norm/ }).click();
   await page.getByRole("button", { name: "查看当前步骤源码 ↗" }).click();
+  await expect(page.getByLabel("关键源码片段")).toHaveAttribute(
+    "data-snippet-id",
+    "decoder-final-norm",
+  );
+  await expect(page.locator(".source-code")).toContainText(
+    "apply_module(self.final_layernorm)",
+  );
+  await page
+    .getByRole("combobox", { name: "证据条目", exact: true })
+    .selectOption("B-Q3");
   await expect(page.getByLabel("关键源码片段")).toContainText("实现片段待补");
   await expect(page.locator(".source-code")).toHaveCount(0);
   await page

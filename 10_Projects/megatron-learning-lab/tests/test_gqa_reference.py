@@ -71,3 +71,18 @@ class GqaReferenceTests(unittest.TestCase):
         for row in ([],[-math.inf]*4,[math.nan,0],[math.inf,0]):
             with self.assertRaises(ValueError): softmax(row)
         self.assertEqual(softmax([10000,10000,-math.inf]),[.5,.5,0])
+
+    def test_variable_sequence_preserves_causality_and_rejects_bad_dimensions(self):
+        for length in (1,3,7):
+            f=copy.deepcopy(self.f);f['dimensions']['S']=length
+            f['x']=[self.f['x'][i%4][:] for i in range(length)];f['positions']=list(range(length))
+            result=compute(f)
+            self.assertEqual(len(result['residual']),length)
+            for t in range(length):
+                for probabilities in result['probabilities'][t]:
+                    self.assertEqual(len(probabilities),length)
+                    self.assertEqual(probabilities[t+1:],[0]*(length-t-1))
+                    self.assertAlmostEqual(sum(probabilities),1,places=14)
+        for size in (0,65,1.5,True):
+            f=copy.deepcopy(self.f);f['dimensions']['S']=size
+            with self.assertRaises(ValueError):compute(f)

@@ -1023,6 +1023,34 @@
               "text": "教学设置 dropout=0、output bias=0；此真实调用允许融合和不同训练配置。"
             }
           ]
+        },
+        {
+          "id": "decoder-pre-ffn-norm",
+          "title": "FFN 之前的 layernorm 调用",
+          "start_line": 749,
+          "end_line": 762,
+          "code": "    def _forward_pre_mlp_layernorm(self, hidden_states: Tensor):\n        self.mlp_norm_manager = self.off_interface(self.offload_mlp_norm, hidden_states, \"mlp_norm\")\n        if self.recompute_pre_mlp_layernorm:\n            self.pre_mlp_norm_checkpoint = tensor_parallel.CheckpointWithoutOutput()\n            with self.mlp_norm_manager as hidden_states:\n                pre_mlp_layernorm_output = self.pre_mlp_norm_checkpoint.checkpoint(\n                    apply_module(self.pre_mlp_layernorm), hidden_states\n                )\n        else:\n            with self.mlp_norm_manager as hidden_states:\n                pre_mlp_layernorm_output = apply_module(self.pre_mlp_layernorm)(hidden_states)\n\n        return pre_mlp_layernorm_output\n\n",
+          "sha256": "731c160f44249422de7ced5fc9bdfa1158dd346a8a4dba077e40877a79e4fccc",
+          "annotations": [
+            {
+              "line": 759,
+              "text": "独立 norm/spec 的调用入口；fused spec 中该模块可能是 Identity。"
+            }
+          ]
+        },
+        {
+          "id": "decoder-ffn-residual",
+          "title": "FFN 的 bias/dropout/residual 汇合",
+          "start_line": 970,
+          "end_line": 982,
+          "code": "        # TODO: could we move `bias_dropout_add_exec_handler` itself\n        # inside the module provided in the `bias_dropout_add_spec` module?\n        nvtx_range_push(suffix=\"mlp_bda\")\n        if using_fused_tp_inference_kernel:\n            # In inference optimized transformer layer, there is no bias and dropout\n            # The remaining residual add is already handled inside the\n            # MLP module.\n            hidden_states = mlp_output_with_bias[0]\n        else:\n            with self.bias_dropout_add_exec_handler():\n                hidden_states = self.mlp_bda(self.training, self.config.bias_dropout_fusion)(\n                    mlp_output_with_bias, residual, self.hidden_dropout\n                )\n",
+          "sha256": "28bf58b59a16be3901fe2f18399a9b487364dd2413f6481cfb80c0c88c9ad369",
+          "annotations": [
+            {
+              "line": 979,
+              "text": "普通路径由 mlp_bda 汇入 residual，fused inference 路径另行处理。"
+            }
+          ]
         }
       ]
     },
@@ -1045,6 +1073,192 @@
             {
               "line": 82,
               "text": "本教学明确 rotary_interleaved=false：维0与2、维1与3配对，不是相邻配对。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-DIRECTSFT",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/data/datasets/direct_sft.py",
+      "git_blob_sha": "a800ccef9cc2266cbbdae5df97aaffae805f94f9",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "sft-dataset-collate",
+          "title": "Dataset 绑定 collator，返回规范样本",
+          "start_line": 100,
+          "end_line": 113,
+          "code": "\n        def _bound_collate(batch: list) -> dict[str, torch.Tensor]:\n            return collate_impl(batch, self._processor, **collate_kwargs)\n\n        self.collate_fn = _bound_collate\n\n    def __len__(self) -> int:\n        return self._length\n\n    def __getitem__(self, idx: int) -> dict[str, Any]:\n        if self._length == 0:\n            raise IndexError(\"Empty dataset\")\n        base = self._base_examples[idx % len(self._base_examples)]\n        return base\n",
+          "sha256": "605a7830988ce5addd52d5a9b2244f6b92ffb5ae31fef53cbbd7cddb4a125426",
+          "annotations": [
+            {
+              "line": 102,
+              "text": "dataset 委托 collator；此处本身不 shift。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-SFTCOLLATE",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/data/collators/sft.py",
+      "git_blob_sha": "b6e69f1f6f4688a6c54b80ddab5c4518c9811e68",
+      "copyright_header": "# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "sft-collate-shift",
+          "title": "先逐样本移位，再 pack；未打包分支同样移位",
+          "start_line": 107,
+          "end_line": 163,
+          "code": "        sequence_rows = []\n        token_counts = []\n        for tokenized_row in tokenized_rows:\n            input_ids = tokenized_row.input_ids\n            attention_mask = torch.ones_like(input_ids, dtype=torch.long)\n            labels, shifted_loss_mask = build_shifted_labels_and_loss_mask(\n                input_ids,\n                tokenized_row.loss_mask,\n                skipped_tokens,\n                ignore_index=ignore_index,\n            )\n            sequence_rows.append(\n                {\n                    \"input_ids\": input_ids,\n                    \"attention_mask\": attention_mask,\n                    \"position_ids\": torch.arange(input_ids.numel(), device=input_ids.device, dtype=torch.long),\n                    \"labels\": labels,\n                    \"loss_mask\": shifted_loss_mask,\n                }\n            )\n            token_counts.append(int(attention_mask.sum().item()))\n\n        pad_token_id = getattr(tokenizer, \"pad_token_id\", None)\n        batch = build_mcore_thd_sequence_batch_from_rows(\n            sequence_rows,\n            sequence_length=max_length,\n            pad_token_id=0 if pad_token_id is None else int(pad_token_id),\n            ignore_index=ignore_index,\n            pad_to_multiple_of=in_batch_packing_pad_to_multiple_of,\n        )\n        batch[\"tokens\"] = batch[\"input_ids\"]\n        batch[\"metadata\"] = metadata\n        batch[\"token_count\"] = token_counts\n        return batch\n\n    pad_token_id = getattr(tokenizer, \"pad_token_id\", None)\n    input_ids, attention_mask, loss_mask = _pad_tokenized_rows(\n        tokenized_rows,\n        pad_token_id=0 if pad_token_id is None else int(pad_token_id),\n        max_length=max_length,\n        pad_to_max_length=pad_to_max_length,\n        pad_to_multiple_of=pad_to_multiple_of,\n    )\n    batch: dict[str, Any] = {\n        \"input_ids\": input_ids,\n        \"attention_mask\": attention_mask,\n    }\n    labels, shifted_loss_mask = build_shifted_labels_and_loss_mask(\n        input_ids,\n        loss_mask.to(dtype=torch.float32),\n        skipped_tokens,\n        ignore_index=ignore_index,\n    )\n    ensure_position_ids(batch)\n    batch[\"tokens\"] = input_ids\n    batch[\"labels\"] = labels\n    batch[\"loss_mask\"] = shifted_loss_mask\n",
+          "sha256": "5cd533dce3381cfe4797db4fa4fb51a638cf0899af06ad678c64b0b1b83500fe",
+          "annotations": [
+            {
+              "line": 112,
+              "text": "packed 分支在每个原始样本内调用 shift，避免末尾跨样本预测。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-CONVERSATION",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/data/conversation_processing.py",
+      "git_blob_sha": "479394253923372adde15a34cbec878ec8b3b584",
+      "copyright_header": "# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "sft-shift",
+          "title": "labels 与 mask 一起移位，末尾显式忽略",
+          "start_line": 1626,
+          "end_line": 1651,
+          "code": "def build_shifted_labels_and_loss_mask(\n    input_ids: torch.Tensor,\n    assistant_loss_mask: torch.Tensor,\n    skipped_tokens: torch.Tensor | None = None,\n    *,\n    ignore_index: int = IGNORE_INDEX,\n) -> tuple[torch.Tensor, torch.Tensor]:\n    \"\"\"Build next-token labels and shifted loss mask for Megatron training.\"\"\"\n    squeeze = input_ids.dim() == 1\n    ids = input_ids.unsqueeze(0) if squeeze else input_ids\n    mask = assistant_loss_mask.unsqueeze(0) if assistant_loss_mask.dim() == 1 else assistant_loss_mask\n    mask = mask.to(device=ids.device, dtype=torch.float32)\n\n    labels = ids.clone()[:, 1:].contiguous()\n    labels = torch.cat([labels, ignore_index * torch.ones_like(labels[:, :1])], dim=1)\n\n    if skipped_tokens is not None and skipped_tokens.numel() > 0:\n        labels = labels.masked_fill(torch.isin(labels, skipped_tokens.to(device=labels.device)), ignore_index)\n\n    shifted_loss_mask = torch.cat([mask[:, 1:], torch.zeros_like(mask[:, :1])], dim=1)\n    labels = labels.masked_fill(shifted_loss_mask == 0, ignore_index)\n    shifted_loss_mask = shifted_loss_mask.masked_fill(labels == ignore_index, 0)\n\n    if squeeze:\n        return labels[0].contiguous(), shifted_loss_mask[0].contiguous()\n    return labels.contiguous(), shifted_loss_mask.contiguous()\n",
+          "sha256": "9c44b03e02d7c892e7286d33dc94096a9ecb128666b14bc9a2fbdf9ec35c8c8b",
+          "annotations": [
+            {
+              "line": 1645,
+              "text": "mask 跟随 target，末尾补零；被忽略的 label 不参与监督。"
+            }
+          ]
+        },
+        {
+          "id": "sft-loss-mode",
+          "title": "三种监督模式与 last_turn 边界回退",
+          "start_line": 861,
+          "end_line": 886,
+          "code": "    \"\"\"\n    if loss_mode == \"assistant\":\n        loss_mask = assistant_mask.to(dtype=torch.bool)\n    elif loss_mode == \"full\":\n        loss_mask = torch.ones_like(assistant_mask, dtype=torch.bool)\n    elif loss_mode == \"last_turn\":\n        assistant_mask = assistant_mask.to(dtype=torch.bool)\n        if last_turn_start is not None:\n            positions = torch.arange(assistant_mask.numel(), device=assistant_mask.device)\n            loss_mask = assistant_mask & (positions >= last_turn_start)\n        else:\n            span_starts = assistant_mask & ~torch.cat(\n                [torch.zeros(1, dtype=torch.bool, device=assistant_mask.device), assistant_mask[:-1]]\n            )\n            starts = torch.nonzero(span_starts, as_tuple=False).flatten()\n            if starts.numel() == 0:\n                loss_mask = assistant_mask\n            else:\n                positions = torch.arange(assistant_mask.numel(), device=assistant_mask.device)\n                loss_mask = assistant_mask & (positions >= starts[-1])\n    else:\n        raise ValueError(\"Chat SFT loss_mode must be assistant, last_turn, or full.\")\n\n    if skipped_tokens is not None and skipped_tokens.numel() > 0:\n        loss_mask = loss_mask & ~torch.isin(input_ids, skipped_tokens.to(device=input_ids.device, dtype=torch.long))\n    return loss_mask\n",
+          "sha256": "0a7de3d559be3f0e01be120c3c5ef7ca297cc953ab33b658376e1c923fd73929",
+          "annotations": [
+            {
+              "line": 869,
+              "text": "有明确最终回复起点时按起点截取；否则退到最后连续 assistant-mask span。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-PACK",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/data/packing/in_batch.py",
+      "git_blob_sha": "701b55ec27fa73cf08ccc48d7879e2d1373a9b3d",
+      "copyright_header": "# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "sft-pack-boundaries",
+          "title": "THD 的有效长度、物理边界与 position",
+          "start_line": 159,
+          "end_line": 217,
+          "code": "\n    unpadded_lengths = [row[token_key].numel() for row in normalized_rows]\n    padded_lengths = [_ceil_to_multiple(length, pad_to_multiple_of) for length in unpadded_lengths]\n    cu_seqlens = [0]\n    cu_seqlens_padded = [0]\n    for length, padded_length in zip(unpadded_lengths, padded_lengths):\n        cu_seqlens.append(cu_seqlens[-1] + length)\n        cu_seqlens_padded.append(cu_seqlens_padded[-1] + padded_length)\n\n    first_row = normalized_rows[0]\n    first_tokens = first_row[token_key]\n    total_length = cu_seqlens_padded[-1]\n    packed: dict[str, Any] = {\n        token_key: torch.full((1, total_length), pad_token_id, dtype=first_tokens.dtype, device=first_tokens.device),\n        \"position_ids\": torch.zeros(\n            (1, total_length),\n            dtype=first_row[\"position_ids\"].dtype,\n            device=first_row[\"position_ids\"].device,\n        ),\n        \"attention_mask\": None,\n    }\n\n    output_pad_values: dict[str, int | float] = {\"labels\": ignore_index, \"loss_mask\": 0, **extra_pad_values}\n    for key, pad_value in output_pad_values.items():\n        if key in first_row:\n            tensor = first_row[key]\n            packed[key] = torch.full((1, total_length), pad_value, dtype=tensor.dtype, device=tensor.device)\n\n    offset = 0\n    for row, length, padded_length in zip(normalized_rows, unpadded_lengths, padded_lengths):\n        packed[token_key][0, offset : offset + length] = row[token_key]\n        packed[\"position_ids\"][0, offset : offset + length] = row[\"position_ids\"]\n        for key in output_pad_values:\n            if key in packed:\n                packed[key][0, offset : offset + length] = row[key]\n\n        pad_length = padded_length - length\n        if pad_length > 0:\n            start_position = row[\"position_ids\"][-1] + 1\n            packed[\"position_ids\"][0, offset + length : offset + padded_length] = torch.arange(\n                start_position,\n                start_position + pad_length,\n                dtype=row[\"position_ids\"].dtype,\n                device=row[\"position_ids\"].device,\n            )\n        offset += padded_length\n\n    cu_seqlens_t = torch.tensor(cu_seqlens, dtype=torch.int32, device=first_tokens.device)\n    packed[\"cu_seqlens_q\"] = cu_seqlens_t\n    packed[\"cu_seqlens_kv\"] = cu_seqlens_t\n    if pad_to_multiple_of > 1:\n        cu_seqlens_padded_t = torch.tensor(cu_seqlens_padded, dtype=torch.int32, device=first_tokens.device)\n        packed[\"cu_seqlens_q_padded\"] = cu_seqlens_padded_t\n        packed[\"cu_seqlens_kv_padded\"] = cu_seqlens_padded_t\n    packed[\"max_seqlen_q\"] = torch.tensor(max(padded_lengths), dtype=torch.int32)\n    packed[\"max_seqlen_kv\"] = torch.tensor(max(padded_lengths), dtype=torch.int32)\n    # MCore uses total_tokens together with the physical (padded) boundaries\n    # to construct seq_idx, which resets Mamba/SSM state between packed rows.\n    packed[\"total_tokens\"] = total_length\n",
+          "sha256": "4f5508f9d16dc50263ba6eef49577def539403a340302aad0241e1143c1b348e",
+          "annotations": [
+            {
+              "line": 207,
+              "text": "有效 cu_seqlens 与含对齐 padding 的物理 cu_seqlens_padded 分别保存。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "C-BLOCK",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/transformer/transformer_block.py",
+      "git_blob_sha": "0415035ffbe4c0e8e772e9dd3597195a777db4ce",
+      "copyright_header": "# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\nimport logging\nfrom contextlib import nullcontext\nfrom dataclasses import dataclass\nfrom typing import List, Optional, Set, Union, cast\n\nimport torch\nfrom torch import Tensor\n\nfrom megatron.core import parallel_state, tensor_parallel\nfrom megatron.core.dist_checkpointing.mapping import ShardedStateDict\nfrom megatron.core.dist_checkpointing.utils import replace_prefix_for_sharding\nfrom megatron.core.enums import Fp8Recipe\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "decoder-final-norm-stage",
+          "title": "Final norm 的构造与非 MTP stage 条件",
+          "start_line": 373,
+          "end_line": 402,
+          "code": "        # In pipeline parallelism, we want to add this LN only to the last stage of the pipeline\n        # self.post_process and self.post_layer_norm guide this behavior\n        if self.has_final_layernorm_in_this_stage():\n            self.final_layernorm = not_none(self.submodules.layer_norm)(\n                config=self.config,\n                hidden_size=self.config.hidden_size,\n                eps=self.config.layernorm_epsilon,\n            )\n        else:\n            self.final_layernorm = None  # Either this or nn.Identity\n\n        if self.config.inference_fuse_tp_communication:\n            self._setup_fused_tp_communication()\n\n    def has_final_layernorm_in_this_stage(self):\n        \"\"\"\n        Check if this vpp stage contains the final layernorm.\n\n        Note:\n            Final layernorm now has been moved from the post-process stage to the last decoder\n            layer by using this function.\n            There will be a small numeric difference because of grad norm reduction when final\n            layernorm is placed in different pipeline stages in deterministic mode. It can still\n            be bitwise aligned by disabling grad norm clipping.\n        \"\"\"\n        if self.config.mtp_num_layers is None:\n            # for model without MTPLayer, the final layernorm is set in the stage which does\n            # post_process\n            return self.submodules.layer_norm and self.post_process and self.post_layer_norm\n        else:\n",
+          "sha256": "82f0e3656890e2190d294aed87710387cd72682938aeb9b6bca4837b7b94cb12",
+          "annotations": [
+            {
+              "line": 401,
+              "text": "无 MTP 路径由 post_process/post_layer_norm 决定；有 MTP 分支见完整文件。"
+            }
+          ]
+        },
+        {
+          "id": "decoder-final-norm",
+          "title": "Decoder 层结束后的 final norm 调用",
+          "start_line": 692,
+          "end_line": 700,
+          "code": "        if self.final_layernorm is not None:\n            hidden_states = apply_module(self.final_layernorm)(cast(Tensor, hidden_states))\n            # TENorm produces a \"viewed\" tensor. This will result in schedule.py's\n            # deallocate_output_tensor() throwing an error, so a viewless tensor is\n            # created to prevent this.\n            hidden_states = make_viewless_tensor(\n                inp=hidden_states, requires_grad=True, keep_graph=True\n            )\n\n",
+          "sha256": "67f05ee6506b0e93abeafc44f2087fbf555e04315da6c0e031bb7c9eda348dff",
+          "annotations": [
+            {
+              "line": 693,
+              "text": "这是实际模块调用入口，不是 norm kernel；不能代替最后一层的 pre-FFN norm。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "C-MLP",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/transformer/mlp.py",
+      "git_blob_sha": "f5659d21a6e59eb30ebc0739bafa67c754f87ba5",
+      "copyright_header": "# Copyright (c) 2024, NVIDIA CORPORATION. All rights reserved.\nfrom __future__ import annotations\n\nimport warnings\nfrom collections.abc import Callable\nfrom dataclasses import dataclass\nfrom typing import Optional, Protocol, cast\n\nimport numpy as np\nimport torch\nimport torch.nn.functional as F\n\nfrom megatron.core.dist_checkpointing import ShardedTensor\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "decoder-fc1",
+          "title": "fc1 投影与 TE activation 分支",
+          "start_line": 261,
+          "end_line": 273,
+          "code": "        \"\"\"Perform the forward pass through the MLP block.\"\"\"\n        # [s, b, 4 * h/p]\n        nvtx_range_push(suffix=\"linear_fc1\")\n        intermediate_parallel, bias_parallel = apply_module(self.linear_fc1)(hidden_states)\n        nvtx_range_pop(suffix=\"linear_fc1\")\n\n        nvtx_range_push(suffix=\"activation\")\n        if self.config.use_te_activation_func:\n            if bias_parallel is not None:\n                intermediate_parallel = intermediate_parallel + bias_parallel\n            intermediate_parallel = self.activation_func(intermediate_parallel)\n            if per_token_scale is not None:\n                original_dtype = intermediate_parallel.dtype\n",
+          "sha256": "8cba6aafffa97e88e85e13bfec5b8eba9216fd5bd22d5bcad9e0bfb8acab2cc3",
+          "annotations": [
+            {
+              "line": 264,
+              "text": "fc1 可按 spec 融合 norm；输出并行 gate/up 中间值。"
+            }
+          ]
+        },
+        {
+          "id": "decoder-swiglu",
+          "title": "SwiGLU fused/unfused 与 fc2 输出",
+          "start_line": 308,
+          "end_line": 349,
+          "code": "                elif self.activation_func == F.silu and self.config.gated_linear_unit:\n                    intermediate_parallel = bias_swiglu_impl(\n                        intermediate_parallel,\n                        bias_parallel,\n                        self.config.activation_func_fp8_input_store,\n                        self.config.cpu_offloading\n                        and self.config.cpu_offloading_activations\n                        and HAVE_TE,\n                    )\n                else:\n                    raise ValueError(\"Only support fusion of gelu and swiglu\")\n        else:\n            if bias_parallel is not None:\n                intermediate_parallel = intermediate_parallel + bias_parallel\n            if self.config.gated_linear_unit:\n\n                def glu(x):\n                    x_glu, x_linear = torch.chunk(x, 2, dim=-1)\n                    if (val := self.config.activation_func_clamp_value) is not None:\n                        x_glu = x_glu.clamp(min=None, max=val)\n                        x_linear = x_linear.clamp(min=-val, max=val)\n                    return self.config.activation_func(x_glu) * (\n                        x_linear + self.config.glu_linear_offset\n                    )\n\n                intermediate_parallel = glu(intermediate_parallel)\n            else:\n                intermediate_parallel = self.activation_func(intermediate_parallel)\n\n            if per_token_scale is not None:\n                original_dtype = intermediate_parallel.dtype\n                intermediate_parallel = intermediate_parallel * per_token_scale.unsqueeze(-1)\n                intermediate_parallel = intermediate_parallel.to(original_dtype)\n        nvtx_range_pop(suffix=\"activation\")\n\n        # [s, b, h]\n        nvtx_range_push(suffix=\"linear_fc2\")\n\n        output, output_bias = apply_module(self.linear_fc2)(\n            cast(torch.Tensor, intermediate_parallel)\n        )\n        nvtx_range_pop(suffix=\"linear_fc2\")\n",
+          "sha256": "73fac95ba3bca66be8939d744898765107f9e20797786a3363da420b0bf068ec",
+          "annotations": [
+            {
+              "line": 325,
+              "text": "沿最后一维分 gate/up，激活 gate 后逐元素乘线性分支；教学参考明确 offset=0、无clamp。"
             }
           ]
         }

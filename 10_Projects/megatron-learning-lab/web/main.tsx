@@ -1,3 +1,5 @@
+import { DecoderWalkthrough } from "./decoder/DecoderWalkthrough";
+import { SftDataJourney } from "./sft/SftDataJourney";
 import { GqaWalkthrough } from "./gqa/GqaWalkthrough";
 import { SourceExcerpts } from "./SourceExcerpts";
 import React, {
@@ -371,7 +373,11 @@ function App() {
                     onSource={openSource}
                   />
                 ) : state.step === "input" ? (
-                  <SampleInspector state={state} patch={patch} />
+                  <SampleInspector
+                    state={state}
+                    patch={patch}
+                    onSource={openSource}
+                  />
                 ) : (
                   <SFTStep model={model} step={state.step} />
                 )}
@@ -406,6 +412,13 @@ function App() {
                   </div>
                 </div>
               </section>
+              {state.scenario === "sft" && state.step !== "input" && (
+                <DecoderWalkthrough
+                  state={state}
+                  patch={patch}
+                  onSource={openSource}
+                />
+              )}
               {state.scenario === "sft" &&
                 state.step === "decoder" &&
                 model.attention === "gqa" && (
@@ -540,7 +553,7 @@ function App() {
               <h3>{currentSource.id}</h3>
               <p>{currentSource.review_scope}</p>
               <SourceExcerpts
-                key={`${currentSource.id}:${state.model}:${state.scenario}:${state.step}:${state.layer}:${state.mla}:${state.operator}:${state.query}:${state.gqaHead}`}
+                key={`${currentSource.id}:${state.model}:${state.scenario}:${state.step}:${state.layer}:${state.mla}:${state.operator}:${state.query}:${state.gqaHead}:${state.decoderOp}`}
                 sourceId={currentSource.id}
                 repoKey={currentSource.repo_key}
                 url={currentSource.url}
@@ -994,13 +1007,14 @@ function Decoder({
 function SampleInspector({
   state,
   patch,
+  onSource,
 }: {
   state: State;
   patch: (p: Partial<State>) => void;
+  onSource: (id?: string) => void;
 }) {
   const sample = samples[state.sample];
   const last = sample.messages.map((m) => m.role).lastIndexOf("assistant");
-  const [shift, setShift] = useState<"once" | "twice">("once");
   return (
     <div className="sample-inspector">
       <div className="section-header">
@@ -1061,53 +1075,7 @@ function SampleInspector({
           );
         })}
       </div>
-      <p className="notice">
-        这是角色跨度示意，不是逐 token mask。Rendered template、token
-        IDs、EOS/特殊符号边界尚未采集，不能把一个 span 当成一个 token。真实 loss
-        mask 跟随目标位置。
-      </p>
-      <div className="exercise">
-        <div className="section-header">
-          <h3>只做一次 next-token 移位</h3>
-          <select
-            aria-label="移位反例"
-            value={shift}
-            onChange={(e) => setShift(e.target.value as "once" | "twice")}
-          >
-            <option value="once">正确：一次 shift</option>
-            <option value="twice">反例：重复 shift</option>
-          </select>
-        </div>
-        <p>符号序列 x₀…xₛ：仅演示位置关系，不表示真实 token ID。</p>
-        <div className="shift-grid">
-          <span>Input</span>
-          <code>x₀</code>
-          <code>x₁</code>
-          <code>x₂</code>
-          <span>Target</span>
-          <code>{shift === "once" ? "x₁" : "x₂"}</code>
-          <code>{shift === "once" ? "x₂" : "x₃"}</code>
-          <code>{shift === "once" ? "x₃" : "x₄"}</code>
-        </div>
-        <p role="status">
-          {shift === "once"
-            ? "目标与输入相差一个位置；mask 对齐 target。dataset/collator 已移位时，后续不能再移位。"
-            : "错误：跳过了紧邻目标，监督语义发生改变。检查 dataset/collator 与模型是否重复移位。"}
-        </p>
-      </div>
-      <details>
-        <summary>Padding、packing 与验证边界</summary>
-        <p>
-          padding 不参与有效目标统计。packing 后需保留样本边界、position 与
-          cu_seqlens；不得让前一个样本的末尾预测后一个样本的开头。本轮未生成
-          packed token trace；默认短序列、无 packing、CP=1。
-        </p>
-        <p>
-          验证方法：导出少量真实 input/label/mask 对照，检查 assistant
-          模式、截断边界及全局有效 token 数。prompt 不被监督不意味着它不参与
-          forward 或其表示没有梯度。
-        </p>
-      </details>
+      <SftDataJourney state={state} patch={patch} onSource={onSource} />
     </div>
   );
 }

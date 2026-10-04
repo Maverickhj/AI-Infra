@@ -26,11 +26,11 @@ export type Fixture = {
 const seq = (length: number) => Array.from({ length }, (_, i) => i);
 const dot = (a: number[], b: number[]) =>
   a.reduce((sum, v, i) => sum + v * b[i], 0);
-const linear = (x: number[][], w: number[][], bias: number[]) =>
+export const linear = (x: number[][], w: number[][], bias: number[]) =>
   x.map((row) =>
     bias.map((b, j) => row.reduce((sum, v, i) => sum + v * w[i][j], 0) + b),
   );
-function rms(row: number[], gain: number[], epsilon: number) {
+export function rms(row: number[], gain: number[], epsilon: number) {
   const inv = Math.sqrt(dot(row, row) / row.length + epsilon);
   return row.map((v, i) => (v * gain[i]) / inv);
 }
@@ -67,14 +67,18 @@ export function softmax(row: number[]) {
   return values.map((v) => v / total);
 }
 function validate(f: Fixture) {
-  const expected = { B: 1, S: 4, H: 8, nq: 4, nkv: 2, d: 4 };
+  const expected = { B: 1, H: 8, nq: 4, nkv: 2, d: 4 };
+  const size = f.dimensions.S;
   if (
+    !Number.isInteger(size) ||
+    size < 1 ||
+    size > 64 ||
     Object.entries(expected).some(
       ([key, value]) => f.dimensions[key as keyof typeof expected] !== value,
     )
   )
     throw new Error(
-      "Only the declared B1/S4/H8/nq4/nkv2/d4 fixture is supported",
+      "Supported: B1/H8/nq4/nkv2/d4 with integer sequence length 1–64",
     );
   const tensor = (value: unknown, shape: number[]): void => {
     if (shape.length) {
@@ -85,7 +89,7 @@ function validate(f: Fixture) {
       throw new Error("Tensor entries must be finite numbers");
   };
   const shapes: [keyof Fixture, number[]][] = [
-    ["x", [4, 8]],
+    ["x", [size, 8]],
     ["wqkv", [8, 32]],
     ["wo", [16, 8]],
     ["input_gain", [8]],
@@ -93,7 +97,7 @@ function validate(f: Fixture) {
     ["k_gain", [4]],
     ["qkv_bias", [32]],
     ["output_bias", [8]],
-    ["positions", [4]],
+    ["positions", [size]],
   ];
   shapes.forEach(([key, shape]) => tensor(f[key], shape));
   if (
