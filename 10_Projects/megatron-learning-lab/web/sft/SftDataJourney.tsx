@@ -1,8 +1,5 @@
+import { CourseDetails } from "../CourseText";
 import { memo, useMemo, useState } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
 import fixture from "../../content/fixtures/sft-data.json";
 import course from "../../content/cases/05_sft_data.md?raw";
 import type { State } from "../data";
@@ -419,17 +416,11 @@ export const SftDataJourney = memo(function SftDataJourney({
           </div>
         )}
       </details>
-      <details className="sft-course">
-        <summary>精讲：监督、packing 与独立数学符号表</summary>
-        <div className="prose">
-          <Markdown
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[rehypeKatex]}
-          >
-            {course.replace(/^---\n[\s\S]*?\n---\n/, "")}
-          </Markdown>
-        </div>
-      </details>
+      <CourseDetails
+        className="sft-course"
+        summary="精讲：监督、packing 与独立数学符号表"
+        text={course}
+      />
     </section>
   );
 });

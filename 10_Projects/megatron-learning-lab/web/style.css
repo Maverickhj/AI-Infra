@@ -1340,3 +1340,17 @@ footer {
 .decoder-reference p, .decoder-reference td { overflow-wrap: anywhere; }
 .decoder-reference .sft-table-scroll td { max-width: 550px; }
 .decoder-course { margin-top: 1rem; }
+
+.parallel-reference { margin-top: 1rem; }
+.parallel-reference table td { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.parallel-check { display:flex; gap:1rem; align-items:center; flex-wrap:wrap; margin:1rem 0; }
+.parallel-check input { width:5rem; margin-left:.5rem; }
+.parallel-reference button { margin:.25rem; }
+
+.sequence-reference { margin-top:1rem; }
+.sequence-reference button { margin:.2rem; }
+.sequence-reference table td { font-variant-numeric:tabular-nums; }
+.pipeline-F { background:#e2f0e9; }
+.pipeline-B { background:#e6ebf6; }
+.pipeline-idle { background:#f3f3ef; color:#68766f; }
+.pipeline-F button,.pipeline-B button { padding:.35rem; white-space:nowrap; }

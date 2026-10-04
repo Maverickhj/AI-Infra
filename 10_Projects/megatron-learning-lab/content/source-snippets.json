@@ -1263,6 +1263,248 @@
           ]
         }
       ]
+    },
+    {
+      "source_id": "C-TPLINEAR",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/tensor_parallel/layers.py",
+      "git_blob_sha": "3ff635b362b56fecc367bfacd1aa9d7e6ca64f80",
+      "copyright_header": "# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n\n# Parts of the code here are adapted from PyTorch\n# repo: https://github.com/pytorch/pytorch\nfrom __future__ import annotations\n\nimport os\nimport warnings\nfrom functools import partial\nfrom typing import Any, Callable, List, Optional, Tuple\n\nimport torch\nimport torch.nn.functional as F\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "tp-column-gather",
+          "title": "列分片与可选输出 gather",
+          "start_line": 1187,
+          "end_line": 1208,
+          "code": "        gather_output = self.gather_output\n        # Use the runtime gather output if it's set explicitly.\n        if runtime_gather_output is not None:\n            gather_output = runtime_gather_output\n\n        if gather_output:\n            # All-gather across the partitions.\n            if self.use_inference_optimized_all_gather and not self.training:\n                # Deferred to avoid circular import: inference_layers → TE → layers.\n                from .inference_layers import inference_all_gather_from_tensor_model_parallel_region\n\n                output = inference_all_gather_from_tensor_model_parallel_region(\n                    output_parallel, self.tp_group, self.config\n                )\n            else:\n                output = gather_from_tensor_model_parallel_region(\n                    output_parallel, group=self.tp_group\n                )\n        else:\n            output = output_parallel\n        output_bias = self.bias if self.skip_bias_add else None\n        return output, output_bias\n",
+          "sha256": "104b9e970e9945ab67a9a2deace2e99aa77d03fee9f1d341152824201c979415",
+          "annotations": [
+            {
+              "line": 1206,
+              "text": "gather_output=False 保留列分片；是否拼接由配置决定。"
+            }
+          ]
+        },
+        {
+          "id": "tp-row-sum",
+          "title": "行分片：普通 SUM、SP 与 expert 分支",
+          "start_line": 1461,
+          "end_line": 1487,
+          "code": "            weight=self.weight,\n            bias=None,\n            gradient_accumulation_fusion=self.gradient_accumulation_fusion,\n            allreduce_dgrad=allreduce_dgrad,\n            sequence_parallel=False,\n            tp_group=None,\n            grad_output_buffer=None,\n            gtp_remat_size=self.gtp_remat_size,\n        )\n\n        # All-reduce across all the partitions.\n        if self.explicit_expert_comm:\n            assert self.skip_bias_add\n            output_ = output_parallel\n        elif self.sequence_parallel:\n            output_ = reduce_scatter_to_sequence_parallel_region(\n                output_parallel, group=self.tp_group\n            )\n        else:\n            output_ = reduce_from_tensor_model_parallel_region(output_parallel, group=self.tp_group)\n        if not self.skip_bias_add:\n            output = (output_ + self.bias) if self.bias is not None else output_\n            output_bias = None\n        else:\n            output = output_\n            output_bias = self.bias\n        return output, output_bias\n",
+          "sha256": "7a7771198b4f66de9c0589bd92befbd04ae7abf422812232ba70cd3194c55b89",
+          "annotations": [
+            {
+              "line": 1480,
+              "text": "普通行并行恢复部分和；SP与expert分支的通信语义不同。"
+            }
+          ]
+        },
+        {
+          "id": "tp-column-backward",
+          "title": "列分片反向输入梯度",
+          "start_line": 625,
+          "end_line": 641,
+          "code": "                total_input = input\n        grad_input = grad_output.matmul(weight)\n\n        if ctx.sequence_parallel and wgrad_compute:\n            # pylint: disable=possibly-used-before-assignment\n            handle.wait()\n\n        if wgrad_compute:\n            grad_output, total_input = prepare_input_tensors_for_wgrad_compute(\n                grad_output, total_input\n            )\n\n        if ctx.allreduce_dgrad:\n            # Asynchronous all-reduce\n            handle = torch.distributed.all_reduce(grad_input, group=tp_group, async_op=True)\n            # Here we rely on CUDA_DEVICE_MAX_CONNECTIONS=1 to ensure that the\n            # all-reduce is scheduled before the weight gradient computation\n",
+          "sha256": "1f3f7cf5ef89afd47c2090bf6fd8f7a10ca356215a75877eb3019fb849ec774e",
+          "annotations": [
+            {
+              "line": 639,
+              "text": "dX的部分贡献在allreduce_dgrad分支SUM；不能从forward是否gather推断。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "C-VOCABCE",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/tensor_parallel/cross_entropy.py",
+      "git_blob_sha": "9361bdf20b599b267065b69ed719be1c15d638aa",
+      "copyright_header": "# Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.\n\nfrom typing import Tuple\n\nimport torch\n\nfrom megatron.core.parallel_state import get_tensor_model_parallel_group\nfrom megatron.core.utils import get_pg_rank, get_pg_size\n\nfrom .utils import VocabUtility\n\n\nclass VocabParallelCrossEntropy:\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "tp-vocab-ce",
+          "title": "分片 CE：MAX 与两次 SUM",
+          "start_line": 120,
+          "end_line": 156,
+          "code": "    @staticmethod\n    def forward(ctx, vocab_parallel_logits, target, label_smoothing=0.0, tp_group=None):\n        \"\"\"Vocab parallel cross entropy forward function.\"\"\"\n\n        if tp_group is None:\n            tp_group = get_tensor_model_parallel_group()\n\n        vocab_parallel_logits, logits_max = VocabParallelCrossEntropy.calculate_logits_max(\n            vocab_parallel_logits\n        )\n        torch.distributed.all_reduce(logits_max, op=torch.distributed.ReduceOp.MAX, group=tp_group)\n\n        # Get the partition's vocab indices\n        get_vocab_range = VocabUtility.vocab_range_from_per_partition_vocab_size\n        partition_vocab_size = vocab_parallel_logits.size()[-1]\n        rank = get_pg_rank(tp_group)\n        world_size = get_pg_size(tp_group)\n        vocab_start_index, vocab_end_index = get_vocab_range(partition_vocab_size, rank, world_size)\n\n        (target_mask, masked_target_1d, predicted_logits, sum_exp_logits, exp_logits) = (\n            VocabParallelCrossEntropy.calculate_predicted_logits(\n                vocab_parallel_logits, target, logits_max, vocab_start_index, vocab_end_index\n            )\n        )\n\n        # All reduce is needed to get the chunks from other GPUs.\n        torch.distributed.all_reduce(\n            predicted_logits, op=torch.distributed.ReduceOp.SUM, group=tp_group\n        )\n\n        torch.distributed.all_reduce(\n            sum_exp_logits, op=torch.distributed.ReduceOp.SUM, group=tp_group\n        )\n\n        exp_logits, loss = VocabParallelCrossEntropy.calculate_cross_entropy_loss(\n            exp_logits, predicted_logits, sum_exp_logits\n        )\n",
+          "sha256": "594957cc676b601190d99de10fb4073cff4a0821946875aaa05b4c111cdc2830",
+          "annotations": [
+            {
+              "line": 130,
+              "text": "先全局MAX，再归约owner目标logit和指数和；此片段不证明外部padded槽位被屏蔽。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "C-FINALGRAD",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/distributed/finalize_model_grads.py",
+      "git_blob_sha": "af81145b6d8aee1df19fb21d51199d22482d159b",
+      "copyright_header": "# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n\nfrom functools import partial\nfrom typing import Callable, Dict, List, Optional, Union\n\nimport torch\nfrom torch._utils import _flatten_dense_tensors, _unflatten_dense_tensors\n\ntry:\n    from torch.distributed._tensor import DTensor, distribute_tensor\n\n    HAVE_DTENSOR = True\nexcept ImportError:\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "dp-token-normalize",
+          "title": "全局有效 token 归一化",
+          "start_line": 677,
+          "end_line": 696,
+          "code": "    # normalize gradients for per-token loss normalization.\n    # if we are using by the number of tokens, then we use that as a divisor. this number\n    # will be the total number of non-padded tokens in the global batch.\n    if num_tokens is not None:\n\n        # the number of tokens is only present on the last stage, so broadcast it\n        # to the other ranks in the pipeline parallel group.\n        assert not isinstance(pp_group, list)\n        last_rank = get_pp_last_rank(pp_group)\n        torch.distributed.broadcast(num_tokens, src=last_rank, group=pp_group)\n\n        # all-reduce across DP ranks.\n        torch.distributed.all_reduce(num_tokens, group=dp_cp_group)\n\n        # Clamp to avoid div-by-zero without a host-side branch on a device tensor,\n        # which would otherwise cause a sync that is illegal during CUDA graph capture.\n        safe_num_tokens = torch.clamp(num_tokens, min=1)\n        scaling = 1.0 / safe_num_tokens\n        for model_chunk in model:\n            model_chunk.scale_gradients(scaling)\n",
+          "sha256": "1aa5eceac21d51a24d7cffdd8da96dce3d02afa30f130cdfbfa9cfb6c97d60e0",
+          "annotations": [
+            {
+              "line": 689,
+              "text": "num_tokens路径在DP/CP组求和；生产梯度预缩放还需结合DDP配置。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "C-SCHEDULE",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/pipeline_parallel/schedules.py",
+      "git_blob_sha": "29d36ab2c7df1ac76f09794c7edfaa0ca05a5006",
+      "copyright_header": "# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n\nimport contextlib\nfrom functools import partial\nfrom typing import Callable, Dict, Iterator, List, Optional, Union\n\nimport torch\nfrom torch.autograd.variable import Variable\n\nfrom megatron.core import parallel_state\nfrom megatron.core.pipeline_parallel.fine_grained_activation_offload import (\n    FineGrainedActivationOffloadingInterface as off_interface,\n)\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "pp-warmup",
+          "title": "Non-interleaved warmup 数量",
+          "start_line": 2242,
+          "end_line": 2245,
+          "code": "    # Compute number of warmup microbatches.\n    num_warmup_microbatches = p2p_communicator.total_stages - p2p_communicator.current_stage - 1\n    num_warmup_microbatches = min(num_warmup_microbatches, num_microbatches)\n    num_microbatches_remaining = num_microbatches - num_warmup_microbatches\n",
+          "sha256": "2888354300417329f3d248589f875855ff784078e3ae340f8668a2506d98f9b4",
+          "annotations": [
+            {
+              "line": 2243,
+              "text": "按下游stage数量限制warmup；本页用真实两层与microbatch编号建立依赖。"
+            }
+          ]
+        },
+        {
+          "id": "pp-1f1b",
+          "title": "1F1B：发送forward、接收backward与FIFO",
+          "start_line": 2381,
+          "end_line": 2405,
+          "code": "        else:\n            output_tensor_grad = p2p_communicator.send_forward_recv_backward(\n                output_tensor, send_tensor_shapes, p2p_communicator.is_pp_last_stage\n            )\n\n            # Add input_tensor and output_tensor to end of list.\n            input_tensors.append(input_tensor)\n            output_tensors.append(output_tensor)\n            deallocate_output_tensor(output_tensor, config.deallocate_pipeline_outputs)\n\n            # Pop input_tensor and output_tensor from the start of the list for\n            # the backward pass.\n            input_tensor = input_tensors.pop(0)\n            output_tensor = output_tensors.pop(0)\n\n            # Enable grad sync for the last microbatch in the batch if the full\n            # backward pass completes in the 1F1B stage.\n            if num_warmup_microbatches == 0 and last_iteration:\n                if config.grad_sync_func is None or p2p_communicator.is_pp_first_stage:\n                    enable_grad_sync()\n\n            input_tensor_grad = backward_func(\n                input_tensor, output_tensor, output_tensor_grad, config\n            )\n\n",
+          "sha256": "77d709a1acc4cbef6c45ed4d834a9848395f0e6cb5d7b1a4b3c9db21ee9c3ecd",
+          "annotations": [
+            {
+              "line": 2393,
+              "text": "保留activation FIFO；steady计算不能越过相邻stage的依赖。"
+            }
+          ]
+        },
+        {
+          "id": "pp-cooldown",
+          "title": "Cooldown：剩余反向任务",
+          "start_line": 2416,
+          "end_line": 2441,
+          "code": "    # Run cooldown backward passes.\n    if not forward_only:\n        for i in range(num_warmup_microbatches):\n\n            # Enable async grad reduction in the last backward pass\n            # Note: If grad sync function is provided, only enable\n            # async grad reduction in first pipeline stage. Other\n            # pipeline stages do grad reduction during pipeline\n            # bubble.\n            if i == num_warmup_microbatches - 1:\n                if config.grad_sync_func is None or p2p_communicator.is_pp_first_stage:\n                    enable_grad_sync()\n\n            input_tensor = input_tensors.pop(0)\n            output_tensor = output_tensors.pop(0)\n\n            output_tensor_grad = p2p_communicator.recv_backward(\n                send_tensor_shapes, p2p_communicator.is_pp_last_stage\n            )\n\n            input_tensor_grad = backward_func(\n                input_tensor, output_tensor, output_tensor_grad, config\n            )\n\n            p2p_communicator.send_backward(input_tensor_grad, p2p_communicator.is_pp_first_stage)\n\n",
+          "sha256": "4f9ad7ad153a4c6710c5d79cdf3fd05dd21e7156d79f9ff9c9f29a4ca2ba0655",
+          "annotations": [
+            {
+              "line": 2429,
+              "text": "warmup产生的待反传microbatch在cooldown清空。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "C-TPMAP",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/tensor_parallel/mappings.py",
+      "git_blob_sha": "6a1605d08a7369a5e86256cb15f7fc3ade2c0cf8",
+      "copyright_header": "# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n\nimport torch\n\nfrom megatron.core.parallel_state import get_global_memory_buffer\nfrom megatron.core.utils import get_tensor_model_parallel_group_if_none, is_torch_min_version\n\nfrom .utils import split_tensor_along_last_dim\n\ntry:\n    if is_torch_min_version(\"1.13.0\"):\n        dist_all_gather_func = torch.distributed.all_gather_into_tensor\n        dist_reduce_scatter_func = torch.distributed.reduce_scatter_tensor\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "sp-gather",
+          "title": "SP gather 与反向分支",
+          "start_line": 316,
+          "end_line": 352,
+          "code": "    def forward(\n        ctx,\n        input_,\n        group,\n        tensor_parallel_output_grad=True,\n        output_split_sizes=None,\n        use_global_buffer=False,\n    ):\n        \"\"\"Forward function.\"\"\"\n        ctx.tensor_parallel_output_grad = tensor_parallel_output_grad\n        ctx.group = group\n        ctx.output_split_sizes = output_split_sizes\n        ctx.use_global_buffer = use_global_buffer\n        return _gather_along_first_dim(input_, group, output_split_sizes, use_global_buffer)\n\n    @staticmethod\n    def backward(ctx, grad_output):\n        \"\"\"Backward function.\"\"\"\n        tensor_parallel_output_grad = ctx.tensor_parallel_output_grad\n\n        # If the computation graph after the gather operation is\n        # in the tensor parallel mode, output gradients need to reduce\n        # scattered and whereas if the computation is duplicated,\n        # output gradients need to be scattered.\n        if tensor_parallel_output_grad:\n            return (\n                _reduce_scatter_along_first_dim(\n                    grad_output, ctx.group, ctx.output_split_sizes, ctx.use_global_buffer\n                ),\n                None,\n                None,\n                None,\n                None,\n            )\n        else:\n            assert ctx.output_split_sizes is None\n            return (_split_along_first_dim(grad_output, ctx.group), None, None, None, None)\n",
+          "sha256": "c1f13a4d669e03d31c0fc84ef8849cfe4613d66ce9f8aab807b6b79d96a3902d",
+          "annotations": [
+            {
+              "line": 341,
+              "text": "后续TP计算需要reduce-scatter；重复计算路径仅scatter，不能混同。"
+            }
+          ]
+        },
+        {
+          "id": "sp-reduce-scatter",
+          "title": "SP reduce-scatter 与反向 gather",
+          "start_line": 355,
+          "end_line": 384,
+          "code": "class _ReduceScatterToSequenceParallelRegion(torch.autograd.Function):\n    \"\"\"Reduce scatter the input from the model parallel region.\"\"\"\n\n    @staticmethod\n    def symbolic(graph, input_, group, input_split_sizes=None, use_global_buffer=False):\n        \"\"\"Symbolic function for tracing.\"\"\"\n        return _reduce_scatter_along_first_dim(input_, group, input_split_sizes, use_global_buffer)\n\n    @staticmethod\n    def forward(ctx, input_, group, input_split_sizes=None, use_global_buffer=False):\n        \"\"\"Forward function.\"\"\"\n        ctx.group = group\n        ctx.input_split_sizes = input_split_sizes\n        ctx.use_global_buffer = use_global_buffer\n        return _reduce_scatter_along_first_dim(input_, group, input_split_sizes, use_global_buffer)\n\n    @staticmethod\n    def backward(ctx, grad_output):\n        \"\"\"Backward function.\"\"\"\n        input_split_sizes = ctx.input_split_sizes\n        use_global_buffer = ctx.use_global_buffer\n        return (\n            _gather_along_first_dim(grad_output, ctx.group, input_split_sizes, use_global_buffer),\n            None,\n            None,\n            None,\n        )\n\n\nclass _AllGatherFromTensorParallelRegion(torch.autograd.Function):\n",
+          "sha256": "bdea04b74e830c4578b8a995f82d1f04b62cbfffcbc3ba28e15c2d6ea5432381",
+          "annotations": [
+            {
+              "line": 382,
+              "text": "沿sequence第一维SUM并scatter，反向重新gather。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "C-COREUTIL",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/utils.py",
+      "git_blob_sha": "ad9692e8aa502cba238ba438c0a9137e41374522",
+      "copyright_header": "# Copyright (c) 2023, NVIDIA CORPORATION. All rights reserved.\n\n\"\"\"Utility functions used throughout Megatron core\"\"\"\n\nimport array\nimport asyncio\nimport functools\nimport hashlib\nimport inspect\nimport logging\nimport math\nimport operator\nimport queue\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "cp-document-zigzag",
+          "title": "THD 每文档 zigzag",
+          "start_line": 2405,
+          "end_line": 2454,
+          "code": "\ndef _get_batch_on_this_cp_rank_per_document_balancing(\n    batch: dict[str, torch.Tensor], cp_group: torch.distributed.ProcessGroup\n):\n    \"\"\"Partition a batch across CP ranks with per-document zigzag load balancing.\n\n    Applies zigzag load-balanced chunking independently within each\n    sub-sequence (document) using Transformer Engine's\n    ``thd_get_partitioned_indices``. Each document length must be\n    divisible by ``2 * cp_size``. Sequence-dimension tensors (tokens,\n    labels, loss_mask, position_ids) are index-selected to this CP\n    rank's partition; metadata keys (cu_seqlens, cu_seqlens_padded,\n    max_seqlen, etc.) are left unchanged.\n\n    Args:\n        batch (dict[str, torch.Tensor]): Batch dict with tensors of shape\n            ``[micro_batch_size, seq_length, ...]``.\n        cp_group (torch.distributed.ProcessGroup): The context-parallel\n            process group.\n\n    Returns:\n        dict[str, torch.Tensor]: The batch with sequence-dimension tensors\n        partitioned to this CP rank.\n    \"\"\"\n    cp_size = torch.distributed.get_world_size(cp_group)\n    cp_rank = torch.distributed.get_rank(cp_group)\n\n    if cp_size > 1:\n        # cu_seqlens / cu_seqlens_padded carry a leading batch dim (1, n).\n        # tex.thd_get_partitioned_indices expects a 1-D tensor, so squeeze\n        # the batch dim inline without mutating the batch dict.\n        cu_seqlens_for_te = (\n            batch[\"cu_seqlens_padded\"]\n            if batch[\"cu_seqlens_padded\"] is not None\n            else batch[\"cu_seqlens\"]\n        )[0]\n        index = tex.thd_get_partitioned_indices(\n            cu_seqlens_for_te,\n            (\n                batch[\"tokens\"].size(1) if batch[\"tokens\"] is not None else batch[\"labels\"].size(1)\n            ),  # NOTE(asolergi-nv): Labels to enable PP!\n            cp_size,\n            cp_rank,\n        )\n        SEQUENCE_KEYS = ('tokens', 'labels', 'loss_mask', 'position_ids')\n        for key in SEQUENCE_KEYS:\n            if batch.get(key) is not None:\n                batch[key] = batch[key].index_select(1, index)\n    return batch\n\n",
+          "sha256": "9033ca3e148c8c6da2e15d4dbe92ea503f3515487bdf93b815e9ade9d8e4253b",
+          "annotations": [
+            {
+              "line": 2441,
+              "text": "非hybrid THD调用TE索引，使用物理边界并保持metadata；本页CPU演算没有运行kernel。"
+            }
+          ]
+        },
+        {
+          "id": "cp-sequence-zigzag",
+          "title": "普通全序列 zigzag",
+          "start_line": 2496,
+          "end_line": 2517,
+          "code": "    if cp_size > 1:\n        for key, val in batch.items():\n            if key in METADATA_KEYS or val is None:\n                continue\n            seq_dim = 2 if key == 'attention_mask' else 1\n            val = val.view(\n                *val.shape[0:seq_dim],\n                2 * cp_size,\n                val.shape[seq_dim] // (2 * cp_size),\n                *val.shape[(seq_dim + 1) :],\n            )\n            index = torch.zeros(2, dtype=torch.int64, device=val.device)\n            index[0].fill_(cp_rank)\n            index[1].fill_(2 * cp_size - cp_rank - 1)\n            val = val.index_select(seq_dim, index)\n            val = val.view(*val.shape[0:seq_dim], -1, *val.shape[(seq_dim + 2) :])\n            batch[key] = val\n\n    return batch\n\n\ndef _merge_cu_seqlens_across_micro_batch(cu_seqlens: torch.Tensor, seq_length: int) -> torch.Tensor:\n",
+          "sha256": "2b3f87e805525211cd7707c6e5cac7a111ded1a5b6558ed109fa9ca59e9d684b",
+          "annotations": [
+            {
+              "line": 2510,
+              "text": "取rank与镜像chunk；普通序列和逐文档THD不能只按总长度等分。"
+            }
+          ]
+        },
+        {
+          "id": "cp-dispatch",
+          "title": "普通、THD、hybrid 的条件分支",
+          "start_line": 2649,
+          "end_line": 2671,
+          "code": "        to this CP rank.\n    \"\"\"\n\n    if use_per_sequence_balancing or batch.get(\"cu_seqlens\") is None:\n        batch = _get_batch_on_this_cp_rank_per_sequence_balancing(batch, cp_group=cp_group)\n    elif is_hybrid_cp:\n        assert (\n            batch['local_cp_size'] is not None\n        ), \"local_cp_size is required for hybrid context parallel\"\n        if batch['local_cp_size'].item() > 1:\n            hybrid_cp_group = hybrid_cp_group_func(group_size=batch['local_cp_size'].item())\n            batch = _get_batch_on_this_cp_rank_per_sequence_balancing(\n                batch, cp_group=hybrid_cp_group\n            )\n            batch[\"hybrid_cp_group\"] = hybrid_cp_group\n    else:\n        batch = _get_batch_on_this_cp_rank_per_document_balancing(batch, cp_group=cp_group)\n    return batch\n\n\n######################\n### NVTX profiling ###\n######################\n",
+          "sha256": "335370ac11f26f987f7fbd60cf71f0a085e9a6d20e2c01d6d18fab397ca371a7",
+          "annotations": [
+            {
+              "line": 2657,
+              "text": "根据cu_seqlens和hybrid配置选择策略；本页没有实现hybrid。"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

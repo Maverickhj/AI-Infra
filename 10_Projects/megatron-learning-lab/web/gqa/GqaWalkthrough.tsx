@@ -1,8 +1,5 @@
+import { CourseDetails, CourseText } from "../CourseText";
 import { memo, useMemo, useState } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
 import fixture from "../../content/fixtures/gqa-reference.json";
 import lesson from "../../content/cases/04_gqa_source_walkthrough.md?raw";
 import { compute, validateSelection, type Fault } from "./compute";
@@ -14,12 +11,7 @@ const number = (value: number) =>
 function Prose({ text }: { text: string }) {
   return (
     <div className="prose">
-      <Markdown
-        remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeKatex]}
-      >
-        {text.replace(/^---\n[\s\S]*?\n---\n/, "")}
-      </Markdown>
+      <CourseText text={text} />
     </div>
   );
 }
@@ -385,10 +377,11 @@ export const GqaWalkthrough = memo(function GqaWalkthrough({
         </pre>
       </details>
       <button onClick={download}>导出 reference 演算</button>
-      <details className="gqa-course">
-        <summary>完整 GQA 精讲与独立数学符号表</summary>
-        <Prose text={lesson} />
-      </details>
+      <CourseDetails
+        className="gqa-course"
+        summary="完整 GQA 精讲与独立数学符号表"
+        text={lesson}
+      />
     </section>
   );
 });

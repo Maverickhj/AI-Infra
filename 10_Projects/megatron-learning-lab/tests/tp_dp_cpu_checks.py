@@ -1,4 +1,5 @@
 import unittest
+import math
 import torch
 from experiments.decoder_reference import TinyDecoder,sample_data
 from experiments.tp_dp_reference import compare_tp,dp_reference,TensorParallelReference
@@ -15,6 +16,15 @@ class TPDPChecks(unittest.TestCase):
                         self.assertEqual(len(r['rank_events']),9)
 
     def test_weight_shards_restore_gqa_ffn_row_and_vocab(self):
+        # Independent hand cases: row-SUM and owner-only vocabulary CE.
+        x=torch.tensor([2.,3.],requires_grad=True);w=torch.tensor([4.,5.],requires_grad=True)
+        y=sum(x[r]*w[r] for r in range(2));self.assertEqual(float(y.detach()),23.)
+        y.backward();torch.testing.assert_close(x.grad,torch.tensor([4.,5.]));torch.testing.assert_close(w.grad,torch.tensor([2.,3.]))
+        head=torch.zeros((2,1),dtype=torch.float64,requires_grad=True)
+        ref=TensorParallelReference({},tp=2)
+        ref.vocab(torch.ones((1,1),dtype=torch.float64),head,torch.tensor([1]))
+        self.assertAlmostEqual(float(ref.target_loss.detach()),math.log(2),places=14)
+        ref.target_loss.sum().backward();torch.testing.assert_close(head.grad,torch.tensor([[.5],[-.5]],dtype=torch.float64))
         m=TinyDecoder();p=m.p
         for layer in (0,1):
             qkv=p[f'l{layer}_qkv']
@@ -39,6 +49,8 @@ class TPDPChecks(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'SUM'):m(*data,tp=2,fault='concat_row')
 
     def test_dp_accumulation_uses_global_valid_tokens_and_rejects_means_of_means(self):
+        self.assertEqual((1+9)/(1+3),2.5)
+        self.assertEqual((1/1+9/3)/2,2.)
         good=dp_reference();bad=dp_reference(True)
         self.assertEqual([r['microbatches'] for r in good['ranks']],[2,2])
         self.assertEqual([r['valid_tokens'] for r in good['ranks']],[4,18])
@@ -53,6 +65,13 @@ class TPDPChecks(unittest.TestCase):
         self.assertEqual(r['communication']['ring_allreduce_sent_bytes'],704)
         self.assertIsNone(r['communication']['measured_time'])
         self.assertEqual(r['rank_events'][0]['ranks'][1]['weight_rows'],[16,32])
+        row=r['rank_events'][1]
+        torch.testing.assert_close(torch.tensor(row['global_token7']),torch.tensor(row['ranks'][0]['token7'])+torch.tensor(row['ranks'][1]['token7']))
+        self.assertEqual(row['ranks'][1]['input_shape'],[11,8])
+        self.assertEqual(r['rank_events'][3]['ranks'][1]['weight_shape'],[8,6])
+        self.assertEqual(len(row['ranks'][1]['gradient_preview']),2)
+        self.assertEqual(r['rank_events'][-1]['global_shape'],[11,27])
+        self.assertEqual(len(r['rank_events'][-1]['global_token7']),27)
         vocab=r['rank_events'][-1]['ranks']
         self.assertEqual(vocab[0]['vocab_range'],[0,14]);self.assertEqual(vocab[1]['valid_range'],[14,27])
         self.assertEqual(vocab[1]['token7'][-1],float('-inf'))

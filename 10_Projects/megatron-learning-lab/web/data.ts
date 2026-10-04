@@ -78,6 +78,18 @@ export type State = {
   decoderToken: number;
   tinyLayer: number;
   decoderTied: "tied" | "untied";
+  tp: number;
+  dp: number;
+  parallelRank: number;
+  parallelOp: string;
+  pp: number;
+  microbatches: number;
+  pipelineMicrobatch: number;
+  sequenceLayout: "ordinary" | "thd";
+  cp: number;
+  sequenceRank: number;
+  sequenceQuery: number;
+  sequenceFault: "none" | "local_kv" | "leak";
 };
 export const defaults: State = {
   model: "qwen3-06b",
@@ -100,6 +112,18 @@ export const defaults: State = {
   decoderToken: 7,
   tinyLayer: 0,
   decoderTied: "tied",
+  tp: 2,
+  dp: 2,
+  parallelRank: 0,
+  parallelOp: "qkv",
+  pp: 2,
+  microbatches: 4,
+  pipelineMicrobatch: 0,
+  sequenceLayout: "ordinary",
+  cp: 2,
+  sequenceRank: 0,
+  sequenceQuery: 19,
+  sequenceFault: "none",
 };
 export function normalize(s: State): State {
   const model = models.find((m) => m.id === s.model) || models[1];
@@ -108,6 +132,48 @@ export function normalize(s: State): State {
   return {
     ...defaults,
     ...s,
+    pp: s.pp === 1 ? 1 : 2,
+    microbatches:
+      Number.isInteger(s.microbatches) &&
+      s.microbatches >= 1 &&
+      s.microbatches <= 8
+        ? s.microbatches
+        : 4,
+    pipelineMicrobatch:
+      Number.isInteger(s.pipelineMicrobatch) &&
+      s.pipelineMicrobatch >= 0 &&
+      s.pipelineMicrobatch < 8
+        ? s.pipelineMicrobatch
+        : 0,
+    sequenceLayout: s.sequenceLayout === "thd" ? "thd" : "ordinary",
+    cp: s.cp === 1 ? 1 : 2,
+    sequenceRank: s.cp !== 1 && s.sequenceRank === 1 ? 1 : 0,
+    sequenceQuery:
+      Number.isInteger(s.sequenceQuery) &&
+      s.sequenceQuery >= 0 &&
+      s.sequenceQuery < 64
+        ? s.sequenceQuery
+        : 19,
+    sequenceFault: ["none", "local_kv", "leak"].includes(s.sequenceFault)
+      ? s.sequenceFault
+      : "none",
+    tp: s.tp === 1 ? 1 : 2,
+    dp: s.dp === 1 ? 1 : 2,
+    parallelRank:
+      Number.isInteger(s.parallelRank) &&
+      s.parallelRank >= 0 &&
+      s.parallelRank < (s.tp === 1 ? 1 : 2) * (s.dp === 1 ? 1 : 2)
+        ? s.parallelRank
+        : 0,
+    parallelOp: [
+      "qkv",
+      "attention_output",
+      "ffn_pair",
+      "ffn_output",
+      "vocab",
+    ].includes(s.parallelOp)
+      ? s.parallelOp
+      : "qkv",
     operator: gqaSteps.some((step) => step.id === s.operator)
       ? s.operator
       : "overview",
@@ -186,6 +252,15 @@ export function readState(): State {
     sftQuery: Number(p.get("sftQuery") || 0),
     decoderToken: Number(p.get("decoderToken") || 7),
     tinyLayer: Number(p.get("tinyLayer") || 0),
+    tp: Number(p.get("tp") || 2),
+    dp: Number(p.get("dp") || 2),
+    parallelRank: Number(p.get("parallelRank") || 0),
+    pp: Number(p.get("pp") || 2),
+    microbatches: Number(p.get("microbatches") || 4),
+    pipelineMicrobatch: Number(p.get("pipelineMicrobatch") || 0),
+    cp: Number(p.get("cp") || 2),
+    sequenceRank: Number(p.get("sequenceRank") || 0),
+    sequenceQuery: Number(p.get("sequenceQuery") || 19),
   } as State);
 }
 export function reducer(s: State, patch: Partial<State>): State {
@@ -242,6 +317,18 @@ export function sourceExcerptId(
 ): string | undefined {
   const model = models.find((m) => m.id === s.model);
   if (!model) return undefined;
+  if (sourceId === "C-SCHEDULE") return "pp-1f1b";
+  if (sourceId === "C-TPMAP") return "sp-gather";
+  if (sourceId === "C-COREUTIL")
+    return s.sequenceLayout === "thd"
+      ? "cp-document-zigzag"
+      : "cp-sequence-zigzag";
+  if (sourceId === "C-TPLINEAR")
+    return ["attention_output", "ffn_output"].includes(s.parallelOp)
+      ? "tp-row-sum"
+      : "tp-column-gather";
+  if (sourceId === "C-VOCABCE") return "tp-vocab-ce";
+  if (sourceId === "C-FINALGRAD") return "dp-token-normalize";
   if (s.scenario === "sft" && sourceId === "C-BLOCK")
     return "decoder-final-norm";
   if (s.scenario === "sft" && s.step === "decoder" && sourceId === "C-MLP")

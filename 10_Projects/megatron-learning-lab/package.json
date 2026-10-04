@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "data": "env -u PYTHONPATH uv run --no-project python -S tools/build_case_data.py && npm run data:decoder",
+    "data": "env -u PYTHONPATH uv run --no-project python -S tools/build_case_data.py && npm run data:decoder && npm run data:parallel",
     "predev": "npm run data",
     "dev": "vite --host 0.0.0.0 --port 5173 --strictPort",
     "prebuild": "npm run data",
@@ -19,7 +19,8 @@
     "test:decoder": "node --experimental-strip-types tests/decoder-numeric.mjs",
     "data:decoder": "env -u PYTHONPATH CUDA_VISIBLE_DEVICES= python -m experiments.decoder_reference --export content/generated/decoder-cpu.json",
     "test:tp-dp": "node --experimental-strip-types tests/tp-dp.mjs",
-    "data:parallel": "env -u PYTHONPATH CUDA_VISIBLE_DEVICES= python -m experiments.tp_dp_reference --export content/generated/tp-dp-cpu.json"
+    "data:parallel": "env -u PYTHONPATH CUDA_VISIBLE_DEVICES= python -m experiments.tp_dp_reference --export content/generated/tp-dp-cpu.json",
+    "test:sequence": "node --experimental-strip-types tests/sequence.mjs"
   },
   "dependencies": {
     "katex": "0.18.9",

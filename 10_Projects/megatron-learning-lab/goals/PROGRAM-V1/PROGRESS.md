@@ -2,14 +2,14 @@
 type: project
 status: draft
 created: 2026-10-04
-updated: 2026-10-04
+updated: 2026-10-05
 ai_generated: true
 reviewed: false
 ---
 
 # PROGRAM-V1 进度
 
-当前：M00/G02/G03 validated，G04 in_progress。当前 HEAD `8a61e3b`，工作区接续已有 G01。所有代码/测试在 `minimind-megatron-bridge-dev-1` 执行，不 commit/push。
+当前：M00/G02/G03/G04/G05 validated，G06 in_progress（已开始固定版本 MoE/MLA 源码核查）。本次按用户最新指示提交并推送 G04/G05 成果；此前基线 HEAD `b841b47`。后续开发仍不自动提交。所有代码/测试在 `minimind-megatron-bridge-dev-1` 执行。
 
 ## M00 · 2026-10-04
 
@@ -58,3 +58,24 @@ G01 的范围到此保留为历史；本项目当前入口为 MASTER_GOAL。各�
 在 `minimind-megatron-bridge-dev-1` 内执行 `tools/goal_gate.py baseline`：82 项 Python、56 项 Chromium、构建、handoff 和片段校验全部通过，无 skipped/flaky。报告 `runs/goal-g01/20261004T161114113098Z/report.json`，SHA256 `a01c5c116e487d70dec46a9758ce7592d691e9572238973dd61402dd7fffc742`。另通过 `npm run test:gqa`、`npm run test:sft-data`、`npm run test:decoder`、`npm run test:tp-dp`；完整源码缓存校验为 35 文件/65 片段。G03 当前 CPU 子测试为 7 项，G04 CPU 子测试为 6 项。全部为 reference 验证，无 GPU/NCCL 实测。
 
 本次 Git 范围仅 `10_Projects/megatron-learning-lab` 的源文件、教学内容、测试与进度记录。运行报告/生成数据继续留在本地，不加入 Git；可在同一开发容器复跑上述命令。下一步仍为 G04 课程、rank inspector 和浏览器行为验收。
+
+## G05 · 后续实现范围与行为验收
+
+G04完整门槛正在稳定快照运行；此处只记录下阶段范围。计划新增 `experiments/sequence_reference.py`、`web/sequence/{compute.ts,SequenceJourney.tsx}`、`content/cases/08_pipeline_sequence.md`、`tests/{test_sequence_reference.py,sequence.mjs,browser/sequence.spec.ts}`，接入既有状态/入口/package/source archive。使用G03真实两层分配与G02 authored样本/packed metadata，不引入新平台。
+
+验收：①PP1/2、microbatch1–8的non-interleaved 1F1B，绑定两层和embedding/head归属，所有前后向及跨stage依赖满足；②activation生存期、逻辑bubble和手算时间轴，不推断GPU利用率；③SP沿TP组sequence维切分、all-gather与row reduce-scatter，对照同模型dense FFN；④CP按普通全序列zigzag或THD每文档zigzag分片，保留有效/物理cu_seqlens并检查可分性；⑤远端KV分块softmax合并等于完整block-causal attention，丢远端KV/跨样本泄漏/非法padding反例报错；⑥页面切PP/microbatch/layout/CP/rank/query同步更新，源码与手机布局可用。
+
+G04 已完成：报告 `runs/program-v1/G04/20261004T164510932004Z/report.json`，指纹 `ca9586f5680a96ba5696bd67a9f97e09fd99e96400bd3904089c9895a03e60d0`。82项Python、63项Chromium全部通过，无skipped/flaky；test:gqa、test:tp-dp、38完整源码/70片段及自审通过。报告归档本次CPU切片与桌面/手机截图。课程静态解析复用修复了旧GQA路径性能回退，未扩大测试时限；全部失败报告保留。
+
+G05 开始实施。容器中的临时草稿已通过5项独立Python检查和25组跨语言/CPU数值对照（5448值，最大误差4.44e-16），这些只是草稿预检，不能替代写入后完整阶段验收。
+
+G05首轮四条新浏览器路径全部通过；集成后旧GQA源码长流程超30秒，失败trace已保存至runs/program-v1/G05/preflight-gqa-timeout。正文memo消除了重复解析，但未展开整章仍产生大量公式DOM；进一步将五处课程折叠正文按展开状态挂载，完整内容、原测试与30秒时限保留。此公共渲染改动需重跑所有课程路径。
+
+
+## 2026-10-05 · G04/G05 提交 checkpoint
+
+G05 完整门槛通过，报告 `runs/program-v1/G05/20261004T170057490328Z/report.json`，源码指纹 `f2aff69966f4b035a6e7bbcbbc9f9dce9aff63264dd4030f85fef0e5cabe06fe`。87 项 Python、70 项 Chromium、构建、handoff、GQA 数值、sequence 数值和固定源码校验全部通过，skipped/flaky/unexpected=0。sequence 对照 25 组、5448 数值，最大误差 4.440892098500626e-16；41 完整源码/78 片段逐字验证通过。桌面/窄屏截图已查看并归档到报告目录，STATE 保存报告哈希。
+
+五处课程正文按展开状态挂载，保留所有精讲内容、数学符号表和键盘操作；完整浏览器回归已覆盖这次共享渲染改动。G04 的历史报告保持原快照，当前快照再次覆盖 G04 四条浏览器路径及 CPU 数值检查。全部仍为 reference 验证，没有 GPU/NCCL 或真实训练实测。
+
+本次用户明确授权 commit & push，范围仅本项目源文件、课程、测试和进度记录；运行日志、截图及生成数据继续留在本地，不加入 Git。提交前再次校验当前源码指纹与报告一致。下一阶段为 G06 的 MoE/MLA 完整模型交互与独立数值验收，PROGRAM-V1 尚未全部完成。

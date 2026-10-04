@@ -26,18 +26,22 @@ class TensorParallelReference:
         self.p,self.tp,self.fault,self.capture=parameters,tp,fault,capture
         self.events=[]
 
-    def record(self,name,layer,ranks,collective,outputs):
+    def record(self,name,layer,ranks,collective,outputs,inputs):
         if not self.capture:return
-        # Small authored model only. Keep selected token rows and exact shape/layout.
+        row=name in ('attention_output','ffn_output')
+        logical=torch.stack(outputs).sum(dim=0) if row else torch.cat(outputs,dim=-1)
         self.events.append(dict(name=name,layer=layer,group=list(range(self.tp)),collective=collective,
-                           ranks=[{**meta,'output_shape':list(value.shape),'token7':value[min(7,len(value)-1)].detach().tolist()} for meta,value in zip(ranks,outputs)]))
+            global_shape=list(logical.shape),global_token7=logical[min(7,len(logical)-1)].detach().tolist(),
+            ranks=[{**meta,'input_shape':list(x.shape),'input_token7':x[min(7,len(x)-1)].detach().tolist(),
+                    'output_shape':list(value.shape),'token7':value[min(7,len(value)-1)].detach().tolist()}
+                   for meta,value,x in zip(ranks,outputs,inputs)]))
 
     def qkv(self,values,layer):
         x=tensor(values);w=self.p[f'l{layer}_qkv'];width=w.shape[0]//self.tp
         ranks=[dict(rank=r,weight_shape=[width,8],weight_rows=[r*width,(r+1)*width],
                     layout='grouped Q,Q,K,V; two Q heads per KV group') for r in range(self.tp)]
         outputs=[x@w[r*width:(r+1)*width].T for r in range(self.tp)]
-        self.record('qkv',layer,ranks,'column partition; local Q/K/V, no forward gather required for attention',outputs)
+        self.record('qkv',layer,ranks,'column partition; local Q/K/V, no forward gather required for attention',outputs,[x]*self.tp)
         # Concatenation exposes logical head order to the shared per-head GQA graph.
         return scalars(torch.cat(outputs,dim=-1))
 
@@ -48,7 +52,7 @@ class TensorParallelReference:
     def output(self,values,layer):
         x=tensor(values);w=self.p[f'l{layer}_out'];width=x.shape[-1]//self.tp
         parts=[x[:,r*width:(r+1)*width]@w[:,r*width:(r+1)*width].T for r in range(self.tp)]
-        self.record('attention_output',layer,[dict(rank=r,weight_shape=[8,width],input_columns=[r*width,(r+1)*width]) for r in range(self.tp)],'SUM of rank-local partial output; logical all-reduce',parts)
+        self.record('attention_output',layer,[dict(rank=r,weight_shape=[8,width],input_columns=[r*width,(r+1)*width]) for r in range(self.tp)],'SUM of rank-local partial output; logical all-reduce',parts,[x[:,r*width:(r+1)*width] for r in range(self.tp)])
         return scalars(self.reduce(parts))
 
     def ffn(self,x,layer):
@@ -63,8 +67,8 @@ class TensorParallelReference:
             gates.append(gate);ups.append(up);silus.append(silu);products.append(product)
             parts.append(product@down[:,start:end].T)
             ranks.append(dict(rank=r,weight_shape=[2*width,8],gate_rows=[start,end],up_rows=[12+start,12+end],down_shape=[8,width]))
-        self.record('ffn_pair',layer,ranks,'paired gate/up column partition; product stays local until row SUM',products)
-        self.record('ffn_output',layer,ranks,'SUM of row partials; no intermediate gate/up all-gather',parts)
+        self.record('ffn_pair',layer,ranks,'paired gate/up column partition; product stays local until row SUM',products,[x]*self.tp)
+        self.record('ffn_output',layer,[dict(rank=r,weight_shape=[8,width],input_columns=[r*width,(r+1)*width]) for r in range(self.tp)],'SUM of row partials; no intermediate gate/up all-gather',parts,products)
         return *(torch.cat(items,dim=-1) for items in (gates,ups,silus,products)),self.reduce(parts)
 
     def vocab(self,x,head,labels):
@@ -86,7 +90,12 @@ class TensorParallelReference:
             targets.append(torch.where(owner,local.gather(-1,local_label[:,None]).squeeze(-1),0.))
         self.target_loss=log_partition-torch.stack(targets).sum(dim=0)
         self.record('vocab',2,[dict(rank=r,weight_shape=[width,8],vocab_range=[r*width,(r+1)*width],valid_range=[r*width,min((r+1)*width,vocab)],padding_excluded=True) for r in range(self.tp)],
-                    'MAX(logit), SUM(exp), SUM(owner target logit); full logits only reassembled for inspection',locals)
+                    'MAX(logit), SUM(exp), SUM(owner target logit); full logits only reassembled for inspection',locals,[x]*self.tp)
+        if self.capture:
+            t=min(7,len(x)-1)
+            self.events[-1]['global_shape']=[len(x),vocab]
+            self.events[-1]['global_token7']=torch.cat(locals,dim=-1)[t,:vocab].detach().tolist()
+            self.events[-1]['ce_reductions']=dict(global_max=float(maximum[t].detach()),global_exp_sum=float(denominator[t].detach()),target=int(labels[t]),target_logit=float(torch.stack(targets).sum(dim=0)[t].detach()),local_max=[float(v[t].max().detach()) for v in locals],local_exp_sum=[float(torch.exp(v[t]-maximum[t]).sum().detach()) for v in locals])
         logits=torch.cat(locals,dim=-1)[:,:vocab]
         return logits,logits-log_partition[:,None]
 
@@ -96,6 +105,8 @@ def compare_tp(tp=2,sample=0,tied=True):
     data=sample_data(sample)
     baseline=TinyDecoder(tied=tied).eval();parallel=TinyDecoder(tied=tied).eval()
     expected=baseline(*data);actual=parallel(*data,tp=tp,capture_parallel=True)
+    torch.testing.assert_close(actual['loss'],expected['loss'],atol=1e-10,rtol=1e-10)
+    torch.testing.assert_close(actual['token_loss'],expected['token_loss'],atol=1e-10,rtol=1e-10)
     expected['loss'].backward();actual['loss'].backward()
     max_gradient=0.
     for name,p in baseline.p.items():
@@ -105,6 +116,29 @@ def compare_tp(tp=2,sample=0,tied=True):
         torch.testing.assert_close(p.grad,other.grad,atol=1e-10,rtol=1e-10)
         max_gradient=max(max_gradient,float((p.grad-other.grad).abs().max()))
     torch.testing.assert_close(actual['logits'],expected['logits'],atol=1e-10,rtol=1e-10)
+    # Parameter gradients are from the complete scalar loss, not local-loss proxies.
+    for event in parallel.parallel_trace:
+        op=event['name'];layer=event['layer']
+        parameter={'qkv':f'l{layer}_qkv','attention_output':f'l{layer}_out',
+                   'ffn_pair':f'l{layer}_gate_up','ffn_output':f'l{layer}_down',
+                   'vocab':'embedding' if tied else 'head'}[op]
+        w=parallel.p[parameter];g=w.grad
+        event['parameter']=parameter;event['global_weight_shape']=list(w.shape)
+        event['global_weight_preview']=w[:2,:4].detach().tolist()
+        for rank in event['ranks']:
+            if op=='qkv':
+                a,b=rank['weight_rows'];local,grad=w[a:b],g[a:b]
+            elif op in ('attention_output','ffn_output'):
+                a,b=rank['input_columns'];local,grad=w[:,a:b],g[:,a:b]
+            elif op=='ffn_pair':
+                a,b=rank['gate_rows'];c,d=rank['up_rows']
+                local=torch.cat([w[a:b],w[c:d]]);grad=torch.cat([g[a:b],g[c:d]])
+            else:
+                a,b=rank['vocab_range'];padding=math.ceil(27/tp)*tp-27
+                local=torch.nn.functional.pad(w,(0,0,0,padding))[a:b]
+                grad=torch.nn.functional.pad(g,(0,0,0,padding))[a:b]
+            rank['weight_preview']=local[:2,:4].detach().tolist()
+            rank['gradient_preview']=grad[:2,:4].detach().tolist()
     s=len(data[0]);payload=s*8*8 # FP64 S×H logical tensor per rank
     # Ring all-reduce theoretical bytes sent by EACH rank; no bandwidth/latency measurement.
     ring=2*(tp-1)/tp*payload

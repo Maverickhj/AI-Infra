@@ -1,3 +1,5 @@
+import { SequenceJourney } from "./sequence/SequenceJourney";
+import { ParallelInspector } from "./parallel/ParallelInspector";
 import { DecoderWalkthrough } from "./decoder/DecoderWalkthrough";
 import { SftDataJourney } from "./sft/SftDataJourney";
 import { GqaWalkthrough } from "./gqa/GqaWalkthrough";
@@ -419,6 +421,20 @@ function App() {
                   onSource={openSource}
                 />
               )}
+              {state.scenario === "sft" && state.step !== "input" && (
+                <ParallelInspector
+                  state={state}
+                  patch={patch}
+                  onSource={openSource}
+                />
+              )}
+              {state.scenario === "sft" && state.step !== "input" && (
+                <SequenceJourney
+                  state={state}
+                  patch={patch}
+                  onSource={openSource}
+                />
+              )}
               {state.scenario === "sft" &&
                 state.step === "decoder" &&
                 model.attention === "gqa" && (
@@ -553,7 +569,7 @@ function App() {
               <h3>{currentSource.id}</h3>
               <p>{currentSource.review_scope}</p>
               <SourceExcerpts
-                key={`${currentSource.id}:${state.model}:${state.scenario}:${state.step}:${state.layer}:${state.mla}:${state.operator}:${state.query}:${state.gqaHead}:${state.decoderOp}`}
+                key={`${currentSource.id}:${state.model}:${state.scenario}:${state.step}:${state.layer}:${state.mla}:${state.operator}:${state.query}:${state.gqaHead}:${state.decoderOp}:${state.parallelOp}:${state.sequenceLayout}`}
                 sourceId={currentSource.id}
                 repoKey={currentSource.repo_key}
                 url={currentSource.url}

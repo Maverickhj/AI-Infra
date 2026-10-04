@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "program_id": "PROGRAM-V1",
-  "updated_at": "2026-10-04",
+  "updated_at": "2026-10-05",
   "stages": {
     "M00": {
       "status": "validated",
@@ -22,19 +22,19 @@
       "blocker": null
     },
     "G04": {
-      "status": "in_progress",
-      "report": null,
-      "report_sha256": null,
+      "status": "validated",
+      "report": "runs/program-v1/G04/20261004T164510932004Z/report.json",
+      "report_sha256": "f5d4980f19f84358e7e683c41d4b805e8867925f59a73ac8341bea741b82cfe9",
       "blocker": null
     },
     "G05": {
-      "status": "pending",
-      "report": null,
-      "report_sha256": null,
+      "status": "validated",
+      "report": "runs/program-v1/G05/20261004T170057490328Z/report.json",
+      "report_sha256": "44e4ad896a07c32cf75c48ea304797d52f6206d17986ef99e6d9768561fd7cf3",
       "blocker": null
     },
     "G06": {
-      "status": "pending",
+      "status": "in_progress",
       "report": null,
       "report_sha256": null,
       "blocker": null

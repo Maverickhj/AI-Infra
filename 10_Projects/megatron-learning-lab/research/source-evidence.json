@@ -636,6 +636,149 @@
       ],
       "evidence_level": "static_source_read",
       "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/transformer/mlp.py"
+    },
+    {
+      "id": "C-TPLINEAR",
+      "repo_key": "core",
+      "path": "megatron/core/tensor_parallel/layers.py",
+      "git_blob_sha": "3ff635b362b56fecc367bfacd1aa9d7e6ca64f80",
+      "review_scope": "固定版本所列片段：TP分片/collective与DP有效token归一化；非kernel/运行实测",
+      "symbols": [
+        "tp-column-gather",
+        "tp-row-sum",
+        "tp-column-backward"
+      ],
+      "reviewed_ranges": [
+        [
+          1187,
+          1208
+        ],
+        [
+          1461,
+          1487
+        ],
+        [
+          625,
+          641
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/tensor_parallel/layers.py"
+    },
+    {
+      "id": "C-VOCABCE",
+      "repo_key": "core",
+      "path": "megatron/core/tensor_parallel/cross_entropy.py",
+      "git_blob_sha": "9361bdf20b599b267065b69ed719be1c15d638aa",
+      "review_scope": "固定版本所列片段：TP分片/collective与DP有效token归一化；非kernel/运行实测",
+      "symbols": [
+        "tp-vocab-ce"
+      ],
+      "reviewed_ranges": [
+        [
+          120,
+          156
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/tensor_parallel/cross_entropy.py"
+    },
+    {
+      "id": "C-FINALGRAD",
+      "repo_key": "core",
+      "path": "megatron/core/distributed/finalize_model_grads.py",
+      "git_blob_sha": "af81145b6d8aee1df19fb21d51199d22482d159b",
+      "review_scope": "固定版本所列片段：TP分片/collective与DP有效token归一化；非kernel/运行实测",
+      "symbols": [
+        "dp-token-normalize"
+      ],
+      "reviewed_ranges": [
+        [
+          677,
+          696
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/distributed/finalize_model_grads.py"
+    },
+    {
+      "id": "C-SCHEDULE",
+      "repo_key": "core",
+      "path": "megatron/core/pipeline_parallel/schedules.py",
+      "git_blob_sha": "29d36ab2c7df1ac76f09794c7edfaa0ca05a5006",
+      "review_scope": "固定版本PP non-interleaved调度、SP映射、普通/THD CP分片的所列范围；非runtime审计",
+      "symbols": [
+        "pp-warmup",
+        "pp-1f1b",
+        "pp-cooldown"
+      ],
+      "reviewed_ranges": [
+        [
+          2242,
+          2245
+        ],
+        [
+          2381,
+          2405
+        ],
+        [
+          2416,
+          2441
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/pipeline_parallel/schedules.py"
+    },
+    {
+      "id": "C-TPMAP",
+      "repo_key": "core",
+      "path": "megatron/core/tensor_parallel/mappings.py",
+      "git_blob_sha": "6a1605d08a7369a5e86256cb15f7fc3ade2c0cf8",
+      "review_scope": "固定版本PP non-interleaved调度、SP映射、普通/THD CP分片的所列范围；非runtime审计",
+      "symbols": [
+        "sp-gather",
+        "sp-reduce-scatter"
+      ],
+      "reviewed_ranges": [
+        [
+          316,
+          352
+        ],
+        [
+          355,
+          384
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/tensor_parallel/mappings.py"
+    },
+    {
+      "id": "C-COREUTIL",
+      "repo_key": "core",
+      "path": "megatron/core/utils.py",
+      "git_blob_sha": "ad9692e8aa502cba238ba438c0a9137e41374522",
+      "review_scope": "固定版本PP non-interleaved调度、SP映射、普通/THD CP分片的所列范围；非runtime审计",
+      "symbols": [
+        "cp-document-zigzag",
+        "cp-sequence-zigzag",
+        "cp-dispatch"
+      ],
+      "reviewed_ranges": [
+        [
+          2405,
+          2454
+        ],
+        [
+          2496,
+          2517
+        ],
+        [
+          2649,
+          2671
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/utils.py"
     }
   ]
 }

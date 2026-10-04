@@ -1,8 +1,5 @@
+import { CourseDetails } from "../CourseText";
 import { memo, useMemo } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
 import model from "../../content/fixtures/decoder-reference.json";
 import evidence from "../../content/generated/decoder-cpu.json";
 import data from "../../content/fixtures/sft-data.json";
@@ -390,17 +387,11 @@ export const DecoderWalkthrough = memo(function DecoderWalkthrough({
         </div>
       )}
       <button onClick={exportSlice}>导出 decoder 切片与 CPU 证据</button>
-      <details className="decoder-course">
-        <summary>精讲：norm、SwiGLU、共享权重与更新 · 符号表</summary>
-        <div className="prose">
-          <Markdown
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={[rehypeKatex]}
-          >
-            {course.replace(/^---\n[\s\S]*?\n---\n/, "")}
-          </Markdown>
-        </div>
-      </details>
+      <CourseDetails
+        className="decoder-course"
+        summary="精讲：norm、SwiGLU、共享权重与更新 · 符号表"
+        text={course}
+      />
     </section>
   );
 });
