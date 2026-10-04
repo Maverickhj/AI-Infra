@@ -46,25 +46,25 @@
       "blocker": null
     },
     "G08": {
-      "status": "in_progress",
-      "report": null,
-      "report_sha256": null,
+      "status": "validated",
+      "report": "runs/program-v1/G08/20261004T232220705471Z/report.json",
+      "report_sha256": "6b68a771300de3f429cf181a08bc3e750e12b1f756fe6863f9139af8744cf17f",
       "blocker": null
     },
     "R01": {
-      "status": "pending",
+      "status": "blocked_external",
       "report": null,
       "report_sha256": null,
-      "blocker": null
+      "blocker": "No explicit GPU/resource grant; pinned Qwen3 weights/tokenizer missing. Local GPU0 is 6 GiB, below current full-parameter Adam profile derived weight/master/moment allocation (~7.77 GiB before gradients/activations). Evidence: runs/program-v1/resource-proposal.json and G08/startup-dry-run/runtime.json. Needs adequate explicitly authorized resources and local pinned inputs."
     },
     "R02": {
-      "status": "pending",
+      "status": "blocked_external",
       "report": null,
       "report_sha256": null,
-      "blocker": null
+      "blocker": "Requires validated R01, explicit RL resource grant and an actual compatible NeMo checkout/backend. /opt/NeMo-RL and pinned checkpoint are absent; PPO needs separately authorized critic resources. Evidence: runs/program-v1/G08/startup-dry-run/runtime-{grpo,ppo}.json."
     },
     "G09": {
-      "status": "pending",
+      "status": "in_progress",
       "report": null,
       "report_sha256": null,
       "blocker": null

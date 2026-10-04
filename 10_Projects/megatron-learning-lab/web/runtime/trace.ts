@@ -30,7 +30,7 @@ const adapters = [
   "bridge_sbh_v1",
   "nemo_full_token_v1",
 ];
-export function parseTraceJSON(text: string): any {
+function parseBoundedJSON(text: string, maxObjectKeys: number): any {
   check(
     typeof text === "string" &&
       new TextEncoder().encode(text).length <= 1048576,
@@ -73,7 +73,7 @@ export function parseTraceJSON(text: string): any {
           "unsafe JSON key",
         );
         check(!Object.hasOwn(result, key), "duplicate JSON key: " + key);
-        check(++count <= 256, "object exceeds limit");
+        check(++count <= maxObjectKeys, "object exceeds limit");
         space();
         check(text[pos++] === ":", "invalid JSON object");
         result[key] = value(depth + 1);
@@ -121,6 +121,43 @@ export function parseTraceJSON(text: string): any {
   space();
   check(pos === text.length, "unexpected JSON suffix");
   return parsed;
+}
+export function parseTraceJSON(text: string): any {
+  return parseBoundedJSON(text, 256);
+}
+async function validateEffectiveConfigs(value: any, depth = 0): Promise<void> {
+  check(depth <= 32, "effective config nesting exceeds limit");
+  if (obj(value)) {
+    if (
+      Object.hasOwn(value, "effective_config_json") ||
+      Object.hasOwn(value, "effective_config_sha256")
+    ) {
+      const text = value.effective_config_json;
+      const decoded = parseBoundedJSON(text, 512);
+      check(obj(decoded), "effective config must encode an object");
+      check(
+        value.effective_config_sha256 === (await hashText(text)),
+        "effective config SHA256 mismatch",
+      );
+      await validateEffectiveConfigs(decoded, depth + 1);
+    }
+    if (Object.hasOwn(value, "float_sentinel")) {
+      check(
+        Object.keys(value).length === 1 &&
+          ["+inf", "-inf"].includes(value.float_sentinel),
+        "invalid effective config float sentinel",
+      );
+    }
+    for (const child of Object.values(value)) {
+      if (obj(child) || Array.isArray(child))
+        await validateEffectiveConfigs(child, depth + 1);
+    }
+  } else if (Array.isArray(value)) {
+    for (const child of value) {
+      if (obj(child) || Array.isArray(child))
+        await validateEffectiveConfigs(child, depth + 1);
+    }
+  }
 }
 export async function hashText(text: string) {
   const digest = await crypto.subtle.digest(
@@ -306,6 +343,10 @@ export async function validateTrace(text: string): Promise<ValidTrace> {
     (await hashText(t.input_json)) === t.input_sha256,
     "input SHA256 mismatch",
   );
+  await validateEffectiveConfigs(t);
+  await validateEffectiveConfigs(config);
+  gradientGeometry(config);
+  selectedUpdate({ trace: t } as ValidTrace);
   const ids = data.input_ids;
   check(
     Array.isArray(ids) && ids.length >= 1 && ids.length <= 8,
@@ -579,6 +620,190 @@ export async function validateTrace(text: string): Promise<ValidTrace> {
     trust: "imported_claim",
   };
 }
+
+export function selectedUpdate(value: ValidTrace) {
+  const t = value.trace,
+    m = t.measurements;
+  if (!obj(m)) return null;
+  const adapter = t.manifest.adapter;
+  let master: any, parameter: any;
+  if (
+    adapter.startsWith("bridge_") &&
+    Object.hasOwn(m, "optimizer_parameter_slice")
+  ) {
+    master = m.optimizer_parameter_slice;
+    parameter = m.parameter_slice;
+  } else if (
+    adapter === "nemo_full_token_v1" &&
+    obj(m.update) &&
+    Object.hasOwn(m.update, "optimizer_parameter")
+  ) {
+    master = m.update.optimizer_parameter;
+    parameter = m.update.parameter;
+  }
+  let values: any, identity: string, role: string, dtype: string;
+  if (master !== undefined) {
+    check(obj(master) && obj(parameter), "invalid selected gradient mapping");
+    check(
+      typeof parameter.name === "string" &&
+        parameter.name &&
+        Array.isArray(parameter.index) &&
+        parameter.index.length >= 1 &&
+        parameter.index.length <= 8 &&
+        parameter.index.every((v: any) => int(v) && v >= 0),
+      "invalid selected parameter identity",
+    );
+    values = master;
+    identity = parameter.name + "[" + parameter.index.join(",") + "]";
+    role = "optimizer_master";
+    dtype = master.dtype;
+  } else if (adapter === "authored_cpu_v1" && obj(m.update)) {
+    values = m.update;
+    identity = values.parameter;
+    check(
+      typeof identity === "string" &&
+        /^[A-Za-z0-9_.]+\[[0-9]+(?:,[0-9]+)*\]$/.test(identity),
+      "unknown authored parameter identity",
+    );
+    role = "model_parameter";
+    dtype = t.manifest.dtype;
+  } else return null;
+  check(
+    ["before", "gradient", "after"].every((k) => num(values[k])),
+    "selected gradient/update must be finite numbers",
+  );
+  check(
+    [
+      "float64",
+      "float32",
+      "bfloat16",
+      "float16",
+      "torch.float64",
+      "torch.float32",
+      "torch.bfloat16",
+      "torch.float16",
+    ].includes(dtype),
+    "unknown selected gradient dtype",
+  );
+  return {
+    parameter: identity,
+    role,
+    dtype: dtype.replace(/^torch\./, ""),
+    before: values.before as number,
+    gradient: values.gradient as number,
+    after: values.after as number,
+  };
+}
+
+function gradientGeometry(config: Record<string, any>) {
+  const g = config.gradient_geometry;
+  if (g === undefined || g === null) return null;
+  check(
+    obj(g) && g.scope === "trainable_gradient_tensors",
+    "unknown gradient geometry scope",
+  );
+  check(
+    Array.isArray(g.tensors) && g.tensors.length >= 1 && g.tensors.length <= 4,
+    "invalid gradient geometry tensor count",
+  );
+  const names = new Set<string>();
+  let bytes = 0,
+    elements = 0;
+  for (const tensor of g.tensors) {
+    check(
+      obj(tensor) &&
+        Object.keys(tensor).sort().join(",") === "dtype,parameter,shape",
+      "unknown gradient geometry fields",
+    );
+    check(
+      typeof tensor.parameter === "string" &&
+        tensor.parameter &&
+        !names.has(tensor.parameter),
+      "duplicate/missing gradient tensor identity",
+    );
+    names.add(tensor.parameter);
+    const shape = tensor.shape;
+    check(
+      Array.isArray(shape) &&
+        shape.length >= 1 &&
+        shape.length <= 8 &&
+        shape.every((v) => int(v) && v >= 1 && v <= 10000000),
+      "invalid gradient geometry shape",
+    );
+    const n = shape.reduce((a, b) => a * b, 1);
+    check(n <= 1000000000000, "invalid gradient geometry shape");
+    check(
+      ["float64", "float32", "bfloat16", "float16"].includes(tensor.dtype),
+      "unknown gradient geometry dtype",
+    );
+    elements += n;
+    bytes +=
+      n *
+      (
+        { float64: 8, float32: 4, bfloat16: 2, float16: 2 } as Record<
+          string,
+          number
+        >
+      )[tensor.dtype];
+  }
+  return { elements, bytes, tensors: g.tensors };
+}
+
+export function communicationTheory(value: ValidTrace, participants: number) {
+  check(
+    int(participants) && participants >= 1 && participants <= 64,
+    "invalid hypothetical DP size",
+  );
+  const g = gradientGeometry(value.config);
+  if (!g) return null;
+  return {
+    ...g,
+    participants,
+    provenance: "derived" as const,
+    sent_bytes_per_rank: ((2 * (participants - 1)) / participants) * g.bytes,
+    received_bytes_per_rank:
+      ((2 * (participants - 1)) / participants) * g.bytes,
+    observed: null,
+    scope:
+      "假设对文件声明的完整可训练梯度做 ring AllReduce；不含协议、拓扑和临时缓冲，不代表实际执行",
+  };
+}
+
+function lossDefinition(value: ValidTrace) {
+  if (value.trace.task === "sft") return "masked-next-token-global-token-mean";
+  const c = value.config;
+  return JSON.stringify(
+    [
+      "algorithm",
+      "loss_variant",
+      "reduction",
+      "ratio_clip",
+      "kl_beta",
+      "kl_input_clamp",
+      "kl_output_clamp",
+      "force_on_policy",
+      "offpolicy_correction",
+      "kl_sampling",
+      "value_clip",
+      "value_scale",
+    ].map((k) => c[k] ?? null),
+  );
+}
+
+export function traceContext(value: ValidTrace) {
+  const t = value.trace;
+  return {
+    shape: [value.data.input_ids.length, value.data.input_ids[0].length],
+    token_count: value.token_count,
+    dtype: t.manifest.dtype,
+    provenance: t.provenance,
+    evidence: t.manifest.evidence_kind,
+    versions: value.data.policy_versions ?? null,
+    step: t.measurements?.step_before ?? null,
+    communication_observed: "未采集",
+  };
+}
+
 export function compareTraces(left: ValidTrace, right: ValidTrace) {
   const a = left.trace,
     b = right.trace;
@@ -602,8 +827,46 @@ export function compareTraces(left: ValidTrace, right: ValidTrace) {
   const field = a.task === "sft" ? "token_logprobs" : "current_logprobs";
   const x = a.measurements[field] as number[][],
     y = b.measurements[field] as number[][];
+  const lossField = a.task === "sft" ? "loss_mean" : "policy_loss";
+  const compatibleLoss = lossDefinition(left) === lossDefinition(right);
+  const u = selectedUpdate(left),
+    v = selectedUpdate(right);
+  const gradientReason =
+    !u || !v
+      ? "未采集可比较的选定梯度"
+      : !compatibleLoss
+        ? "loss 定义不一致"
+        : u.parameter !== v.parameter ||
+            u.role !== v.role ||
+            u.dtype !== v.dtype
+          ? "参数坐标、梯度角色或 dtype 不一致"
+          : u.before !== v.before
+            ? "选定参数的更新前值不一致"
+            : null;
   return {
     field,
+    shape: traceContext(left).shape,
+    contexts: [traceContext(left), traceContext(right)],
+    loss: {
+      field: lossField,
+      left: a.measurements[lossField],
+      right: b.measurements[lossField],
+      absolute_difference: compatibleLoss
+        ? Math.abs(a.measurements[lossField] - b.measurements[lossField])
+        : null,
+      reason: compatibleLoss ? null : "loss 定义不一致",
+    },
+    gradient: {
+      left: u,
+      right: v,
+      reason: gradientReason,
+      absolute_difference:
+        gradientReason === null ? Math.abs(u!.gradient - v!.gradient) : null,
+      update_absolute_difference:
+        gradientReason === null
+          ? Math.abs(u!.after - u!.before - (v!.after - v!.before))
+          : null,
+    },
     max_abs_difference: Math.max(
       ...x.flat().map((v, i) => Math.abs(v - y.flat()[i])),
     ),

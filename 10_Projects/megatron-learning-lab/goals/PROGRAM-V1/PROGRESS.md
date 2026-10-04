@@ -9,7 +9,7 @@ reviewed: false
 
 # PROGRAM-V1 进度
 
-当前：M00/G02/G03/G04/G05/G06/G07 validated，G08 in_progress。HEAD b9f4780；后续改动保留工作区，不自动提交。所有代码/测试在 minimind-megatron-bridge-dev-1 执行。
+当前：M00/G02–G08 validated，G09 in_progress；R01/R02 blocked_external。最近已提交基点 cacaa13；本轮用户明确授权提交和推送当前工作。所有代码/测试在 minimind-megatron-bridge-dev-1 执行。
 
 ## M00 · 2026-10-04
 
@@ -237,3 +237,28 @@ nemo_entry 的可注入委托边界执行固定官方 launcher 函数体，依�
 后续 G08 仍需补足正式启动接口/元数据检查、RL supervisor 分支覆盖，以及强制超时下 Ray 子进程清理的验证，再进行完整阶段自审。内层配置字符串的独立 schema/hash 校验和 R01/R02 的实际 tokenizer、模型、GPU 训练及 refit 数值验证仍未完成；当前合约与软件回归不证明生产运行兼容性。
 
 最终提交快照完整基线通过 160 项 Python、93 项 Chromium，skipped/flaky/unexpected 均为 0；数据生成、handoff、源码片段、构建与 diff 检查全部通过。报告 runs/goal-g01/20261004T225424088348Z/report.json，SHA256 62567bdce64cef18bba059838d6319c36f243b1aecb47ce241744f7321955928，源码指纹 08eaac3e38d5ffc667a3a759519f48da899af941cbbbbb2f8f92f42d164ae6f2。已逐项核对当前源码和日志 hash，核验档案位于 runs/commit-check-nemo-observer/。G08 和真实运行阶段状态不变。
+
+## G08 · 启动前检查与独占进程回收
+
+从 cacaa13 恢复，fetch 后与 origin/main 一致、工作区干净，原生 Goal active，planner 继续 G08，无完整性错误。上一轮完成 160 Python/93 Chromium 回归与用户要求的提交，属于有效进展；本轮恢复不提交/推送。范围：experiments/runtime/{plan,source_probe,nemo_metadata,launch,process_guard}.py、对应 tests/test_runtime_*.py 与 tests/runtime-contracts.mjs；按需补 trace 内层配置校验和课程/运行说明，再完成阶段自审与 gate。
+
+行为验收：①正式框架导入前拒绝模型/tokenizer remote-code 映射与未知家族；②绑定实际 Policy/worker/setup/refit/rollout 等关键源码及接口，变更后的 receipt 不可复用；③RL 分支只接受精确授权、受控环境和真实完成状态；④超时、日志上限和 leader 提前退出后，清理本次调用拥有的 setsid/双重派生子进程，保留无关进程；⑤合约测试无 GPU/模型/Ray 初始化，元数据与模拟成功不作为真实 runtime 证明。
+
+本轮启动检查 19 项通过（nemo-startup-preflight.log），随后追加 supervisor 异常终结 receipt 的用例。独立 Linux reaper 的 7 项真实 stdlib 子进程检查通过（process-guard-preflight.log），覆盖 setsid/双重派生/TERM 忽略/父进程退出、无关 sibling 和调用者 reaper 状态。合约专项通过 43 项跨语言判定、全部 CPU/配置/observer 检查（runtime-startup-config-preflight.log）；新增完整配置面板的 6 条运行页浏览器路径通过，当前完整基线 170 Python/94 Chromium 通过，待阶段 gate 全部结束后更新 STATE。
+
+只读资源查询识别 GPU0 为 RTX 3060 Laptop、6144 MiB。按固定 Qwen3 config 推导 596049920 参数，现有 BF16 weights/FP32 master/Adam moments 为 14 bytes/parameter，合计约 7.77 GiB，尚不含梯度/激活/临时缓冲；这是 derived 下界项，不是显存实测。模型/tokenizer snapshot、NeMo checkout 和授权清单缺失；已保存 runs/program-v1/resource-proposal.json，并通过异步问题请求可用资源信息。未执行 GPU 计算，资源缺口不阻止 G09。
+
+G08 gate 全部通过并核对当前源码、各日志和 artifact hash：runs/program-v1/G08/20261004T232220705471Z/report.json，SHA256 6b68a771300de3f429cf181a08bc3e750e12b1f756fe6863f9139af8744cf17f，源码指纹 4932bb5e59c5b1e6f2f5697f00bfcfe9b0184c03160102bf4fdfb7b14b7cf8e1。STATE 将 G08 标为 validated，R01/R02 标记具体资源/依赖阻塞，继续 G09；未将总 Goal 标完成。
+
+## G09 · 整合与同一快照交付范围
+
+依赖 G02–G08 已验证。范围：web/runtime/trace.ts、RuntimeLab.tsx、必要 experiments/runtime/{contracts,reference_trace}.py 与小型参考 fixture，tests/runtime-contracts.mjs、tests/browser/release.spec.ts、独立 production Playwright 配置、tools/release_gate.py、package.json、README.md 和阶段报告。行为验收：①同数据定义比较 shape/loss/选定梯度/版本并明确不匹配原因；②通信理论由显式张量尺寸计算，真实通信缺失保持未采集；③现有样本→整模→更新→并行→MLA/MoE→RL/源码路线可达；④生产预览验证直接/嵌套路由、离线数学/字体、窄屏、键盘及缺证据降级；⑤同一最终快照重跑全部数值/源码/浏览器/构建检查，生成报告索引/源码和依赖配置指纹；⑥真实运行仍阻塞时仅报告 software_ready_runtime_blocked。
+
+
+## 2026-10-05 · G08 验收与 G09 比较界面提交 checkpoint
+
+用户明确授权 commit & push。本次提交范围为当前 G08 启动前元数据/源码检查、专属子进程回收、内层配置结构/hash 校验，以及 G09 已实现的 shape/loss/选定梯度/版本比较和通信预算，连同 CPU 参考数据、课程、进度记录及测试。不包含尚未实现的 production smoke、release gate、最终 README/报告整合；G09 继续保持 in_progress。
+
+53 项跨语言合约与全部 runtime CPU/配置检查已通过，日志 runs/program-v1/G09/comparison-contracts.log。新增浏览器行为检查覆盖相同输入的 loss/梯度/更新差、DP4 的 2688 B/rank 派生发送与接收、缺少尺寸或梯度、不兼容坐标及非法尺寸导入后清除旧结果。通信预算不代表 NCCL 实测，导入来源保持 imported_claim。真实 GPU/SFT/RL 仍未执行，资源阻塞不变。
+
+提交快照完整基线通过 172 项 Python、96 项 Chromium，skipped/flaky/unexpected=0；数据生成、handoff、源码片段、构建与 diff 检查全部通过。报告 runs/goal-g01/20261004T234439348128Z/report.json，SHA256 e9ca38243d43feab8cba6b97d916a4817b9b44d7c1a7fcb38cb89e9cc3ad8dc2，PROGRAM 源码指纹 02fdc3ffa4d13a36244a7bd70ddcdd53ba0fe137f828f2087f9de0a7f53808d4。当前源码与全部基线日志 hash 已复核，核验档案在 runs/commit-check-runtime-diagnostics/；已查看比较界面的手机截图，表格保持局部滚动。该提交不代表 G09 完整发布验收或真实训练完成。

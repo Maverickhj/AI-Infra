@@ -5,6 +5,7 @@ import {
   parseTraceJSON,
   validateTrace,
   compareTraces,
+  communicationTheory,
   hashText,
 } from "../web/runtime/trace.ts";
 const env = { ...process.env, CUDA_VISIBLE_DEVICES: "" };
@@ -34,6 +35,7 @@ python([
   "tests.test_runtime_nemo_extension",
   "tests.test_runtime_nemo_events",
   "tests.test_runtime_nemo_loading",
+  "tests.test_runtime_nemo_startup",
   "-v",
 ]);
 python(["-m", "tests.runtime_adapter_cpu_checks"]);
@@ -156,6 +158,161 @@ for (const text of [
   '{\u00a0"x":1}',
 ])
   inputs.push({ name: "bounded strict JSON", text, valid: false });
+
+const wide = JSON.stringify({
+  model: Object.fromEntries(
+    Array.from({ length: 308 }, (_, i) => ["field_" + i, i]),
+  ),
+  threshold: { float_sentinel: "+inf" },
+});
+for (const [name, inner, hashOverride, valid] of [
+  ["308-field effective config", wide, null, true],
+  ["wrong inner hash", wide, "0".repeat(64), false],
+  ["duplicate inner key", '{"x":1,"x":2}', null, false],
+  ["unsafe inner key", '{"constructor":{}}', null, false],
+  ["nonfinite inner value", '{"x":NaN}', null, false],
+  ["inner is not object", "[]", null, false],
+  ["invalid float tag", '{"float_sentinel":"NaN"}', null, false],
+  [
+    "wide inner object",
+    JSON.stringify(
+      Object.fromEntries(Array.from({ length: 513 }, (_, i) => ["x" + i, i])),
+    ),
+    null,
+    false,
+  ],
+  [
+    "deep inner object",
+    '{"x":' + "[".repeat(34) + "0" + "]".repeat(34) + "}",
+    null,
+    false,
+  ],
+  [
+    "large inner array",
+    JSON.stringify({ x: Array(65537).fill(0) }),
+    null,
+    false,
+  ],
+]) {
+  const trace = structuredClone(fresh.traces[0]);
+  trace.manifest.evidence_kind = "synthetic_contract";
+  trace.manifest.execution = { status: "synthetic", synthetic: true };
+  const config = JSON.parse(trace.config_json);
+  Object.assign(config, {
+    effective_config_json: inner,
+    effective_config_sha256: hashOverride ?? (await hashText(inner)),
+  });
+  trace.config_json = JSON.stringify(config);
+  trace.config_sha256 = await hashText(trace.config_json);
+  inputs.push({ name, text: JSON.stringify(trace), valid });
+}
+const nestedBadConfig = structuredClone(fresh.traces[0]);
+nestedBadConfig.measurements.worker_loading = {
+  effective_config_json: wide,
+  effective_config_sha256: "0".repeat(64),
+};
+inputs.push({
+  name: "nested worker config hash",
+  text: JSON.stringify(nestedBadConfig),
+  valid: false,
+});
+const wideOuter = structuredClone(fresh.traces[0]);
+wideOuter.manifest.unbounded = Object.fromEntries(
+  Array.from({ length: 257 }, (_, i) => ["x" + i, i]),
+);
+inputs.push({
+  name: "outer object bound unchanged",
+  text: JSON.stringify(wideOuter),
+  valid: false,
+});
+
+const rlValid = await validateTrace(JSON.stringify(fresh.traces[1]));
+const same = compareTraces(rlValid, rlValid);
+assert.equal(same.loss.absolute_difference, 0);
+assert.equal(same.gradient.absolute_difference, 0);
+assert.equal(same.gradient.update_absolute_difference, 0);
+assert.deepEqual(same.shape, [4, 13]);
+const budget = communicationTheory(rlValid, 4);
+assert.equal(budget.elements, 224); // 27*8 actor head + 8 critic
+assert.equal(budget.bytes, 1792); // float64 gradients
+assert.equal(budget.sent_bytes_per_rank, 2688); // 2*(4-1)/4*1792
+assert.equal(budget.received_bytes_per_rank, 2688);
+assert.equal(budget.observed, null);
+assert.equal(communicationTheory(rlValid, 1).sent_bytes_per_rank, 0);
+const sftValid = await validateTrace(JSON.stringify(fresh.traces[0]));
+assert.equal(communicationTheory(sftValid, 4), null);
+assert.match(compareTraces(sftValid, sftValid).gradient.reason, /未采集/);
+const changedGradient = structuredClone(fresh.traces[1]);
+changedGradient.manifest.evidence_kind = "synthetic_contract";
+changedGradient.manifest.execution = { status: "synthetic", synthetic: true };
+changedGradient.measurements.update.gradient += 0.125;
+changedGradient.measurements.update.after += 0.25;
+const changedValid = await validateTrace(JSON.stringify(changedGradient));
+assert.ok(
+  Math.abs(
+    compareTraces(rlValid, changedValid).gradient.absolute_difference - 0.125,
+  ) < 1e-12,
+);
+assert.ok(
+  Math.abs(
+    compareTraces(rlValid, changedValid).gradient.update_absolute_difference -
+      0.25,
+  ) < 1e-12,
+);
+changedGradient.measurements.update.parameter = "head[11,0]";
+assert.match(
+  compareTraces(rlValid, await validateTrace(JSON.stringify(changedGradient)))
+    .gradient.reason,
+  /参数坐标/,
+);
+changedGradient.measurements.update.parameter = "head[10,0]";
+changedGradient.measurements.update.before += 0.1;
+assert.match(
+  compareTraces(rlValid, await validateTrace(JSON.stringify(changedGradient)))
+    .gradient.reason,
+  /更新前值/,
+);
+for (const [name, mutate] of [
+  ["wrong gradient scalar", (t) => (t.measurements.update.gradient = "0.1")],
+  [
+    "unknown parameter coordinate",
+    (t) => (t.measurements.update.parameter = "head[unknown]"),
+  ],
+  [
+    "null optimizer master",
+    (t) => {
+      t.manifest.adapter = "nemo_full_token_v1";
+      t.measurements.update.optimizer_parameter = null;
+    },
+  ],
+]) {
+  const t = structuredClone(fresh.traces[1]);
+  mutate(t);
+  inputs.push({ name, text: JSON.stringify(t), valid: false });
+}
+for (const [name, mutate] of [
+  ["unknown gradient geometry", (g) => (g.scope = "guessed")],
+  ["empty gradient shape", (g) => (g.tensors[0].shape = [])],
+  ["boolean gradient shape", (g) => (g.tensors[0].shape = [true])],
+  [
+    "oversized gradient shape",
+    (g) => (g.tensors[0].shape = [10000000, 10000000]),
+  ],
+  ["unknown gradient dtype", (g) => (g.tensors[0].dtype = "packed")],
+  [
+    "duplicate gradient name",
+    (g) => (g.tensors[1].parameter = g.tensors[0].parameter),
+  ],
+  ["unknown geometry field", (g) => (g.tensors[0].sent_bytes = 12)],
+]) {
+  const t = structuredClone(fresh.traces[1]),
+    config = JSON.parse(t.config_json);
+  mutate(config.gradient_geometry);
+  t.config_json = JSON.stringify(config);
+  t.config_sha256 = await hashText(t.config_json);
+  inputs.push({ name, text: JSON.stringify(t), valid: false });
+}
+
 const script = `import json,sys
 from experiments.runtime.contracts import read_trace
 out=[]
@@ -187,7 +344,7 @@ console.log(
       cross_language_cases: inputs.length,
       fresh_cpu_traces: fresh.traces.length,
       adapter_cpu_tests: 11,
-      python_contract_tests: 14,
+      python_contract_tests: 18,
       nemo_worker_extension_tests: 5,
       nemo_event_ordering_tests: 7,
       python_capture_tests: 8,
@@ -199,7 +356,8 @@ console.log(
       nemo_loss_and_worker_cpu_tests: 9,
       runtime_plan_tests: 7,
       tokenizer_contract_tests: 4,
-      subprocess_guard_tests: 5,
+      subprocess_guard_tests: 7,
+      nemo_startup_tests: 6,
       bridge_configuration_and_cpu_tests: 4,
       scope:
         "authored CPU and explicitly synthetic contracts; production runtime not executed",

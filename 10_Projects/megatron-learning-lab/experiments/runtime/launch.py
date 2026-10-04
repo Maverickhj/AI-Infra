@@ -6,11 +6,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import selectors
-import signal
 import subprocess
 import sys
-import time
 
 from .contracts import require
 from .plan import ROOT, check_grant, digest, inspect_plan, read_document, validate_plan
@@ -21,60 +18,19 @@ def now():
 
 
 def supervised_process(argv, *, cwd, env, log_path, max_seconds, max_output_bytes=16*1024*1024):
-    """Own a fresh process group; terminate only this invocation on a limit."""
-    start = time.monotonic()
-    reason = None
-    total = 0
-    with Path(log_path).open("xb") as output:
-        proc = subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE,
-                                stderr=subprocess.STDOUT, start_new_session=True)
-        selector = selectors.DefaultSelector()
-        selector.register(proc.stdout, selectors.EVENT_READ)
-        try:
-            while selector.get_map() or proc.poll() is None:
-                if time.monotonic() - start >= max_seconds:
-                    reason = "wall_time_limit"
-                    break
-                for key, _ in selector.select(timeout=min(.1, max_seconds)):
-                    raw = os.read(key.fileobj.fileno(), 65536)
-                    if not raw:
-                        selector.unregister(key.fileobj)
-                        continue
-                    total += len(raw)
-                    output.write(raw[:max(0, max_output_bytes-(total-len(raw)))])
-                    if total > max_output_bytes:
-                        reason = "output_limit"
-                        break
-                if reason:
-                    break
-            if reason:
-                try:
-                    os.killpg(proc.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    pass
-                # A child can outlive its exited group leader. Always finish
-                # this owned group after the cleanup grace period.
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            returncode = proc.wait(timeout=5)
-        finally:
-            selector.close()
-            proc.stdout.close()
-            if proc.poll() is None:
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                proc.wait()
-    return dict(status="passed" if returncode == 0 and reason is None else "failed",
-                returncode=returncode, stop_reason=reason, output_bytes=total,
-                elapsed_wall_seconds=time.monotonic()-start)
+    """Delegate to a private Linux reaper, including detached descendants."""
+    require(max_seconds > 0 and max_output_bytes > 0, "invalid subprocess bounds")
+    guard = Path(__file__).with_name("process_guard.py")
+    result = subprocess.run([sys.executable, "-S", str(guard),
+        "--log", str(Path(log_path).resolve()), "--seconds", str(max_seconds),
+        "--bytes", str(max_output_bytes), "--parent", str(os.getpid()), "--", *argv],
+        cwd=cwd, env=env, text=True, capture_output=True)
+    require(result.returncode == 0, "owned process guard failed: " + result.stderr[-4096:])
+    record = json.loads(result.stdout)
+    require(record.get("ownership") == "dedicated_linux_subreaper_pidfd"
+            and record.get("descendant_cleanup", {}).get("status") == "completed",
+            "owned runtime descendants were not fully cleaned up")
+    return record
 
 
 def launch(plan_path, resources_path):
@@ -117,8 +73,11 @@ def launch(plan_path, resources_path):
     env.update(receipt["environment"])
     env["TOKENIZERS_PARALLELISM"] = "false"
     env["OMP_NUM_THREADS"] = "1"
-    result = supervised_process(argv, cwd=ROOT, env=env, log_path=output/"runtime.log",
-                                max_seconds=plan["execution"]["max_wall_seconds"])
+    try:
+        result = supervised_process(argv, cwd=ROOT, env=env, log_path=output/"runtime.log",
+                                    max_seconds=plan["execution"]["max_wall_seconds"])
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        result = dict(status="failed", returncode=None, stop_reason="supervisor_error", error=str(exc))
     if result["status"] == "passed":
         try:
             final = read_document(output/"result.json")

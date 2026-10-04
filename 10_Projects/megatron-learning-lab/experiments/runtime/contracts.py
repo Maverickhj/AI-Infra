@@ -34,7 +34,7 @@ def digest_text(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def finite_tree(value, depth=0):
+def finite_tree(value, depth=0, *, max_object_keys=256):
     require(depth <= 32, "JSON nesting exceeds limit")
     if value is None or isinstance(value, (str, bool)):
         return
@@ -43,17 +43,17 @@ def finite_tree(value, depth=0):
     elif isinstance(value, list):
         require(len(value) <= 65536, "array exceeds limit")
         for item in value:
-            finite_tree(item, depth + 1)
+            finite_tree(item, depth + 1, max_object_keys=max_object_keys)
     elif isinstance(value, dict):
-        require(len(value) <= 256, "object exceeds limit")
+        require(len(value) <= max_object_keys, "object exceeds limit")
         for key, item in value.items():
             require(isinstance(key, str) and key not in ("__proto__", "prototype", "constructor"), "unsafe JSON key")
-            finite_tree(item, depth + 1)
+            finite_tree(item, depth + 1, max_object_keys=max_object_keys)
     else:
         raise ValueError("unsupported JSON value")
 
 
-def strict_json(text):
+def _bounded_json(text, max_object_keys):
     require(isinstance(text, str) and len(text.encode("utf-8")) <= MAX_BYTES, "trace exceeds 1 MiB or is not text")
     def pairs(items):
         result = {}
@@ -65,8 +65,40 @@ def strict_json(text):
         value = json.loads(text, object_pairs_hook=pairs)
     except (json.JSONDecodeError, RecursionError) as exc:
         raise ValueError("invalid JSON") from exc
-    finite_tree(value)
+    finite_tree(value, max_object_keys=max_object_keys)
     return value
+
+
+def strict_json(text):
+    return _bounded_json(text, 256)
+
+
+def validate_effective_configs(value, depth=0):
+    """Validate encoded config objects and exact bytes, never execute targets.
+
+    Only the inner resolved configuration allows 512 keys per object, because
+    the actual Bridge model configuration has 308 fields. Outer traces retain
+    their original 256-key bound; bytes/depth/arrays/duplicates remain bounded.
+    """
+    require(depth <= 32, "effective config nesting exceeds limit")
+    if isinstance(value, dict):
+        if "effective_config_json" in value or "effective_config_sha256" in value:
+            text = value.get("effective_config_json")
+            decoded = _bounded_json(text, 512)
+            require(isinstance(decoded, dict), "effective config must encode an object")
+            require(value.get("effective_config_sha256") == digest_text(text),
+                    "effective config SHA256 mismatch")
+            validate_effective_configs(decoded, depth+1)
+        if "float_sentinel" in value:
+            require(set(value) == {"float_sentinel"} and value["float_sentinel"] in ("+inf", "-inf"),
+                    "invalid effective config float sentinel")
+        for child in value.values():
+            if isinstance(child, (dict, list)):
+                validate_effective_configs(child, depth+1)
+    elif isinstance(value, list):
+        for child in value:
+            if isinstance(child, (dict, list)):
+                validate_effective_configs(child, depth+1)
 
 
 def hashed_json(trace, key):
@@ -182,6 +214,62 @@ def validate_input(data, config, task):
     return b, s, mask
 
 
+def selected_update(trace):
+    """Known diagnostic layouts only; no guessed parameter aliases or defaults."""
+    m = trace.get("measurements")
+    if not isinstance(m, dict):
+        return None
+    adapter = trace["manifest"]["adapter"]
+    master = parameter = None
+    has_master = False
+    if adapter.startswith("bridge_") and "optimizer_parameter_slice" in m:
+        master, parameter = m["optimizer_parameter_slice"], m.get("parameter_slice")
+        has_master = True
+    elif adapter == "nemo_full_token_v1" and isinstance(m.get("update"), dict) and "optimizer_parameter" in m["update"]:
+        master, parameter = m["update"]["optimizer_parameter"], m["update"].get("parameter")
+        has_master = True
+    if has_master:
+        require(isinstance(master, dict) and isinstance(parameter, dict), "invalid selected gradient mapping")
+        name, index = parameter.get("name"), parameter.get("index")
+        require(isinstance(name, str) and name and isinstance(index, list) and 1 <= len(index) <= 8
+                and all(integer(v) and v >= 0 for v in index), "invalid selected parameter identity")
+        values, identity, role = master, name+"["+",".join(map(str,index))+"]", "optimizer_master"
+        dtype = master.get("dtype")
+    elif adapter == "authored_cpu_v1" and isinstance(m.get("update"), dict):
+        values = m["update"]
+        identity = values.get("parameter")
+        require(isinstance(identity, str) and re.fullmatch(r"[A-Za-z0-9_.]+\[[0-9]+(?:,[0-9]+)*\]", identity),
+                "unknown authored parameter identity")
+        dtype, role = trace["manifest"]["dtype"], "model_parameter"
+    else:
+        return None
+    require(all(number(values.get(k)) for k in ("before", "gradient", "after")), "selected gradient/update must be finite numbers")
+    require(dtype in ("float64","float32","bfloat16","float16","torch.float64","torch.float32","torch.bfloat16","torch.float16"),
+            "unknown selected gradient dtype")
+    return dict(parameter=identity, role=role, dtype=dtype.removeprefix("torch."),
+                before=values["before"], gradient=values["gradient"], after=values["after"])
+
+
+def validate_gradient_geometry(config):
+    geometry = config.get("gradient_geometry")
+    if geometry is None:
+        return
+    require(isinstance(geometry, dict) and geometry.get("scope") == "trainable_gradient_tensors",
+            "unknown gradient geometry scope")
+    tensors = geometry.get("tensors")
+    require(isinstance(tensors, list) and 1 <= len(tensors) <= 4, "invalid gradient geometry tensor count")
+    names = set()
+    for tensor in tensors:
+        require(isinstance(tensor, dict) and set(tensor) == {"parameter","shape","dtype"}, "unknown gradient geometry fields")
+        name, shape = tensor["parameter"], tensor["shape"]
+        require(isinstance(name, str) and name and name not in names, "duplicate/missing gradient tensor identity")
+        names.add(name)
+        require(isinstance(shape, list) and 1 <= len(shape) <= 8
+                and all(integer(v) and 1 <= v <= 10_000_000 for v in shape)
+                and math.prod(shape) <= 1_000_000_000_000, "invalid gradient geometry shape")
+        require(tensor["dtype"] in ("float64","float32","bfloat16","float16"), "unknown gradient geometry dtype")
+
+
 def _validate_trace(trace):
     require(isinstance(trace, dict) and trace.get("schema") == SCHEMA and trace.get("schema_version") == 1,
             "unknown trace schema/version")
@@ -194,6 +282,10 @@ def _validate_trace(trace):
     require((provenance != "observed_bridge" or task == "sft") and (provenance != "observed_rl" or task == "rl"), "provenance/task mismatch")
     validate_identity(trace.get("manifest"), provenance)
     config, data = hashed_json(trace, "config"), hashed_json(trace, "input")
+    validate_effective_configs(trace)
+    validate_effective_configs(config)
+    validate_gradient_geometry(config)
+    selected_update(trace)
     b, s, mask = validate_input(data, config, task)
     m = trace.get("measurements")
     if provenance == "derived":

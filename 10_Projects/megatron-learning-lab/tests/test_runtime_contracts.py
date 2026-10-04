@@ -170,5 +170,69 @@ class RuntimeContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,"reduction"):validate_trace(trace)
 
 
+    def test_inner_effective_config_checks_hash_and_keeps_outer_object_bound(self):
+        inner=json.dumps({"model":{f"field_{i}":i for i in range(308)},
+                          "threshold":{"float_sentinel":"+inf"}},separators=(",",":"))
+        self.sft["manifest"]["evidence_kind"]="synthetic_contract"
+        self.sft["manifest"]["execution"].update(status="synthetic",synthetic=True)
+        self.change_json(self.sft,"config",lambda c:c.update(
+            effective_config_json=inner,effective_config_sha256=digest_text(inner)))
+        self.assertEqual(validate_trace(self.sft)["status"],"valid")
+        bad=copy.deepcopy(self.sft)
+        self.change_json(bad,"config",lambda c:c.update(effective_config_sha256="0"*64))
+        with self.assertRaisesRegex(ValueError,"effective config SHA256"):
+            validate_trace(bad)
+        bad=copy.deepcopy(self.sft)
+        bad["measurements"]["worker_loading"]={
+            "effective_config_json":inner,"effective_config_sha256":"0"*64}
+        with self.assertRaisesRegex(ValueError,"effective config SHA256"):
+            validate_trace(bad)
+        bad=copy.deepcopy(self.sft)
+        bad["manifest"]["unbounded"]={f"key_{i}":i for i in range(257)}
+        with self.assertRaisesRegex(ValueError,"object exceeds"):
+            validate_trace(bad)
+
+    def test_inner_config_json_rejects_duplicate_unsafe_nonfinite_and_excessive_data(self):
+        texts=['{"x":1,"x":2}','{"constructor":{}}','{"x":NaN}',
+               '[]','{"float_sentinel":"NaN"}',
+               json.dumps({f"key_{i}":i for i in range(513)}),
+               '{"x":'+('['*34)+'0'+(']'*34)+'}',
+               json.dumps({"x":[0]*65537})]
+        for inner in texts:
+            trace=copy.deepcopy(self.sft)
+            self.change_json(trace,"config",lambda c:c.update(
+                effective_config_json=inner,effective_config_sha256=digest_text(inner)))
+            with self.subTest(prefix=inner[:40]),self.assertRaises(ValueError):
+                validate_trace(trace)
+        for pair in ({"effective_config_json":"{}"},
+                     {"effective_config_sha256":digest_text("{}")}):
+            trace=copy.deepcopy(self.sft)
+            self.change_json(trace,"config",lambda c:c.update(pair))
+            with self.assertRaises(ValueError):validate_trace(trace)
+
+
+    def test_selected_gradient_mapping_does_not_guess_coordinates_or_numeric_strings(self):
+        from experiments.runtime.contracts import selected_update
+        result=selected_update(self.rl)
+        self.assertEqual(result["parameter"],"head[10,0]")
+        self.assertEqual(result["gradient"],self.rl["measurements"]["update"]["gradient"])
+        self.assertIsNone(selected_update(self.sft))
+        for key,value in (("gradient","0.1"),("parameter","head[unknown]"),("before",None)):
+            trace=copy.deepcopy(self.rl);trace["measurements"]["update"][key]=value
+            with self.subTest(key=key),self.assertRaises(ValueError):validate_trace(trace)
+
+    def test_gradient_geometry_records_dimensions_without_claiming_a_collective(self):
+        trace=copy.deepcopy(self.rl)
+        geometry=json.loads(trace["config_json"])["gradient_geometry"]
+        self.assertEqual(geometry["tensors"],[
+            dict(parameter="head",shape=[27,8],dtype="float64"),
+            dict(parameter="critic",shape=[8],dtype="float64")])
+        self.assertEqual(validate_trace(trace)["status"],"valid")
+        for field,value in (("shape",[]),("shape",[True]),("shape",[10000000,10000000]),("dtype","unknown")):
+            bad=copy.deepcopy(trace)
+            self.change_json(bad,"config",lambda c:c["gradient_geometry"]["tensors"][0].update({field:value}))
+            with self.assertRaises(ValueError):validate_trace(bad)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

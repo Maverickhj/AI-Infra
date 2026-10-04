@@ -9,7 +9,7 @@ reviewed: false
 
 # 从同一批输入到可比较的运行证据
 
-> G08 正在接入软件。当前可只读导入 trace、检查字段与数值、查看明确的数据映射；这不证明 Bridge 或 NeMo RL 已实际训练。内置 SFT/PPO 数据由 authored 两层模型在 CPU 执行生成，属于 reference。真实模型/引擎验证分别归 R01/R02。
+> 本页实现 G08 的接入软件合约。当前可只读导入 trace、检查字段与数值、查看明确的数据映射；这不证明 Bridge 或 NeMo RL 已实际训练。内置 SFT/PPO 数据由 authored 两层模型在 CPU 执行生成，属于 reference。真实模型/引擎验证分别归 R01/R02。
 
 ## 从整模与样本进入
 
@@ -92,7 +92,11 @@ env -u PYTHONPATH uv run --no-project python -S tools/runtime_cli.py probe-bridg
 env -u PYTHONPATH uv run --no-project python -S tools/runtime_cli.py validate-trace path/to/single-trace.json
 ```
 
-`probe-bridge` 只解析源码 AST，不导入 launcher。它发现当前 Qwen3 recipe 没有 hf_path 参数，所以不会把命令行上看似存在的参数误当作权重已经加载或离线保证。NeMo 探针同样不调用带 init_ray 的 main。实际配置采集与只读配置解析已有检查；完整运行入口、dry-run 资源绑定与采集器接线仍在 G08 实现，真实训练须另有资源授权。
+`probe-bridge` 只解析源码 AST，不导入 launcher。它发现当前 Qwen3 recipe 没有 hf_path 参数，所以不会把命令行上看似存在的参数误当作权重已经加载或离线保证。NeMo 探针同样不调用带 init_ray 的 main。实际配置采集与只读配置解析已有检查；HF/Bridge/NeMo 的入口、dry-run 资源绑定与采集器已接线；正式运行仍需精确资源授权和当前环境行为验收。样例输出路径须替换后重新绑定计划，不能直接当作已授权任务。
+
+完整运行时配置保留为内层 JSON 和独立 SHA256。网页会拒绝重复 key、非有限数、危险 key、过深/过大配置和 hash 不符，并提供“查看运行时完整配置”。实际 Bridge model 配置有 308 个字段，因此仅配置内层每对象允许至多 512 字段；普通 trace 对象仍是 256。结构/hash 一致不证明该配置已执行，也不证明参数语义正确。
+
+开发容器内可用 `tools/runtime_cli.py dry-run --plan profiles/runtime-grpo-plan.example.json` 查看命令与缺失前提，PPO 对应 `runtime-ppo-plan.example.json`。dry-run 不创建模型、GPU 或 Ray 集群；Linux 运行监督器使用独立 subreaper/pidfd 回收本次子进程。完整步骤与边界见项目 `profiles/minimum-compatibility.md`。
 
 ## 验证边界
 

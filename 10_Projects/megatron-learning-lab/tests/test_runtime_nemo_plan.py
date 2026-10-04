@@ -90,6 +90,8 @@ class NeMoBoundPlanTests(unittest.TestCase):
             ("policy.model_name", "/different/checkpoint"),
             ("policy.tokenizer.name", "/different/tokenizer"),
             ("policy.tokenizer.chat_template_kwargs", {"enable_thinking": 0}),
+            ("policy.tokenizer.chat_template", None),
+            ("policy.tokenizer.chat_template", "/unbound/template.jinja"),
             ("policy.generation.colocated.enabled", False),
             ("policy.generation.vllm_cfg.async_engine", True),
             ("policy.generation.vllm_cfg.tensor_parallel_size", 2),

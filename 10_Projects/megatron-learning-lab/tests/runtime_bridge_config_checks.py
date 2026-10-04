@@ -26,6 +26,7 @@ from transformers import AutoConfig
 from experiments.runtime.bridge_entry import build_config, optimizer_parameter
 from experiments.runtime.bridge_dataset import CanonicalDatasetProvider
 from experiments.runtime.capture import effective_config
+from experiments.runtime.contracts import validate_effective_configs
 from experiments.runtime.adapters import bridge_sft_slice
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -55,6 +56,8 @@ class BridgeConfigOnlyChecks(unittest.TestCase):
         self.assertEqual(actual["optimizer"]["grad_norm_skip_threshold"],{"float_sentinel":"+inf"})
         self.assertGreater(len(actual["model"]),256)
         self.assertEqual(len(sha),64)
+        validate_effective_configs(dict(effective_config_json=json.dumps(actual,ensure_ascii=False,separators=(",",":"),allow_nan=False),
+                                        effective_config_sha256=sha))
         self.assertFalse(torch.cuda.is_initialized())
         plan["training"]["resume_from"]="/not-loaded/checkpoint"
         restored,_,events=build_config(plan,hf_config=config)

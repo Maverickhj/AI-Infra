@@ -80,3 +80,87 @@ class RuntimeSupervisorTests(unittest.TestCase):
         self.assertEqual(child.returncode,2,child.stdout+child.stderr)
         self.assertIn("not authorized",json.loads(child.stderr)["error"])
         self.assertFalse(Path(sample.plan["execution"]["output_path"]).exists())
+
+
+    def test_detached_double_fork_is_reaped_without_touching_sibling_or_parent_state(self):
+        import ctypes
+        import signal
+        import time
+        libc=ctypes.CDLL(None,use_errno=True)
+        before=ctypes.c_int()
+        self.assertEqual(libc.prctl(37,ctypes.byref(before),0,0,0),0)
+        sibling=subprocess.Popen([sys.executable,"-S","-c","import time;time.sleep(30)"],
+                                 start_new_session=True)
+        self.addCleanup(lambda: sibling.poll() is None and sibling.kill())
+        try:
+            for early_exit in (True,False):
+                with self.subTest(early_exit=early_exit),tempfile.TemporaryDirectory() as folder:
+                    marker=Path(folder)/"detached.pid"
+                    code=f"""import os,signal,time
+from pathlib import Path
+marker=Path({str(marker)!r})
+if os.fork()==0:
+ os.setsid()
+ if os.fork(): os._exit(0)
+ signal.signal(signal.SIGTERM,signal.SIG_IGN)
+ marker.write_text(str(os.getpid()))
+ time.sleep(30)
+ os._exit(0)
+limit=time.monotonic()+2
+while not marker.exists() and time.monotonic()<limit: time.sleep(.01)
+assert marker.exists()
+{'raise SystemExit(0)' if early_exit else 'time.sleep(30)'}
+"""
+                    result=supervised_process([sys.executable,"-S","-c",code],
+                        cwd=ROOT,env=dict(os.environ),log_path=Path(folder)/"out.log",
+                        max_seconds=3 if early_exit else .3)
+                    self.assertEqual(result["ownership"],"dedicated_linux_subreaper_pidfd")
+                    self.assertEqual(result["descendant_cleanup"]["status"],"completed")
+                    self.assertGreaterEqual(result["descendant_cleanup"]["descendants_seen"],2)
+                    self.assertEqual(result["status"],"passed" if early_exit else "failed")
+                    self.assertEqual(result["stop_reason"],None if early_exit else "wall_time_limit")
+                    pid=int(marker.read_text())
+                    with self.assertRaises(ProcessLookupError):os.kill(pid,0)
+                    self.assertIsNone(sibling.poll())
+                    self.assertLess(result["elapsed_wall_seconds"],6)
+        finally:
+            sibling.terminate();sibling.wait(timeout=5)
+        after=ctypes.c_int()
+        self.assertEqual(libc.prctl(37,ctypes.byref(after),0,0,0),0)
+        self.assertEqual(after.value,before.value)
+
+    def test_parent_exit_interrupts_guard_and_reaps_detached_runtime(self):
+        import time
+        with tempfile.TemporaryDirectory() as folder:
+            marker=Path(folder)/"worker.pid"
+            log=Path(folder)/"runtime.log"
+            worker=f"""import os,signal,time
+from pathlib import Path
+os.setsid()
+signal.signal(signal.SIGTERM,signal.SIG_IGN)
+Path({str(marker)!r}).write_text(str(os.getpid()))
+time.sleep(30)
+"""
+            # The supervised leader forks a separately-sessioned worker, as a
+            # framework launcher can. Only these known synthetic processes run.
+            leader="import subprocess,sys,time;subprocess.Popen([sys.executable,'-S','-c',"+repr(worker)+"]);time.sleep(30)"
+            code=("from experiments.runtime.launch import supervised_process;import os,sys;"
+                  "supervised_process([sys.executable,'-S','-c',"+repr(leader)+"],cwd="+repr(str(ROOT))+
+                  ",env=dict(os.environ),log_path="+repr(str(log))+",max_seconds=20)")
+            parent=subprocess.Popen([sys.executable,"-S","-c",code],cwd=ROOT,
+                                    stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+            try:
+                deadline=time.monotonic()+5
+                while not marker.exists() and parent.poll() is None and time.monotonic()<deadline:
+                    time.sleep(.02)
+                self.assertTrue(marker.exists())
+                pid=int(marker.read_text())
+                parent.terminate();parent.wait(timeout=5)
+                deadline=time.monotonic()+6
+                while Path(f"/proc/{pid}").exists() and time.monotonic()<deadline:
+                    time.sleep(.02)
+                with self.assertRaises(ProcessLookupError):os.kill(pid,0)
+            finally:
+                if parent.poll() is None:
+                    parent.kill()
+                parent.communicate(timeout=10)

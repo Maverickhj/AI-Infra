@@ -2,7 +2,7 @@
 type: runbook
 status: draft
 created: 2026-09-30
-updated: 2026-09-30
+updated: 2026-10-05
 ai_generated: true
 reviewed: false
 ---
@@ -73,3 +73,25 @@ profile id、case/model id、所需能力及检查状态、实际软件版本/im
 版本与参考相同，但 loss 返回类型、mask/归约或 refit 行为与要求不符：拒绝该 profile，定位不一致项。
 
 结论：最小化的是环境和功能依赖，不是语义验证。
+
+
+## 8. G08 本地执行接口
+
+所有命令在已有 megatron-bridge 开发容器、项目目录执行。CPU 软件回归：
+
+```bash
+env -u PYTHONPATH CUDA_VISIBLE_DEVICES= npm run test:runtime-contracts
+env -u PYTHONPATH python -S tools/runtime_cli.py dry-run --plan profiles/runtime-plan.example.json
+env -u PYTHONPATH python -S tools/runtime_cli.py dry-run --plan profiles/runtime-grpo-plan.example.json
+env -u PYTHONPATH python -S tools/runtime_cli.py dry-run --plan profiles/runtime-ppo-plan.example.json
+```
+
+样例是未授权计划，输出路径包含占位符。实际使用先在 runs 下另存计划，填写已有完整 HF snapshot、真实 NeMo checkout 和新的专属输出目录；RL frozen config 中 model/data/logger/checkpoint 路径必须与计划一致。修改 frozen JSON 后用实际文件 SHA256 更新计划，再由明确用户授权绑定完整 plan SHA256。不要把样例或测试中的 authorized=true 当作授权。
+
+dry-run 输出 command/command_text 和 configuration_command；前者是授权后启动入口，后者仅解析/构造配置。probe-nemo 读取 launcher、关键接口和 Python 源文件变更指纹，不导入 NeMo。实际 NeMo 初始化、GPU/ABI、reward 环境与 vLLM 兼容性只在授权的 R02 验证。resolve-bridge 可构造真实官方配置，但阻止网络、权重与 GPU 初始化。
+
+执行由 Linux 专属 subreaper 监督，要求 /proc、pidfd；wall/log 上限会终止本次任务的子树，包含 setsid/双重派生后代，清理最多另用五秒。不会运行全局 ray stop。普通退出、父监督进程退出和错误路径也清理本次后代；失败 receipt 不可复用。
+
+NeMo 当前限定单 rank、同步、短序列、当前 Python 环境、fresh HF 转换缓存。两次训练迭代之外还会进行两次同输入 greedy 诊断生成和一次训练 policy LP 重算；PPO 还需要独立 critic 授权。最终 acknowledged 只表示官方 refit 调用成功返回，无端到端权重 hash，必须结合固定输入 LP 对齐看待。
+
+result.json 是入口完成记录；R01/R02 仍须独立比较 HF/Bridge、save/resume、HF export 和生成/训练 LP，不能仅凭结果状态完成阶段。上传 trace 的网页始终将其来源视为 imported_claim。

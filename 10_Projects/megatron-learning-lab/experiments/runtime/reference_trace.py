@@ -77,7 +77,11 @@ def generate():
     config = {**fixture["config"], "vocab_size":27, "algorithm":"ppo", "loss_variant":"clipped_pg_k3",
               "offpolicy_correction":False, "reduction":"token", "ratio_clip":fixture["config"]["clip"],
               "force_on_policy":False, "kl_sampling":"non_is_score_gradient",
-              "backbone_frozen":True, "fixture_sha256":hashlib.sha256(FIXTURE.read_bytes()).hexdigest()}
+              "backbone_frozen":True,
+              "gradient_geometry":dict(scope="trainable_gradient_tensors", tensors=[
+                  dict(parameter="head",shape=[len(r["head_gradient"]),len(r["head_gradient"][0])],dtype="float64"),
+                  dict(parameter="critic",shape=[len(r["critic_gradient"])],dtype="float64")]),
+              "fixture_sha256":hashlib.sha256(FIXTURE.read_bytes()).hexdigest()}
     data = dict(input_ids=r["ids"], response_mask=[[int(v) for v in row] for row in r["mask"]],
                 sample_mask=[1]*4, alignment="action_position", trajectory_ids=[x["id"] for x in fixture["trajectories"]],
                 prompt_ids=[x["group"] for x in fixture["trajectories"]], group_ids=[x["group"] for x in fixture["trajectories"]],

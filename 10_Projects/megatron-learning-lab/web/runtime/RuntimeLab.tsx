@@ -2,7 +2,13 @@ import { useRef, useState } from "react";
 import fixtures from "../../content/fixtures/runtime-reference.json";
 import lesson from "../../content/cases/11_runtime_contracts.md?raw";
 import { CourseDetails } from "../CourseText";
-import { compareTraces, validateTrace, type ValidTrace } from "./trace";
+import {
+  compareTraces,
+  validateTrace,
+  traceContext,
+  communicationTheory,
+  type ValidTrace,
+} from "./trace";
 
 type Slot = {
   text: string;
@@ -13,7 +19,7 @@ type Slot = {
 const blank = (): Slot => ({ text: "", value: null, error: "", busy: false });
 const format = (x: number) => x.toPrecision(9);
 function TraceView({ value }: { value: ValidTrace }) {
-  const { trace: t, data, token_count } = value;
+  const { trace: t, data, config, token_count } = value;
   const m = t.manifest,
     measured = t.measurements;
   const [row, setRow] = useState(0);
@@ -185,6 +191,18 @@ function TraceView({ value }: { value: ValidTrace }) {
         <pre>{t.config_json}</pre>
         <pre>{t.input_json}</pre>
       </details>
+      {config.effective_config_json && (
+        <details>
+          <summary>查看运行时完整配置</summary>
+          <p data-testid="trace-effective-config-boundary">
+            内层 JSON 结构和 SHA256 已校验；不证明配置已执行或来源声明属实。
+          </p>
+          <code>{config.effective_config_sha256}</code>
+          <pre data-testid="trace-effective-config">
+            {JSON.stringify(JSON.parse(config.effective_config_json), null, 2)}
+          </pre>
+        </details>
+      )}
       <button onClick={download}>导出已校验 trace</button>
     </div>
   );
@@ -197,6 +215,7 @@ export function RuntimeLab({
 }) {
   const [slots, setSlots] = useState<Slot[]>([blank(), blank()]);
   const versions = useRef([0, 0]);
+  const [hypotheticalDP, setHypotheticalDP] = useState(1);
   const replace = (index: number, patch: Partial<Slot>) =>
     setSlots((old) =>
       old.map((s, i) => (i === index ? { ...s, ...patch } : s)),
@@ -351,6 +370,59 @@ export function RuntimeLab({
             身份一致后才比较。
           </p>
         )}
+
+        {slots.some((s) => s.value) && (
+          <div
+            className="sft-table-scroll"
+            tabIndex={0}
+            role="region"
+            aria-label="两侧来源和版本"
+          >
+            <table data-testid="trace-context-compare">
+              <thead>
+                <tr>
+                  <th>槽位</th>
+                  <th>Shape / 有效 token</th>
+                  <th>来源 / dtype</th>
+                  <th>版本或训练步</th>
+                </tr>
+              </thead>
+              <tbody>
+                {slots.map((s, i) => {
+                  if (!s.value)
+                    return (
+                      <tr key={i}>
+                        <td>{i === 0 ? "A" : "B"}</td>
+                        <td colSpan={3}>未载入</td>
+                      </tr>
+                    );
+                  const c = traceContext(s.value);
+                  return (
+                    <tr key={i}>
+                      <td>{i === 0 ? "A" : "B"}</td>
+                      <td>
+                        [{c.shape.join(", ")}] / {c.token_count ?? "未测量"}
+                      </td>
+                      <td>
+                        {c.provenance} · {c.evidence} / {c.dtype}
+                      </td>
+                      <td>
+                        {c.versions
+                          ? Object.entries(c.versions)
+                              .map(([k, v]) => k + "=" + v)
+                              .join(" / ")
+                          : c.step !== null
+                            ? "step=" + c.step
+                            : "未采集"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         {compareError && <p role="status">不能逐 token 比较：{compareError}</p>}
         {comparison && (
           <>
@@ -358,6 +430,97 @@ export function RuntimeLab({
               {comparison.field} · 最大绝对差=
               {comparison.max_abs_difference.toExponential(6)}
             </p>
+
+            <div
+              className="sft-table-scroll"
+              tabIndex={0}
+              role="region"
+              aria-label="Loss 和梯度差值"
+            >
+              <table data-testid="trace-metric-compare">
+                <thead>
+                  <tr>
+                    <th>量 / 定义</th>
+                    <th>A</th>
+                    <th>B</th>
+                    <th>绝对差或缺口</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>{comparison.loss.field}</td>
+                    <td>{format(comparison.loss.left)}</td>
+                    <td>{format(comparison.loss.right)}</td>
+                    <td>
+                      {comparison.loss.reason ??
+                        format(comparison.loss.absolute_difference!)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>选定梯度</td>
+                    <td>
+                      {comparison.gradient.left
+                        ? format(comparison.gradient.left.gradient)
+                        : "未采集"}
+                    </td>
+                    <td>
+                      {comparison.gradient.right
+                        ? format(comparison.gradient.right.gradient)
+                        : "未采集"}
+                    </td>
+                    <td>
+                      {comparison.gradient.reason ??
+                        format(comparison.gradient.absolute_difference!)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>选定参数更新量</td>
+                    <td>
+                      {comparison.gradient.left
+                        ? format(
+                            comparison.gradient.left.after -
+                              comparison.gradient.left.before,
+                          )
+                        : "未采集"}
+                    </td>
+                    <td>
+                      {comparison.gradient.right
+                        ? format(
+                            comparison.gradient.right.after -
+                              comparison.gradient.right.before,
+                          )
+                        : "未采集"}
+                    </td>
+                    <td>
+                      {comparison.gradient.reason ??
+                        format(comparison.gradient.update_absolute_difference!)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p data-testid="trace-gradient-definition">
+              {comparison.gradient.left
+                ? "A：" +
+                  comparison.gradient.left.parameter +
+                  " / " +
+                  comparison.gradient.left.role +
+                  " / " +
+                  comparison.gradient.left.dtype
+                : "A：没有选定梯度"}
+              {"；"}
+              {comparison.gradient.right
+                ? "B：" +
+                  comparison.gradient.right.parameter +
+                  " / " +
+                  comparison.gradient.right.role +
+                  " / " +
+                  comparison.gradient.right.dtype
+                : "B：没有选定梯度"}
+              。
+              仅比较同一坐标与梯度角色；选定标量不代表完整梯度、权重或恢复等价。
+            </p>
+
             <p>
               {comparison.evidence.join(" ↔ ")} · {comparison.claim}
             </p>
@@ -372,6 +535,81 @@ export function RuntimeLab({
           </>
         )}
       </section>
+
+      <section className="trace-compare" aria-label="通信理论与实测边界">
+        <h3>梯度通信预算</h3>
+        <p>
+          从文件明确记录的可训练梯度张量尺寸出发，估算复制式 DP 的 ring
+          AllReduce。
+          参数梯度的单个采样值不能推断整个张量大小；没有尺寸就保留缺口。
+        </p>
+        <label>
+          假设的 DP rank 数
+          <select
+            value={hypotheticalDP}
+            onChange={(e) => setHypotheticalDP(Number(e.target.value))}
+          >
+            {[1, 2, 4, 8, 16].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p>
+          每 rank 发送量 = 2 × (p−1) / p × 梯度元素数 × 每元素字节数。p=1
+          时无需该 collective。
+        </p>
+        <div
+          className="sft-table-scroll"
+          tabIndex={0}
+          role="region"
+          aria-label="派生通信与实测表"
+        >
+          <table data-testid="trace-communication-compare">
+            <thead>
+              <tr>
+                <th>槽位</th>
+                <th>声明的梯度缓冲</th>
+                <th>derived · 每 rank 发送 / 接收</th>
+                <th>实际通信</th>
+              </tr>
+            </thead>
+            <tbody>
+              {slots.map((s, i) => {
+                const theory = s.value
+                  ? communicationTheory(s.value, hypotheticalDP)
+                  : null;
+                return (
+                  <tr key={i}>
+                    <td>{i === 0 ? "A" : "B"}</td>
+                    <td>
+                      {theory
+                        ? theory.elements + " 元素 / " + theory.bytes + " B"
+                        : "缺少完整梯度尺寸"}
+                    </td>
+                    <td>
+                      {theory
+                        ? theory.sent_bytes_per_rank +
+                          " B / " +
+                          theory.received_bytes_per_rank +
+                          " B"
+                        : "不可推导"}
+                    </td>
+                    <td>未采集</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p data-testid="trace-communication-boundary">
+          这是派生预算，不是运行过的 collective；不含协议、拓扑和临时缓冲。
+          文件中的 CPU 更新不证明 NCCL 通信、耗时或吞吐，当前 trace
+          合约没有实际通信测量。
+        </p>
+      </section>
+
       <div className="trace-actions">
         <button onClick={() => onSource("B-STEP")}>
           查看 Bridge forward 参考源码

@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from experiments.runtime.contracts import read_trace
-from experiments.runtime.source_probe import inspect_bridge, inspect_nemo_cli
+from experiments.runtime.source_probe import inspect_bridge, inspect_nemo_runtime
 from experiments.runtime.plan import dry_run
 
 
@@ -50,7 +50,7 @@ def main():
     elif args.command=="probe-bridge":
         result=inspect_bridge(args.root,args.recipe)
     elif args.command=="probe-nemo":
-        result=inspect_nemo_cli(args.root,args.algorithm)
+        result=inspect_nemo_runtime(args.root,args.algorithm)
     elif args.command=="dry-run":
         result=dry_run(args.plan,args.resources)
     elif args.command=="freeze-nemo":

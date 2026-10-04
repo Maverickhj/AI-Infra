@@ -166,3 +166,66 @@ def inspect_nemo_cli(root, algorithm):
     return dict(adapter="nemo_config_cli_v1", algorithm=algorithm, cli=cli,
                 source=anchor(path, "main"), compatibility="not_checked", behavior="not_run",
                 limitation="launcher calls init_ray; dry-run must not import/call main")
+
+
+# Arguments consumed by the lab's synchronous adapter. This is an interface
+# observation only; numerical and distributed compatibility require R02.
+NEMO_INTERFACES = (
+    ("nemo_rl/models/policy/lm_policy.py", "Policy.__init__", {"cluster", "config", "tokenizer", "worker_extension_cls_fqn"}),
+    ("nemo_rl/models/policy/lm_policy.py", "Policy.train", {"data", "loss_fn", "timer"}),
+    ("nemo_rl/models/policy/lm_policy.py", "Policy.get_logprobs", {"data"}),
+    ("nemo_rl/models/policy/workers/megatron_policy_worker.py", "MegatronPolicyWorkerImpl.__init__", {"config", "tokenizer", "init_optimizer", "init_reference_model"}),
+    ("nemo_rl/models/policy/workers/megatron_policy_worker.py", "MegatronPolicyWorkerImpl.train", {"data", "loss_fn"}),
+    ("nemo_rl/models/megatron/setup.py", "validate_model_paths", {"config"}),
+    ("nemo_rl/models/megatron/setup.py", "handle_model_import", {"config", "hf_model_name", "pretrained_path"}),
+    ("nemo_rl/models/megatron/setup.py", "setup_model_and_optimizer", {"policy_cfg", "megatron_cfg", "load_optimizer"}),
+    ("nemo_rl/models/megatron/setup.py", "setup_reference_model_state", {"config", "megatron_cfg", "pretrained_path"}),
+    ("nemo_rl/experience/rollouts.py", "run_multi_turn_rollout", {"policy_generation", "input_batch", "tokenizer", "task_to_env", "max_seq_len"}),
+    ("nemo_rl/algorithms/grpo.py", "refit_policy_generation", {"policy", "policy_generation", "colocated_inference"}),
+    ("nemo_rl/algorithms/utils.py", "get_tokenizer", {"tokenizer_config"}),
+    ("nemo_rl/distributed/ray_actor_environment_registry.py", "get_actor_python_env", {"actor_class_fqn"}),
+)
+
+
+def inspect_nemo_runtime(root, algorithm):
+    observed = inspect_nemo_cli(root, algorithm)
+    root = Path(root).resolve()
+    specifications = list(NEMO_INTERFACES)
+    setup_args = {"master_config", "tokenizer", "dataset", "val_dataset"}
+    if algorithm == "grpo":
+        setup_args.add("policy_factory")
+    specifications += [
+        (f"nemo_rl/algorithms/{algorithm}.py", "setup", setup_args),
+        (f"nemo_rl/algorithms/{algorithm}.py", algorithm+"_train",
+         {"policy", "policy_generation", "tokenizer", "loss_fn", "master_config"}
+         | ({"value_model", "value_loss_fn"} if algorithm == "ppo" else set())),
+    ]
+    sources = [observed["source"]]
+    for relative, symbol, expected in specifications:
+        path = (root/relative).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError("NeMo source escaped the inspected checkout: " + relative)
+        located = anchor(path, symbol)
+        if not expected <= set(located.get("parameters", [])):
+            raise ValueError("NeMo signature mismatch: " + symbol)
+        sources.append(located)
+    # Bind imported package helpers too, without importing the package. This
+    # checksum is change detection, not a claim to have reviewed every function.
+    files = sorted((root/"nemo_rl").rglob("*.py"))
+    if not files or len(files) > 4096:
+        raise ValueError("NeMo Python source inventory exceeds the inspected bound")
+    digest = hashlib.sha256()
+    total = 0
+    for path in files:
+        if not path.resolve().is_relative_to(root) or path.stat().st_size > 4*1024*1024:
+            raise ValueError("NeMo Python source is outside bounds: " + str(path))
+        raw = path.read_bytes()
+        total += len(raw)
+        if total > 32*1024*1024:
+            raise ValueError("NeMo Python source inventory exceeds 32 MiB")
+        digest.update(str(path.relative_to(root)).encode()+b"\0"+raw+b"\0")
+    observed.update(runtime_sources=sources,
+        package_snapshot=dict(root=str(root/"nemo_rl"), python_files=len(files),
+                              bytes=total, sha256=digest.hexdigest(),
+                              evidence="read_only_source_change_detection"))
+    return observed

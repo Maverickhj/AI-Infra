@@ -13,7 +13,7 @@ import shlex
 import sys
 
 from .contracts import MAX_BYTES, finite_tree, integer, require, strict_json
-from .source_probe import anchor, inspect_nemo_cli
+from .source_probe import anchor, inspect_nemo_runtime
 
 ROOT = Path(__file__).resolve().parents[2]
 PROFILES = {"hf_reference", "bridge_sft", "rl_grpo", "rl_ppo"}
@@ -160,6 +160,7 @@ def inspect_plan(plan):
     validate_plan(plan)
     issues, files, sources = [], [], []
     runtime_config = None
+    package_snapshot = None
     def small_file(path, required=True):
         path = Path(path)
         if not path.is_file():
@@ -232,8 +233,9 @@ def inspect_plan(plan):
                 issues.append(str(exc))
     elif plan["profile"].startswith("rl_"):
         try:
-            observed = inspect_nemo_cli(plan["sources"]["nemo_rl"], plan["profile"][3:])
-            sources.append(observed["source"])
+            observed = inspect_nemo_runtime(plan["sources"]["nemo_rl"], plan["profile"][3:])
+            sources.extend(observed["runtime_sources"])
+            package_snapshot = observed["package_snapshot"]
         except (ValueError, OSError, SyntaxError) as exc:
             issues.append(str(exc))
     if plan["profile"].startswith("rl_"):
@@ -252,12 +254,18 @@ def inspect_plan(plan):
             # safetensors file; unknown sharded critics fail instead of guessing.
             if not (critic / "model.safetensors").is_file():
                 issues.append("local single-file critic checkpoint missing")
+    if plan["profile"].startswith("rl_"):
+        try:
+            from .nemo_metadata import inspect_metadata
+            inspect_metadata(plan)
+        except (ValueError, OSError) as exc:
+            issues.append(str(exc))
     resume = plan["training"]["resume_from"]
     if resume is not None and not Path(resume).is_dir():
         issues.append("resume checkpoint directory missing")
     return dict(status="not_ready" if issues else "configuration_ready",
                 issues=issues, files=files, runtime_sources=sources, runtime_config=runtime_config,
-                compatibility="not_checked", behavior="not_run")
+                package_snapshot=package_snapshot, compatibility="not_checked", behavior="not_run")
 
 
 def check_grant(plan, resources):
