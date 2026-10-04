@@ -1,7 +1,7 @@
 """Delegate to the inspected official synchronous NeMo launcher.
 
 The injectable delegation boundary is tested with synthetic dependencies.
-Production run remains disabled until observer and supervisor wiring is complete.
+Production entry rechecks its exact worker receipt before importing frameworks.
 This module implements no RL trainer and never auto-attaches to a cluster.
 """
 from __future__ import annotations
@@ -34,7 +34,9 @@ class OwnedRay:
         self.scratch = tempfile.TemporaryDirectory(prefix="lab-ray-")
         env = {key: os.environ[key] for key in
                ("CUDA_VISIBLE_DEVICES", "HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE",
-                "HF_DATASETS_OFFLINE", "WANDB_DISABLED", "OMP_NUM_THREADS")
+                "HF_DATASETS_OFFLINE", "WANDB_DISABLED", "OMP_NUM_THREADS",
+                "NEMO_RL_PY_EXECUTABLES_SYSTEM", "UV_OFFLINE",
+                "MEGATRON_LAB_OUTPUT_PATH", "NRL_MEGATRON_CHECKPOINT_DIR")
                if key in os.environ}
         # Ray workers must be able to import this small observation module and
         # the explicitly inspected local NeMo checkout. No user PYTHONPATH is reused.
@@ -101,8 +103,8 @@ def invoke_official(launcher, plan, output, observer, owned_ray):
         actual = runtime_config(args[0], plan)
         encoded, sha = effective_config(actual)
         (output/"effective-config.json").write_text(json.dumps(encoded, ensure_ascii=False, indent=2)+"\n")
-        observer.configure(actual, sha)
-        result = originals["setup"](*args, **kwargs)
+        observer.configure(actual, sha, args[1])
+        result = observer.setup(originals["setup"], *args, **kwargs)
         return observer.attach(result, launcher)
 
     launcher.MasterConfig, launcher.init_ray, launcher.setup = master, owned_ray.start, setup
@@ -123,5 +125,55 @@ def invoke_official(launcher, plan, output, observer, owned_ray):
 
 
 def run(plan, output):
-    """Keep the unfinished production path closed, even when called directly."""
-    require(False, "NeMo runtime observer and supervisor wiring is not complete yet")
+    """Import the inspected official launcher only inside a verified worker."""
+    from .plan import digest, read_document
+    from .launch import verify_worker
+    output = Path(output).resolve()
+    receipt_path = output/"receipt.json"
+    require(receipt_path.is_file(), "NeMo run requires an authorized worker receipt")
+    receipt = read_document(receipt_path)
+    checked, checked_output = verify_worker(receipt["plan_path"],receipt["resources_path"],receipt_path)
+    require(digest(checked)==digest(plan) and checked_output==output, "worker receipt plan differs")
+    require(os.environ.get("NEMO_RL_PY_EXECUTABLES_SYSTEM")=="1"
+            and os.environ.get("UV_OFFLINE")=="1", "unapproved NeMo worker Python environment")
+    require(os.environ.get("MEGATRON_LAB_OUTPUT_PATH")==str(output)
+            and os.environ.get("NRL_MEGATRON_CHECKPOINT_DIR")==str(output/"model-import"),
+            "NeMo output/cache environment differs from plan")
+    from .nemo_config import read_bound_config
+    from .source_probe import inspect_nemo_cli
+    from .capture import callable_source
+    from .nemo_extension import WorkerExtensionScope
+    from .nemo_observer import NeMoObserver
+    from .nemo_metadata import manifest
+    import importlib.util
+    _, frozen, mapping = read_bound_config(plan)
+    source_root = Path(plan["sources"]["nemo_rl"]).resolve()
+    algorithm = plan["profile"][3:]
+    inspected = inspect_nemo_cli(source_root,algorithm)
+    previous_path = list(sys.path)
+    try:
+        sys.path.insert(0,str(source_root))
+        import ray
+        from nemo_rl.distributed.batched_data_dict import BatchedDataDict
+        from nemo_rl.distributed.ray_actor_environment_registry import ACTOR_ENVIRONMENT_REGISTRY
+        from nemo_rl.models.policy.lm_policy import Policy
+        path = Path(inspected["source"]["path"])
+        spec = importlib.util.spec_from_file_location("_lab_official_run_"+algorithm,path)
+        require(spec is not None and spec.loader is not None, "official launcher cannot be loaded")
+        launcher = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(launcher)
+        sources = []
+        for name in ("main","setup","get_tokenizer","setup_response_data","configure_generation_config"):
+            source = callable_source(getattr(launcher,name),"nemo_"+name)
+            require(Path(source["path"]).is_relative_to(source_root), "loaded NeMo source differs from plan")
+            sources.append(source)
+        policy_source = callable_source(Policy.__init__,"nemo_policy_constructor")
+        require(Path(policy_source["path"]).is_relative_to(source_root), "loaded Policy source differs from plan")
+        sources.append(policy_source)
+        extension = WorkerExtensionScope(Policy,ACTOR_ENVIRONMENT_REGISTRY,algorithm=algorithm)
+        observer = NeMoObserver(plan,output,mapping,extensions=extension,
+            manifest_builder=lambda p,t:manifest(p,t,sources=sources,frozen=frozen),
+            batch_factory=BatchedDataDict)
+        return invoke_official(launcher,plan,output,observer,OwnedRay(ray,plan))
+    finally:
+        sys.path[:] = previous_path

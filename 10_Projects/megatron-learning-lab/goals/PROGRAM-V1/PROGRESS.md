@@ -213,3 +213,27 @@ nemo_entry 的可注入委托边界执行固定官方 launcher 函数体，依�
 提交预检已通过 25 项 plan/授权/委托/进程检查、9 项 loss/worker CPU 检查、7 项配置解析/冻结检查，日志 runs/program-v1/G08/nemo-commit-{plan,capture,freeze}-preflight.log。新测试已接入常规发现和 test:runtime-contracts，固定 loss 原文块保留行号、SHA256、Git blob 与许可证。运行日志、截图、源码缓存与认证材料不加入 Git。
 
 最终提交快照已在开发容器内完成完整基线：141 项 Python、92 项 Chromium 全部通过，skipped/flaky/unexpected=0；数据生成、handoff、源码片段、构建及 diff 检查通过。报告 runs/goal-g01/20261004T214617560389Z/report.json，SHA256 1f7aa0d2a9ea6e1bbc1f8de519eaaa6d1a2b64ecef89dd41ea9d4317bc474bda；PROGRAM-V1 源码指纹 1cd12ec17a6346eaa47473c90db5cb423a659069bc46263ef7cc432a84b21d1d。全部日志 hash 与当前源码快照一致，核验记录在 runs/commit-check-nemo-contracts/。专项 test:runtime-contracts 全部通过，完整源码缓存 49 文件/111 片段与新 loss 2 文件/7 原文块逐字核验通过。G08、R01/R02 的未完成状态不变。
+
+## G08 · 官方 worker 扩展与生成事件接线
+
+从 761e8f4 恢复，远端与本地一致、工作区干净，planner 无完整性问题并继续 G08。上一轮验证与提交属于有效进展。本轮范围：新增 experiments/runtime/nemo_extension.py、nemo_events.py、nemo_observer.py 及对应合约测试，按需修改 nemo_entry.py、nemo_worker.py、nemo_config.py、launch.py、worker.py 与专项测试入口，再更新 trace/refit 展示和课程。正式 GPU/RL 仍无资源授权，本轮只执行软件/CPU 验证。
+
+行为验收：①官方 Policy 的 worker_extension_cls_fqn 在独立 Ray initializer 按名称加载，保留原 trainer；②指定当前 Python 环境，拒绝默认 uv 建环境或未知 worker；③记录真实生成输入/输出、奖励、mask 与 rollout/update/refit 次序，错误版本或错配 action 拒绝；④官方 refit 调用完成与权重 hash 验证分开；⑤失败恢复驱动 hooks/registry，输出有界且不覆盖；⑥正式入口仍须资源与源码/输入复查，合约测试始终标明 synthetic。
+
+源码新增读到固定 worker_groups.py/ray_actor_environment_registry.py、experience/rollouts.py、models/megatron/setup.py。确认 driver patch 不会传入 IsolatedWorkerInitializer，因此采用官方扩展 FQN；NEMO_RL_PY_EXECUTABLES_SYSTEM=1 是当前上游公开分支，registry 仍逐项校验实际 sys.executable。nemo_extension 的 5 项 stdlib 合约已通过，日志 runs/program-v1/G08/nemo-extension-preflight.log。新增源码研究只说明静态范围，不证明 NeMo runtime 可运行。
+
+事件账本与 worker 扩展共 12 项 stdlib 检查通过（nemo-events-preflight.log）。refit 的跨语言首轮发现 TypeScript 新分支误用了 Python helper 名 integer，导致合法 acknowledged trace 被拒绝；失败日志 nemo-refit-contract-preflight.log 保留，改用现有 int helper，未放宽版本/hash 断言，随后复验。
+
+修正后的 runtime 合约通过 31 项跨语言用例及全部既有 CPU 检查。新浏览器用例首次 4 通过/1 失败：测试比较的是 stringify 上传前的 JS 对象，其中 -0 在上传 JSON 时已经编码为 0；导出保留了实际上传值。测试改为保存真实上传 JSON，并逐字段比较导出和该 JSON，未删除字段或放宽数值精度。首轮日志及失败 trace 保存于 runs/program-v1/G08/refit-display/，随后复验。
+
+## 2026-10-05 · G08 同步观察器提交 checkpoint
+
+用户明确授权 commit & push，本次提交本项目的官方 worker 扩展、HF 转换/加载调用观察、生成事件账本、NeMo 同步观察器及入口接线，连同 refit 证据展示、课程和行为测试。仅在 megatron-bridge 开发容器内执行 CPU/软件验证；没有启动 GPU、Ray 集群、下载模型或运行正式 RL。G08 保持 in_progress，不将本次提交视为完整阶段验收。
+
+正式入口现在在框架导入前复查资源授权与 worker receipt，绑定当前 Python、离线环境和本次输出目录的转换缓存。观察器保留官方返回对象，核对 rollout/action/mask/reward/version 关联、实际 backward/参数更新及最终固定输入概率对齐。refit 调用成功只记录 acknowledged 和 weight_hash_verified=false；CPU 测试引擎与奖励明确标为 synthetic，不提升为 observed_rl。
+
+提交检查补接已有 checkpoint loading 与 CPU observer 测试到标准回归入口，并修正采集器用例计数。专项 test:runtime-contracts 通过 31 项跨语言合约、2 份新执行 CPU reference、4 项加载调用检查、4 项观察器集成检查及全部既有用例；日志 runs/commit-check-nemo-observer/runtime-contracts.log。完整固定源码缓存核验通过 49 文件/111 原文片段。检查新增与改动 Python 文件的语法，并确认提交候选不含密钥或大文件。
+
+后续 G08 仍需补足正式启动接口/元数据检查、RL supervisor 分支覆盖，以及强制超时下 Ray 子进程清理的验证，再进行完整阶段自审。内层配置字符串的独立 schema/hash 校验和 R01/R02 的实际 tokenizer、模型、GPU 训练及 refit 数值验证仍未完成；当前合约与软件回归不证明生产运行兼容性。
+
+最终提交快照完整基线通过 160 项 Python、93 项 Chromium，skipped/flaky/unexpected 均为 0；数据生成、handoff、源码片段、构建与 diff 检查全部通过。报告 runs/goal-g01/20261004T225424088348Z/report.json，SHA256 62567bdce64cef18bba059838d6319c36f243b1aecb47ce241744f7321955928，源码指纹 08eaac3e38d5ffc667a3a759519f48da899af941cbbbbb2f8f92f42d164ae6f2。已逐项核对当前源码和日志 hash，核验档案位于 runs/commit-check-nemo-observer/。G08 和真实运行阶段状态不变。

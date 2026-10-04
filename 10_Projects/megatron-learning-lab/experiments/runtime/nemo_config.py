@@ -70,10 +70,15 @@ def loss_mapping(config, algorithm):
 
 def model_bounds(config, section, plan, snapshot):
     model = at(config, section)
+    require(model.get("pretrained_checkpoint") is None, "unbound pretrained checkpoint source")
+    require(model.get("megatron_cfg", {}).get("force_reconvert_from_hf", False) is False,
+            "forced cache replacement is not part of the initial capture profile")
     train = plan["training"]
     same_path(at(model, "model_name"), snapshot, section + ".model_name")
     same_path(at(model, "tokenizer.name"), plan["tokenizer"]["snapshot"], section + ".tokenizer.name")
     equal(model, "tokenizer.chat_template_kwargs", {"enable_thinking": False})
+    require(model["tokenizer"].get("chat_template", "default") == "default",
+            "runtime tokenizer must preserve its checkpoint chat template")
     equal(model, "precision", train["dtype"])
     equal(model, "train_micro_batch_size", train["micro_batch_size"])
     equal(model, "train_global_batch_size", train["global_batch_size"])
@@ -212,6 +217,8 @@ def validate_bound_config(config, plan):
                 critic_updates=train["steps"] if algorithm == "ppo" else 0,
                 max_actor_records=train["steps"] * train["global_batch_size"],
                 min_dataset_rows=train["steps"] * prompts,
+                fixed_input_generation_calls=2, fixed_input_logprob_calls=1,
+                worker_python="current_environment_only", conversion_cache="run_output/model-import",
                 runtime_compatibility="not_checked")
 
 

@@ -105,6 +105,12 @@ function TraceView({ value }: { value: ValidTrace }) {
           {data.policy_versions.current} / after={data.policy_versions.after}
           <br />
           refit={measured?.refit?.status ?? "not_run"}
+          {measured?.refit?.status === "acknowledged" && (
+            <span data-testid="trace-refit-boundary">
+              <br />
+              文件记录 refit 调用完成；权重 hash 未核验。
+            </span>
+          )}
         </p>
       )}
       {lp && (

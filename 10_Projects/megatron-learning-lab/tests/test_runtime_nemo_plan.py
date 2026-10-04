@@ -97,6 +97,8 @@ class NeMoBoundPlanTests(unittest.TestCase):
             ("policy.generation.temperature", .7), ("policy.generation.top_p", .9),
             ("policy.generation.top_k", 5),
             ("policy.quant_cfg", {"enabled": True}),
+            ("policy.pretrained_checkpoint", {"format": "megatron_bridge", "path": "/other"}),
+            ("policy.megatron_cfg.force_reconvert_from_hf", True),
             ("policy.generation.vllm_kwargs", {"model": "different/model"}),
             ("data.train.data_path", "/different/data.jsonl"),
             ("data.train.dataset_name", "OpenMathInstruct-2"),

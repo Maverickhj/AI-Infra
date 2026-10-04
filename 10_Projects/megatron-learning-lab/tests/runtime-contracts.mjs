@@ -31,12 +31,16 @@ python([
   "tests.test_runtime_launch",
   "tests.test_runtime_nemo_plan",
   "tests.test_runtime_nemo_entry",
+  "tests.test_runtime_nemo_extension",
+  "tests.test_runtime_nemo_events",
+  "tests.test_runtime_nemo_loading",
   "-v",
 ]);
 python(["-m", "tests.runtime_adapter_cpu_checks"]);
 python(["-m", "tests.runtime_config_checks"]);
 python(["-m", "tests.runtime_bridge_config_checks"]);
 python(["-m", "tests.runtime_nemo_capture_checks"]);
+python(["-m", "tests.runtime_nemo_observer_checks"]);
 const fresh = JSON.parse(
   python([
     "-c",
@@ -111,6 +115,38 @@ for (let i = 0; i < fresh.traces.length; i++) {
     valid: false,
   });
 }
+const acknowledged = structuredClone(fresh.traces.find((t) => t.task === "rl"));
+acknowledged.manifest.evidence_kind = "synthetic_contract";
+acknowledged.manifest.execution = { status: "synthetic", synthetic: true };
+acknowledged.measurements.refit = {
+  status: "acknowledged",
+  completed: true,
+  generation_version: 2,
+  evidence: "official_delegate_return",
+  weight_hash_verified: false,
+  event: 9,
+};
+inputs.push({
+  name: "synthetic refit call acknowledgment",
+  text: JSON.stringify(acknowledged),
+  valid: true,
+});
+for (const change of [
+  { weight_hash_verified: true },
+  { export_hash: "a".repeat(64) },
+  { generation_version: 1 },
+  { evidence: "guessed" },
+  { event: true },
+  { status: "synchronized" },
+]) {
+  const bad = structuredClone(acknowledged);
+  Object.assign(bad.measurements.refit, change);
+  inputs.push({
+    name: "invalid refit evidence " + JSON.stringify(change),
+    text: JSON.stringify(bad),
+    valid: false,
+  });
+}
 for (const text of [
   '{"x":1,"x":2}',
   '{"constructor":{}}',
@@ -151,8 +187,12 @@ console.log(
       cross_language_cases: inputs.length,
       fresh_cpu_traces: fresh.traces.length,
       adapter_cpu_tests: 11,
-      python_contract_tests: 13,
-      python_capture_tests: 7,
+      python_contract_tests: 14,
+      nemo_worker_extension_tests: 5,
+      nemo_event_ordering_tests: 7,
+      python_capture_tests: 8,
+      nemo_checkpoint_loading_tests: 4,
+      nemo_observer_cpu_tests: 4,
       configuration_only_tests: 7,
       nemo_bound_plan_tests: 7,
       nemo_launcher_delegation_tests: 6,

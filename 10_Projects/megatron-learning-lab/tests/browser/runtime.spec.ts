@@ -205,3 +205,55 @@ test("[G08] source links, offline mathematics, keyboard and narrow trace tables 
     fullPage: true,
   });
 });
+
+test("[G08] refit call acknowledgment discloses missing weight hashes and rejects promotion", async ({
+  page,
+}) => {
+  await page.goto("/#view=runtime");
+  const a = slot(page),
+    r = structuredClone(traces[1]);
+  r.run_id = "synthetic-refit-contract";
+  r.manifest.evidence_kind = "synthetic_contract";
+  r.manifest.execution = { status: "synthetic", synthetic: true };
+  r.measurements.refit = {
+    status: "acknowledged",
+    completed: true,
+    generation_version: 2,
+    evidence: "official_delegate_return",
+    weight_hash_verified: false,
+    event: 9,
+  };
+  const submitted = JSON.stringify(r);
+  await upload(a, submitted);
+  await expect(a.getByTestId("trace-provenance")).toContainText(
+    "imported_claim",
+  );
+  await expect(a.getByTestId("trace-versions")).toContainText(
+    "refit=acknowledged",
+  );
+  await expect(a.getByTestId("trace-refit-boundary")).toContainText(
+    "权重 hash 未核验",
+  );
+  const download = page.waitForEvent("download");
+  await a.getByRole("button", { name: "导出已校验 trace" }).click();
+  const file = await download;
+  expect(JSON.parse(fs.readFileSync((await file.path())!, "utf8"))).toEqual(
+    JSON.parse(submitted),
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth + 1,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "runs/program-v1/g08-refit-boundary-mobile.png",
+    fullPage: true,
+  });
+  r.measurements.refit.status = "synchronized";
+  await upload(a, r);
+  await expect(a.getByRole("alert")).toContainText(
+    "refit weight acknowledgment mismatch",
+  );
+  await expect(a.getByTestId("trace-result")).toHaveCount(0);
+});

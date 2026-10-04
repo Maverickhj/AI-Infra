@@ -6,6 +6,7 @@ that a caller's manifest is truthful.
 """
 from __future__ import annotations
 import hashlib
+from functools import partial
 import inspect
 import json
 from pathlib import Path
@@ -15,6 +16,8 @@ from .adapters import bridge_sft_slice
 
 def callable_source(fn, component):
     """Locate an actually loaded Python callable; do not import a guessed path."""
+    while isinstance(fn, partial):
+        fn = fn.func
     if not inspect.isfunction(fn) and not inspect.ismethod(fn):
         fn = fn.__call__
     fn = inspect.unwrap(fn)

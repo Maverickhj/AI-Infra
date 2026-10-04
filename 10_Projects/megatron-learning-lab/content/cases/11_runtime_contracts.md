@@ -81,6 +81,8 @@ $$
 
 RL refit 只有完成 acknowledgment、export/ack hash 相同、generation 版本等于 after 才能标 synchronized。只递增一个版本整数不会自动替换生成引擎权重。
 
+NeMo 当前参考实现等待传输和生成 worker 的结果后返回，但没有返回端到端权重 hash。这类事件只能标 acknowledged：记录实际调用完成、after 对应的 generation 版本、事件序号，并明确 weight_hash_verified=false；不能填造 export_hash/ack_hash。页面显示“文件记录 refit 调用完成；权重 hash 未核验”。这仍是导入字段，真实 R02 还要在最终 refit 前后使用同一输入生成，并将 refit 后生成 token 的 logprob 与训练 policy 重算值比较，不能用状态标签代替该验证。
+
 ## 当前可执行的只读入口
 
 在开发容器的项目目录：

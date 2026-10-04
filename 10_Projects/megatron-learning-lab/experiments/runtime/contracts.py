@@ -277,7 +277,16 @@ def _validate_trace(trace):
         else:
             require(m.get("values") is None and m.get("returns") is None and m.get("value_loss") is None, "GRPO must not claim critic measurements")
         refit = m.get("refit")
-        require(isinstance(refit, dict) and refit.get("status") in ("not_run", "synchronized"), "refit state missing")
+        require(isinstance(refit, dict) and refit.get("status") in ("not_run", "acknowledged", "synchronized"), "refit state missing")
+        if refit["status"] == "acknowledged":
+            require(refit.get("completed") is True
+                    and refit.get("generation_version") == data["policy_versions"]["after"],
+                    "refit version/ack mismatch")
+            require(refit.get("evidence") == "official_delegate_return"
+                    and refit.get("weight_hash_verified") is False
+                    and "export_hash" not in refit and "ack_hash" not in refit
+                    and integer(refit.get("event")) and refit["event"] >= 0,
+                    "refit call acknowledgment cannot claim verified weight hashes")
         if refit["status"] == "synchronized":
             require(refit.get("completed") is True and refit.get("generation_version") == data["policy_versions"]["after"], "refit version/ack mismatch")
             require(re.fullmatch(r"[a-f0-9]{64}", refit.get("export_hash", "")) is not None and refit["export_hash"] == refit.get("ack_hash"),

@@ -49,6 +49,7 @@ class TrainObservationMixin:
                 optimizer_parameter=dict(before=before, after=after, gradient=gradient,
                     dtype=str(main.dtype), changed=True),
                 delegated_train=callable_source(super().train, "nemo_official_worker_train"),
+                loading=getattr(self, "_lab_loading", None),
                 note="one selected scalar; model rounding and optimizer master state are separate")
             with path.open("x") as stream:
                 json.dump(record, stream, ensure_ascii=False, indent=2, allow_nan=False)

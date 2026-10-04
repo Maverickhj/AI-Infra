@@ -30,3 +30,13 @@ class RuntimeAdapterProcessTests(unittest.TestCase):
                               text=True,capture_output=True,timeout=180)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertIn("Ran 9 tests",result.stderr)
+
+
+    def test_nemo_observer_cpu_contracts(self):
+        env={k:v for k,v in os.environ.items() if k!="PYTHONPATH"}
+        env["CUDA_VISIBLE_DEVICES"]=""
+        result=subprocess.run(["python","-m","tests.runtime_nemo_observer_checks"],
+                              cwd=Path(__file__).resolve().parents[1], env=env,
+                              text=True,capture_output=True,timeout=180)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn("Ran 4 tests",result.stderr)

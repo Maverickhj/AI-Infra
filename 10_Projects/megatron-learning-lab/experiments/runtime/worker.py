@@ -21,8 +21,10 @@ def main():
         from .hf_entry import run
     elif plan["profile"]=="bridge_sft":
         from .bridge_entry import run
+    elif plan["profile"] in ("rl_grpo","rl_ppo"):
+        from .nemo_entry import run
     else:
-        raise ValueError("unknown or unfinished worker profile")
+        raise ValueError("unknown worker profile")
     result=run(plan,output)
     print(json.dumps({"status":"completed","result":result},ensure_ascii=False))
     return 0

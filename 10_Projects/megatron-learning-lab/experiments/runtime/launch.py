@@ -84,8 +84,6 @@ def launch(plan_path, resources_path):
     permission = check_grant(plan, resources)  # Must happen before inspection/imports/outputs.
     inspected = inspect_plan(plan)
     require(not inspected["issues"], "runtime prerequisites missing: " + "; ".join(inspected["issues"]))
-    require(plan["profile"] in ("hf_reference", "bridge_sft"),
-            "NeMo runtime supervisor wiring is not complete yet")
     output = Path(plan["execution"]["output_path"]).resolve()
     require(output.parent.is_dir(), "create the approved output parent before execution")
     require(not output.exists(), "output already exists; use a new run_id/output path")
@@ -98,6 +96,11 @@ def launch(plan_path, resources_path):
                        "CUDA_VISIBLE_DEVICES": ",".join(plan["execution"]["devices"]),
                        "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1",
                        "HF_DATASETS_OFFLINE": "1", "WANDB_DISABLED": "true"})
+    if plan["profile"].startswith("rl_"):
+        receipt["environment"].update(
+            NEMO_RL_PY_EXECUTABLES_SYSTEM="1", UV_OFFLINE="1",
+            MEGATRON_LAB_OUTPUT_PATH=str(output),
+            NRL_MEGATRON_CHECKPOINT_DIR=str(output/"model-import"))
     receipt_path = output/"receipt.json"
     receipt_path.write_text(json.dumps(receipt, ensure_ascii=False, indent=2)+"\n")
     if plan["profile"] == "bridge_sft":
@@ -119,7 +122,8 @@ def launch(plan_path, resources_path):
     if result["status"] == "passed":
         try:
             final = read_document(output/"result.json")
-            expected = "completed_reference" if plan["profile"] == "hf_reference" else "completed_bridge_entry"
+            expected = {"hf_reference":"completed_reference","bridge_sft":"completed_bridge_entry",
+                        "rl_grpo":"completed_nemo_entry","rl_ppo":"completed_nemo_entry"}[plan["profile"]]
             require(final.get("status") == expected, "worker did not finish its required result")
         except (ValueError, OSError) as exc:
             result.update(status="failed", stop_reason="missing_or_invalid_result", error=str(exc))

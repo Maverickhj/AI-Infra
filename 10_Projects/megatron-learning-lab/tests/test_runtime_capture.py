@@ -53,6 +53,14 @@ class CaptureChecks(unittest.TestCase):
         self.assertGreater(source["end_line"],source["line"])
         self.assertEqual(source["evidence"],"loaded_python_callable")
 
+    def test_bound_chat_template_partial_locates_the_underlying_callable(self):
+        from functools import partial
+        def template(messages, *, enable_thinking):
+            return messages, enable_thinking
+        source=callable_source(partial(template,enable_thinking=False),"tokenizer")
+        self.assertEqual(source,callable_source(template,"tokenizer"))
+        self.assertIn("template",source["symbol"])
+
     def test_effective_config_uses_actual_values_not_static_defaults(self):
         class Mode(Enum):BF16="bf16"
         @dataclass

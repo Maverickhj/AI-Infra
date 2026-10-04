@@ -540,9 +540,25 @@ export async function validateTrace(text: string): Promise<ValidTrace> {
       );
     const r = m.refit;
     check(
-      obj(r) && ["not_run", "synchronized"].includes(r.status),
+      obj(r) && ["not_run", "acknowledged", "synchronized"].includes(r.status),
       "refit state missing",
     );
+    if (r.status === "acknowledged") {
+      check(
+        r.completed === true &&
+          r.generation_version === data.policy_versions.after,
+        "refit version/ack mismatch",
+      );
+      check(
+        r.evidence === "official_delegate_return" &&
+          r.weight_hash_verified === false &&
+          !Object.hasOwn(r, "export_hash") &&
+          !Object.hasOwn(r, "ack_hash") &&
+          int(r.event) &&
+          r.event >= 0,
+        "refit call acknowledgment cannot claim verified weight hashes",
+      );
+    }
     if (r.status === "synchronized") {
       check(
         r.completed === true &&

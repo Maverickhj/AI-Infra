@@ -62,8 +62,11 @@ class SyntheticObserver:
         self.attached = []
         self.closed = False
 
-    def configure(self, actual, sha):
+    def configure(self, actual, sha, tokenizer):
         self.configs.append((actual, sha))
+
+    def setup(self, original, *args, **kwargs):
+        return original(*args, **kwargs)
 
     def attach(self, result, launcher):
         self.attached.append(result)
@@ -199,10 +202,10 @@ class NeMoLauncherDelegationTests(unittest.TestCase):
                 OwnedRay(ray, plan).start()
         self.assertEqual(ray.init_calls, [])
 
-    def test_unfinished_production_entry_rejects_before_imports_or_outputs(self):
+    def test_production_entry_without_receipt_rejects_before_imports_or_outputs(self):
         from experiments.runtime.nemo_entry import run
         output = self.profile.root/"must-not-exist"
-        with self.assertRaisesRegex(ValueError, "wiring is not complete"):
+        with self.assertRaisesRegex(ValueError, "authorized worker receipt"):
             run({}, output)
         self.assertFalse(output.exists())
         self.assertFalse(any(name.split(".")[0] in ("torch", "ray", "nemo_rl")

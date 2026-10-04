@@ -98,6 +98,20 @@ class RuntimeContractTests(unittest.TestCase):
             trace=copy.deepcopy(self.rl);mutate(trace["measurements"])
             with self.assertRaisesRegex(ValueError,"mismatch"):validate_trace(trace)
 
+    def test_refit_call_acknowledgment_cannot_claim_weight_hash_verification(self):
+        self.rl["manifest"]["evidence_kind"]="synthetic_contract"
+        self.rl["manifest"]["execution"].update(status="synthetic",synthetic=True)
+        valid=dict(status="acknowledged",completed=True,generation_version=2,
+                   evidence="official_delegate_return",weight_hash_verified=False,event=9)
+        self.rl["measurements"]["refit"]=valid
+        validate_trace(self.rl)
+        for change in (dict(weight_hash_verified=True),dict(export_hash="a"*64),
+                       dict(ack_hash="a"*64),dict(generation_version=1),
+                       dict(evidence="guessed"),dict(event=True),dict(status="synchronized")):
+            trace=copy.deepcopy(self.rl);trace["measurements"]["refit"].update(change)
+            with self.subTest(change=change),self.assertRaisesRegex(ValueError,"refit"):
+                validate_trace(trace)
+
     def test_refit_requires_completed_ack_hash_and_matching_policy_version(self):
         valid=dict(status="synchronized",completed=True,generation_version=2,export_hash="a"*64,ack_hash="a"*64)
         self.rl["measurements"]["refit"]=valid.copy()
