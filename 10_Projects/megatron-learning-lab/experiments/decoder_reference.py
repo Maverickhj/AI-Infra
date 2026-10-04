@@ -74,6 +74,37 @@ class TinyDecoder(nn.Module):
         if not tied: values['head']=copy.deepcopy(values['embedding'])
         self.p=nn.ParameterDict({k:nn.Parameter(torch.tensor(v,dtype=torch.float64),requires_grad=k not in self.fixture['frozen']) for k,v in values.items()})
 
+    def attention(self,x,n,parallel=None):
+        key=lambda name:f'l{n}_{name}'
+        f=authored_fixture()
+        f.update(dimensions={'B':1,'S':len(x),'H':8,'nq':4,'nkv':2,'d':4},
+                 x=scalar_lists(x),positions=list(range(len(x))),
+                 epsilon=self.fixture['epsilon'],theta=self.fixture['theta'],
+                 wqkv=scalar_lists(self.p[key('qkv')].T),wo=scalar_lists(self.p[key('out')].T),
+                 input_gain=scalar_lists(self.p[key('input_gain')]),
+                 q_gain=scalar_lists(self.p[key('q_gain')]),k_gain=scalar_lists(self.p[key('k_gain')]))
+        # Validate a detached view, then evaluate that same G01 graph with autograd scalars.
+        def plain(v):
+            if isinstance(v,dict): return {k:plain(x) for k,x in v.items()}
+            if isinstance(v,list): return [plain(x) for x in v]
+            return float(v.detach()) if isinstance(v,torch.Tensor) else v
+        validate(plain(f))
+        gqa=compute_graph(f,sqrt=torch.sqrt,exp=lambda v:torch.exp(v) if isinstance(v,torch.Tensor) else math.exp(v),
+                          qkv_project=(lambda value: parallel.qkv(value,n)) if parallel else None,
+                          output_project=(lambda value: parallel.output(value,n)) if parallel else None)
+        return dict(norm=nested_tensor(gqa['norm']),residual=nested_tensor(gqa['residual']))
+
+    def feed_forward(self,norm,n,parallel=None):
+        key=lambda name:f'l{n}_{name}'
+        if parallel:
+            gate,up,silu,product,down=parallel.ffn(norm,n)
+        else:
+            gate,up=(norm@self.p[key('gate_up')].T).chunk(2,dim=-1)
+            silu=torch.nn.functional.silu(gate)
+            product=silu*up
+            down=product@self.p[key('down')].T
+        return dict(gate=gate,up=up,silu=silu,product=product,down=down)
+
     def forward(self,ids,labels,mask,retain=False,tp=1,fault="none",capture_parallel=False):
         if ids.ndim != 1 or not 1<=ids.numel()<=64 or labels.shape!=ids.shape or mask.shape!=ids.shape:
             raise ValueError('invalid sequence/target/mask shape')
@@ -89,34 +120,12 @@ class TinyDecoder(nn.Module):
         layers=[]
         for n in range(2):
             key=lambda name:f'l{n}_{name}'
-            f=authored_fixture()
-            f.update(dimensions={'B':1,'S':ids.numel(),'H':8,'nq':4,'nkv':2,'d':4},
-                     x=scalar_lists(x),positions=list(range(ids.numel())),
-                     epsilon=self.fixture['epsilon'],theta=self.fixture['theta'],
-                     wqkv=scalar_lists(self.p[key('qkv')].T),wo=scalar_lists(self.p[key('out')].T),
-                     input_gain=scalar_lists(self.p[key('input_gain')]),
-                     q_gain=scalar_lists(self.p[key('q_gain')]),k_gain=scalar_lists(self.p[key('k_gain')]))
-            # Validate a detached view, then evaluate that same G01 graph with autograd scalars.
-            def plain(v):
-                if isinstance(v,dict): return {k:plain(x) for k,x in v.items()}
-                if isinstance(v,list): return [plain(x) for x in v]
-                return float(v.detach()) if isinstance(v,torch.Tensor) else v
-            validate(plain(f))
-            gqa=compute_graph(f,sqrt=torch.sqrt,exp=lambda v:torch.exp(v) if isinstance(v,torch.Tensor) else math.exp(v),
-                              qkv_project=(lambda value: parallel.qkv(value,n)) if parallel else None,
-                              output_project=(lambda value: parallel.output(value,n)) if parallel else None)
+            gqa=self.attention(x,n,parallel)
             attention=nested_tensor(gqa['residual'])
             norm=rms(attention,self.p[key('ffn_gain')],self.fixture['epsilon'])
-            if parallel:
-                gate,up,silu,product,down=parallel.ffn(norm,n)
-            else:
-                gate,up=(norm@self.p[key('gate_up')].T).chunk(2,dim=-1)
-                silu=torch.nn.functional.silu(gate)
-                product=silu*up
-                down=product@self.p[key('down')].T
-            x=attention+down
-            layers.append(dict(input_norm=nested_tensor(gqa['norm']),attention=attention,ffn_norm=norm,
-                               gate=gate,up=up,silu=silu,product=product,down=down,residual=x))
+            ffn=self.feed_forward(norm,n,parallel)
+            x=attention+ffn['down']
+            layers.append(dict(input_norm=gqa['norm'],attention=attention,ffn_norm=norm,**ffn,residual=x))
         final=rms(x,self.p['final_gain'],self.fixture['epsilon'])
         head=self.p['embedding'] if self.tied else self.p['head']
         if parallel:

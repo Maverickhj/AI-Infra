@@ -1,3 +1,4 @@
+import { FamilyWalkthrough } from "./family/FamilyWalkthrough";
 import { SequenceJourney } from "./sequence/SequenceJourney";
 import { ParallelInspector } from "./parallel/ParallelInspector";
 import { DecoderWalkthrough } from "./decoder/DecoderWalkthrough";
@@ -65,6 +66,9 @@ function App() {
   const [state, dispatch] = useReducer(reducer, undefined, readState);
   const [sourceOpen, setSourceOpen] = useState(false);
   const [sourceId, setSourceId] = useState("");
+  const [preferredExcerpt, setPreferredExcerpt] = useState<
+    string | undefined
+  >();
   const sourceDialog = useRef<HTMLDialogElement>(null);
   const sourceTrigger = useRef<HTMLButtonElement>(null);
   const model = models.find((m) => m.id === state.model)!;
@@ -91,7 +95,8 @@ function App() {
     }
   }, [sourceOpen]);
   const openSource = useCallback(
-    (id?: string) => {
+    (id?: string, excerpt?: string) => {
+      setPreferredExcerpt(excerpt);
       setSourceId(id || ids[0] || "B-Q3");
       setSourceOpen(true);
     },
@@ -414,6 +419,15 @@ function App() {
                   </div>
                 </div>
               </section>
+              {state.scenario === "sft" &&
+                state.step !== "input" &&
+                model.routed_experts > 0 && (
+                  <FamilyWalkthrough
+                    state={state}
+                    patch={patch}
+                    onSource={openSource}
+                  />
+                )}
               {state.scenario === "sft" && state.step !== "input" && (
                 <DecoderWalkthrough
                   state={state}
@@ -556,7 +570,10 @@ function App() {
                 证据条目
                 <select
                   value={currentSource.id}
-                  onChange={(e) => setSourceId(e.target.value)}
+                  onChange={(e) => {
+                    setSourceId(e.target.value);
+                    setPreferredExcerpt(undefined);
+                  }}
                 >
                   {sources.map((s) => (
                     <option key={s.id} value={s.id}>
@@ -569,7 +586,8 @@ function App() {
               <h3>{currentSource.id}</h3>
               <p>{currentSource.review_scope}</p>
               <SourceExcerpts
-                key={`${currentSource.id}:${state.model}:${state.scenario}:${state.step}:${state.layer}:${state.mla}:${state.operator}:${state.query}:${state.gqaHead}:${state.decoderOp}:${state.parallelOp}:${state.sequenceLayout}`}
+                key={`${currentSource.id}:${state.model}:${state.scenario}:${state.step}:${state.layer}:${state.mla}:${state.operator}:${state.query}:${state.gqaHead}:${state.decoderOp}:${state.parallelOp}:${state.sequenceLayout}:${preferredExcerpt ?? ""}`}
+                preferredExcerptId={preferredExcerpt}
                 sourceId={currentSource.id}
                 repoKey={currentSource.repo_key}
                 url={currentSource.url}

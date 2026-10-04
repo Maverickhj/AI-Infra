@@ -6,12 +6,72 @@ export type DecoderFixture = {
   dimensions: { V: number; H: number; F: number; layers: number };
 };
 const transpose = (m: number[][]) => m[0].map((_, j) => m.map((row) => row[j]));
+export function denseAttention(f: DecoderFixture, x: number[][], l: number) {
+  const matrix = (key: string) => f.parameters[key] as number[][];
+  const gain = (key: string) => f.parameters[key] as number[];
+  const k = (name: string) => "l" + l + "_" + name;
+  return gqa({
+    dimensions: { B: 1, S: x.length, H: 8, nq: 4, nkv: 2, d: 4 },
+    epsilon: f.epsilon,
+    theta: f.theta,
+    positions: x.map((_, i) => i),
+    rotary_layout: "split_half",
+    x,
+    wqkv: transpose(matrix(k("qkv"))),
+    wo: transpose(matrix(k("out"))),
+    input_gain: gain(k("input_gain")),
+    q_gain: gain(k("q_gain")),
+    k_gain: gain(k("k_gain")),
+    qkv_bias: Array(32).fill(0),
+    output_bias: Array(8).fill(0),
+  });
+}
+
+export function denseFeedForward(
+  f: DecoderFixture,
+  ffn_norm: number[][],
+  l: number,
+) {
+  const matrix = (key: string) => f.parameters[key] as number[][];
+  const k = (name: string) => "l" + l + "_" + name;
+  const mixed = linear(
+    ffn_norm,
+    transpose(matrix(k("gate_up"))),
+    Array(24).fill(0),
+  );
+  const gate = mixed.map((row) => row.slice(0, 12)),
+    up = mixed.map((row) => row.slice(12));
+  const silu = gate.map((row) => row.map((v) => v / (1 + Math.exp(-v))));
+  const product = silu.map((row, t) => row.map((v, i) => v * up[t][i]));
+  const down = linear(product, transpose(matrix(k("down"))), Array(8).fill(0));
+  return { gate, up, silu, product, down };
+}
+
 export function computeDecoder(
   f: DecoderFixture,
   ids: number[],
   labels: number[],
   mask: number[],
   tied = true,
+) {
+  return runDecoder(f, ids, labels, mask, tied, {
+    attention: (x, l) => denseAttention(f, x, l),
+    ffn: (x, l) => denseFeedForward(f, x, l),
+  });
+}
+export function runDecoder<F extends { down: number[][] }>(
+  f: DecoderFixture,
+  ids: number[],
+  labels: number[],
+  mask: number[],
+  tied: boolean,
+  ops: {
+    attention: (
+      x: number[][],
+      l: number,
+    ) => { norm: number[][]; residual: number[][] };
+    ffn: (x: number[][], l: number) => F;
+  },
 ) {
   if (
     ids.length < 1 ||
@@ -31,48 +91,18 @@ export function computeDecoder(
   const layers = [];
   for (let l = 0; l < 2; l++) {
     const k = (name: string) => "l" + l + "_" + name;
-    const a = gqa({
-      dimensions: { B: 1, S: ids.length, H: 8, nq: 4, nkv: 2, d: 4 },
-      epsilon: f.epsilon,
-      theta: f.theta,
-      positions: ids.map((_, i) => i),
-      rotary_layout: "split_half",
-      x,
-      wqkv: transpose(matrix(k("qkv"))),
-      wo: transpose(matrix(k("out"))),
-      input_gain: gain(k("input_gain")),
-      q_gain: gain(k("q_gain")),
-      k_gain: gain(k("k_gain")),
-      qkv_bias: Array(32).fill(0),
-      output_bias: Array(8).fill(0),
-    });
+    const a = ops.attention(x, l);
     const ffn_norm = a.residual.map((row) =>
       rms(row, gain(k("ffn_gain")), f.epsilon),
     );
-    const mixed = linear(
-      ffn_norm,
-      transpose(matrix(k("gate_up"))),
-      Array(24).fill(0),
-    );
-    const gate = mixed.map((row) => row.slice(0, 12)),
-      up = mixed.map((row) => row.slice(12));
-    const silu = gate.map((row) => row.map((v) => v / (1 + Math.exp(-v))));
-    const product = silu.map((row, t) => row.map((v, i) => v * up[t][i]));
-    const down = linear(
-      product,
-      transpose(matrix(k("down"))),
-      Array(8).fill(0),
-    );
+    const ffn = ops.ffn(ffn_norm, l);
+    const down = ffn.down;
     x = down.map((row, t) => row.map((v, i) => v + a.residual[t][i]));
     layers.push({
       input_norm: a.norm,
       attention: a.residual,
       ffn_norm,
-      gate,
-      up,
-      silu,
-      product,
-      down,
+      ...ffn,
       residual: x,
     });
   }

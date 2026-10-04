@@ -325,11 +325,37 @@
       "path": "megatron/core/transformer/multi_latent_attention.py",
       "git_blob_sha": "50e11151dcd70a81c101070b8edbdbff6e1d5777",
       "review_scope": "down projection、latent norm、up projection 与 cached-latent inference 分支",
-      "symbols": [],
+      "symbols": [
+        "mla-latent-norm",
+        "mla-cached-latent",
+        "mla-value-absorption",
+        "mla-direct-q",
+        "mla-scale"
+      ],
       "reviewed_ranges": [
         [
           700,
           920
+        ],
+        [
+          772,
+          791
+        ],
+        [
+          818,
+          841
+        ],
+        [
+          432,
+          441
+        ],
+        [
+          637,
+          663
+        ],
+        [
+          177,
+          179
         ]
       ],
       "evidence_level": "static_source_read",
@@ -690,12 +716,22 @@
       "git_blob_sha": "af81145b6d8aee1df19fb21d51199d22482d159b",
       "review_scope": "固定版本所列片段：TP分片/collective与DP有效token归一化；非kernel/运行实测",
       "symbols": [
-        "dp-token-normalize"
+        "dp-token-normalize",
+        "moe-bias-global-batch",
+        "moe-bias-finalize"
       ],
       "reviewed_ranges": [
         [
           677,
           696
+        ],
+        [
+          334,
+          371
+        ],
+        [
+          665,
+          676
         ]
       ],
       "evidence_level": "static_source_read",
@@ -779,6 +815,140 @@
       ],
       "evidence_level": "static_source_read",
       "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/utils.py"
+    },
+    {
+      "id": "B-DS2",
+      "repo_key": "bridge",
+      "path": "src/megatron/bridge/models/deepseek/deepseek_v2_bridge.py",
+      "git_blob_sha": "0a900ca287a4a3fd472e07d8998f8edb3d555162",
+      "review_scope": "固定版本 MoE/MLA 所列语义分支静态审读；非全文件或 runtime 审计",
+      "symbols": [
+        "ds2-provider"
+      ],
+      "reviewed_ranges": [
+        [
+          44,
+          84
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA-NeMo/Megatron-Bridge/blob/c0e164ed2aedac4ad1c877780e2564a19d5d54ec/src/megatron/bridge/models/deepseek/deepseek_v2_bridge.py"
+    },
+    {
+      "id": "C-ROUTER",
+      "repo_key": "core",
+      "path": "megatron/core/transformer/moe/router.py",
+      "git_blob_sha": "e4591ce3acf73f245e9a5dbc2448b784c4142669",
+      "review_scope": "固定版本 MoE/MLA 所列语义分支静态审读；非全文件或 runtime 审计",
+      "symbols": [
+        "moe-seq-aux",
+        "moe-bias-count",
+        "moe-aux-attach"
+      ],
+      "reviewed_ranges": [
+        [
+          446,
+          502
+        ],
+        [
+          728,
+          739
+        ],
+        [
+          625,
+          637
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/transformer/moe/router.py"
+    },
+    {
+      "id": "C-MOEUTIL",
+      "repo_key": "core",
+      "path": "megatron/core/transformer/moe/moe_utils.py",
+      "git_blob_sha": "9b7cf177c79938379748a2367de49c645ffc3a06",
+      "review_scope": "固定版本 MoE/MLA 所列语义分支静态审读；非全文件或 runtime 审计",
+      "symbols": [
+        "moe-route",
+        "moe-group-topk",
+        "moe-aux-scores",
+        "moe-aux-formula",
+        "moe-bias-update"
+      ],
+      "reviewed_ranges": [
+        [
+          834,
+          881
+        ],
+        [
+          650,
+          669
+        ],
+        [
+          942,
+          960
+        ],
+        [
+          131,
+          137
+        ],
+        [
+          1154,
+          1166
+        ],
+        [
+          139,
+          143
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/transformer/moe/moe_utils.py"
+    },
+    {
+      "id": "C-DISPATCH",
+      "repo_key": "core",
+      "path": "megatron/core/transformer/moe/token_dispatcher.py",
+      "git_blob_sha": "5743a047960d99e9b8c694e7a6685c29fbf073e8",
+      "review_scope": "固定版本 MoE/MLA 所列语义分支静态审读；非全文件或 runtime 审计",
+      "symbols": [
+        "moe-permute",
+        "moe-combine"
+      ],
+      "reviewed_ranges": [
+        [
+          645,
+          675
+        ],
+        [
+          869,
+          899
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/transformer/moe/token_dispatcher.py"
+    },
+    {
+      "id": "C-EXPERT",
+      "repo_key": "core",
+      "path": "megatron/core/transformer/moe/experts.py",
+      "git_blob_sha": "7fc0725b9de7c57571c4a0c487e17e2c4136f877",
+      "review_scope": "固定版本 MoE/MLA 所列语义分支静态审读；非全文件或 runtime 审计",
+      "symbols": [
+        "moe-experts",
+        "moe-expert-groups"
+      ],
+      "reviewed_ranges": [
+        [
+          1349,
+          1384
+        ],
+        [
+          1288,
+          1303
+        ]
+      ],
+      "evidence_level": "static_source_read",
+      "url": "https://github.com/NVIDIA/Megatron-LM/blob/a0f793dfa4e776d99a8aa63bed74e0fafc91b0db/megatron/core/transformer/moe/experts.py"
     }
   ]
 }

@@ -120,8 +120,9 @@
       "experts_per_token": 6,
       "shared_experts": 2,
       "first_dense_layers": 1,
-      "bridge": "DeepSeekV2Bridge（需补齐该类完整代码审计）",
+      "bridge": "DeepSeekV2Bridge（固定 provider/mapping 入口已静态审读，runtime 未验证）",
       "sources": [
+        "B-DS2",
         "B-DSMAP",
         "C-MLA"
       ],

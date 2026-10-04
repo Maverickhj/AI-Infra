@@ -886,6 +886,7 @@ footer {
   border-radius: 6px;
 }
 .skip-link {
+  opacity: 0;
   position: fixed;
   top: -100px;
   z-index: 10;
@@ -893,6 +894,7 @@ footer {
   padding: 15px;
 }
 .skip-link:focus {
+  opacity: 1;
   top: 5px;
 }
 .basics {
@@ -1354,3 +1356,10 @@ footer {
 .pipeline-B { background:#e6ebf6; }
 .pipeline-idle { background:#f3f3ef; color:#68766f; }
 .pipeline-F button,.pipeline-B button { padding:.35rem; white-space:nowrap; }
+
+.family-reference { margin-top:1rem; }
+.family-reference p { overflow-wrap:anywhere; }
+.family-ops,.family-source-actions { display:flex; flex-wrap:wrap; gap:.35rem; margin:1rem 0; }
+.family-ops button[aria-pressed="true"] { background:#dceae1; border-color:#285c4a; }
+.family-reference table td { font-variant-numeric:tabular-nums; white-space:nowrap; }
+.family-course { margin-top:1rem; }

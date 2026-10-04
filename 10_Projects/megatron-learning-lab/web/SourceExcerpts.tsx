@@ -5,18 +5,21 @@ import snippets from "../content/source-snippets.json";
 import licenses from "../research/source-licenses.json";
 
 export function SourceExcerpts({
+  preferredExcerptId,
   sourceId,
   repoKey,
   url,
   state,
 }: {
+  preferredExcerptId?: string;
   sourceId: string;
   repoKey: string;
   url: string;
   state: State;
 }) {
   const entry = snippets.entries.find((e) => e.source_id === sourceId);
-  const defaultExcerptId = sourceExcerptId(state, sourceId);
+  const defaultExcerptId =
+    preferredExcerptId ?? sourceExcerptId(state, sourceId);
   const [excerptId, setExcerptId] = useState(() => defaultExcerptId || "");
   const [activeLine, setActiveLine] = useState<number | null>(null);
   const codeRef = useRef<HTMLPreElement>(null);
@@ -79,7 +82,8 @@ export function SourceExcerpts({
         <span className="small muted">{entry.excerpts.length} 个关键片段</span>
       </div>
       {picker}
-      {state.step === "decoder" &&
+      {!preferredExcerptId &&
+        state.step === "decoder" &&
         state.operator !== "overview" &&
         defaultExcerptId &&
         excerptId === defaultExcerptId && (

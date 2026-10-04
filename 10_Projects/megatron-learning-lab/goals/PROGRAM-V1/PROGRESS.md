@@ -9,7 +9,7 @@ reviewed: false
 
 # PROGRAM-V1 进度
 
-当前：M00/G02/G03/G04/G05 validated，G06 in_progress（已开始固定版本 MoE/MLA 源码核查）。本次按用户最新指示提交并推送 G04/G05 成果；此前基线 HEAD `b841b47`。后续开发仍不自动提交。所有代码/测试在 `minimind-megatron-bridge-dev-1` 执行。
+当前：M00/G02/G03/G04/G05/G06 validated，G07 in_progress。2026-10-05 用户再次授权 commit & push，提交前 HEAD `7cff80b`；本次保存 G06 成果和 G07 数值核心，G07 课程与页面尚未完成。所有代码/测试在 `minimind-megatron-bridge-dev-1` 执行。
 
 ## M00 · 2026-10-04
 
@@ -79,3 +79,38 @@ G05 完整门槛通过，报告 `runs/program-v1/G05/20261004T170057490328Z/repo
 五处课程正文按展开状态挂载，保留所有精讲内容、数学符号表和键盘操作；完整浏览器回归已覆盖这次共享渲染改动。G04 的历史报告保持原快照，当前快照再次覆盖 G04 四条浏览器路径及 CPU 数值检查。全部仍为 reference 验证，没有 GPU/NCCL 或真实训练实测。
 
 本次用户明确授权 commit & push，范围仅本项目源文件、课程、测试和进度记录；运行日志、截图及生成数据继续留在本地，不加入 Git。提交前再次校验当前源码指纹与报告一致。下一阶段为 G06 的 MoE/MLA 完整模型交互与独立数值验收，PROGRAM-V1 尚未全部完成。
+
+
+## G06 · 开工范围与行为验收
+
+复用 `experiments/decoder_reference.py` / `web/decoder/compute.ts` 公共两层 backbone，提取 attention/FFN 扩展点并立即回归 G03/G04/G05。新增 `experiments/moe_mla_reference.py`、`content/fixtures/moe-mla-reference.json`、`web/family/{compute.ts,FamilyWalkthrough.tsx}`、`content/cases/09_moe_mla.md`、`tests/{moe_mla_cpu_checks.py,test_moe_mla_reference.py,moe-mla.mjs,browser/family.spec.ts}`；接入状态、入口、样式、package 和固定来源档案。
+
+行为验收：①三种模型复用 embedding→两层 attention/FFN residual→final norm→head→CE，Qwen MoE无shared、V2直接Q、V3低秩Q；②top-k、分组/归一化/缩放、permutation→expert→combine恢复token，padding与辅助项明确；③V3 bias计数/符号更新符合固定源码，不作为SGD参数；④MLA expanded与normalized-latent吸收式及逐prefix cache一致，错误norm/scale/RoPE反例有效；⑤EP1/2、ETP1/2、EDP1只在参考已验证组合中展示；⑥模型/层/token/专家/训练或decode选择实际改变数据，CPU对照、源码、导出、键盘/离线/窄屏与旧路线通过。
+
+G06 首轮八项 CPU 检查中七项通过；bias 手算发现 float64 参考中误将计数均值降为 float32，引入 2.235e-10 偏差。改为保留 logits dtype 后重验，预设 1e-10 容差不变；生产 router 的 fp32 边界仍明确保留。
+
+
+## G06 · 完整阶段验收完成
+
+报告 runs/program-v1/G06/20261004T174656964753Z/report.json，源码指纹 c859a265881f1e27f0f6570f01301545c123d1d7519e14ebaf1d9e9788d391ba。88项Python、79项Chromium全部通过，skipped/flaky/unexpected=0；构建、handoff、GQA、MoE/MLA数值、46完整源码/98片段、自审通过。MoE/MLA 9组与4种专家布局共72033数值，最大误差2.886579864025407e-15，含八项实际CPU梯度/反例检查。报告归档当前桌面/窄屏截图与源码清单，STATE保存报告hash。此前失败trace保持在preflight-group-expectation。
+
+G03/G04/G05公共decoder扩展点已立即通过各独立数值检查，本轮完整基线再覆盖旧课程。新增子步骤源码显式选择不改变旧默认路由。训练激活与decode cache独立导出，参考数据未标observed。进入G07 GRPO/PPO，真实训练仍未获资源授权，不能以CPU参考代替R01/R02。
+
+
+## G07 · 开工范围与行为验收
+
+新增 `content/fixtures/rl-reference.json`、`experiments/rl_reference.py`、`web/rl/{compute.ts,RLJourney.tsx}`、`content/cases/10_rl_reference.md`、`tests/{rl_cpu_checks.py,test_rl_reference.py,rl-reference.mjs,browser/rl.spec.ts}`，接入已有RL场景、状态/来源/package；复用G03完整两层decoder的固定特征。CPU参考仅训练明确列出的LM head和独立critic head，backbone冻结以便独立推导全部策略参数梯度，不把它称为全参数训练或实际rollout。
+
+验收：①四条固定authored轨迹、两组prompt与不同响应长度，generation/prev/current/reference按action位置对齐；②GRPO组内Bessel标准差/同分组与PPO terminal reward、GAE跨mask carry、returns、value loss两条完整路线；③正负advantage clipping、token/sequence归约、KL开关及其采样权重梯度、force-on-policy detach；④CPU autograd与独立解析/手算/有限差分，真实SGD actor/critic互不串梯度并改变参数；⑤导出/refit以版本+参数hash+ack校验，错版本/未完成拒绝同步，固定actions不冒充新生成；⑥交互数值、步骤源码、参考导出、离线数学、键盘与窄屏及全旧回归通过。
+
+已读取固定R-LOSS/R-GRPO以及新缓存R-ADV/R-UTIL/R-PPO；GitHub tree API限流一次后改读固定commit raw原文成功，不重试API、不改source.lock。源码实际std带Bessel修正，force ratio和KL sampling weight需保留detach梯度；GAE保持跨masked位置的累积状态。
+
+## 2026-10-05 · G06 与 G07 数值核心提交 checkpoint
+
+用户明确授权 commit & push，本次范围仅本项目源文件、课程、测试与进度记录。G06 的历史阶段验收保持不变；G07 当前完成 authored 轨迹、冻结整模 backbone 的可训练策略/critic head、独立数值参考与行为检查，课程、页面及完整阶段验收尚未完成，STATE 保持 in_progress。
+
+当前快照在开发容器内执行 tools/goal_gate.py baseline 全部通过：89 项 Python、79 项 Chromium，skipped/flaky/unexpected=0；数据生成、handoff、片段检查、生产构建和 diff 检查通过。报告 runs/goal-g01/20261004T181156949024Z/report.json，SHA256 fedb8f4de67193d78062169d80983d98a797d7c2fc394bb2e82d0893f7a80c6f；源码指纹 a41440d4d8d417609aff794586fa755f723c6ccdab02f69efe012970c4953089。
+
+npm run test:rl-reference 通过 12 组配置、41221 数值、8 项真实 CPU 检查，最大误差 7.993605777301127e-15，atol=rtol=1e-10。日志 runs/commit-check-hMEIzm65/rl-reference.log。完整源码缓存校验通过 46 文件/98 片段。所有结果属于 reference/software 验证，没有 GPU 或真实 rollout；PROGRAM-V1 尚未全部完成。
+
+运行报告、截图、源码缓存和生成数据留在本地，不加入 Git。下一步继续 G07 的课程、交互、固定源码档案与完整浏览器验收。

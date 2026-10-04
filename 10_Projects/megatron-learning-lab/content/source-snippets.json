@@ -695,6 +695,76 @@
             }
           ],
           "id": "c-mla-l321"
+        },
+        {
+          "id": "mla-latent-norm",
+          "title": "Q/KV latent 的 norm 位置",
+          "start_line": 772,
+          "end_line": 791,
+          "code": "        kv_compressed = apply_module(self.kv_layernorm)(kv_compressed)\n\n        # =========================================\n        # QKV up projection and RoPE apply\n        # =========================================\n\n        def qkv_up_proj_and_rope_apply_for_cached_latent_kv(\n            q_compressed, kv_compressed, k_pos_emb, rotary_pos_emb\n        ):\n            if self.config.q_lora_rank is not None:\n                # q_compressed: [num_tokens, q_lora_rank]\n                # q: [num_tokens, n * (qk_head_dim + qk_pos_emb_head_dim)]\n                q, _ = self.linear_q_up_proj(q_compressed)\n            else:\n                # q_compressed: [num_tokens, hidden_size]\n                # q: [num_tokens, n * (qk_head_dim + qk_pos_emb_head_dim)]\n                q, _ = self.linear_q_proj(q_compressed)\n\n            # q: [num_tokens, n, q_head_dim]\n            q = q.view(*q.size()[:-1], self.num_attention_heads_per_partition, self.q_head_dim)\n",
+          "sha256": "5e9b4d3c4ca58801dd02241dc0d707b79bd29c6662a5fc4e15c712856924dd02",
+          "annotations": [
+            {
+              "line": 779,
+              "text": "仅低秩 Q 经过 q_layernorm；KV norm 在 up-projection 前，非线性 norm 不能吸收入常数权重。"
+            }
+          ]
+        },
+        {
+          "id": "mla-cached-latent",
+          "title": "cache 内容与 decode-only Q 吸收",
+          "start_line": 818,
+          "end_line": 841,
+          "code": "            # Create KV cache entry. It will the be the key vector in cache mla latents path\n            k_pos_emb_squeezed = k_pos_emb.squeeze(1)\n            kv_cached = torch.cat([kv_compressed, k_pos_emb_squeezed], dim=-1)\n\n            # Flag for whether to use absorption. We only use absorption\n            # when caching the latents and in decode-only mode\n            use_absorption = (\n                self.config.cache_mla_latents\n                and inference_context\n                and inference_context.is_decode_only()\n            )\n            # Compute query components. Multiply by up k if absorbing\n            q_content = (\n                torch.einsum(\"sbhd,hdk->sbhk\", q_no_pe, self.up_k_weight)\n                if use_absorption\n                else q_no_pe\n            )\n            # Query: content + original positional (latent_dim + pos_dim)\n            query = torch.cat([q_content, q_pos_emb], dim=-1)\n\n            key = kv_cached\n            value = None\n\n            query = query.contiguous()\n",
+          "sha256": "19d3b3b550924ecdee10b7cf67afd730c9c34e6d6c7456d3976ec6ebbfc09def",
+          "annotations": [
+            {
+              "line": 823,
+              "text": "cache 保存 normalized KV latent 与已旋转 positional key；吸收以 cache_mla_latents 和 decode-only 为条件。"
+            }
+          ]
+        },
+        {
+          "id": "mla-value-absorption",
+          "title": "decode 输出乘 V up 权重",
+          "start_line": 432,
+          "end_line": 441,
+          "code": "\n        # We are doing absorption with cache mla latents and decode mode.\n        if self.cache_mla_latents and inference_context.is_decode_only():\n            # core_attn_out = self.self.up_v_layer(core_attn_out)\n            core_attn_out = torch.einsum(\"sbhc,hdc->sbhd\", core_attn_out, self.up_v_weight)\n            core_attn_out = core_attn_out.contiguous()\n\n            # Flatten back: [seq, batch, num_heads * v_head_dim]\n            core_attn_out = core_attn_out.view(core_attn_out.size(0), core_attn_out.size(1), -1)\n\n",
+          "sha256": "09f2f37d893aa820daacfe274f7e74ca7cf52d0a52d0ca05f07a2c0858afc694",
+          "annotations": [
+            {
+              "line": 436,
+              "text": "latent weighted sum 再乘各头 V up；没有在页面冒充 Flash MLA kernel。"
+            }
+          ]
+        },
+        {
+          "id": "mla-direct-q",
+          "title": "无低秩 Q 的 down 分支",
+          "start_line": 637,
+          "end_line": 663,
+          "code": "    def _qkv_down_projection(self, hidden_states):\n        \"\"\"Unfused q/kv down projection path.\"\"\"\n        if self.config.q_lora_rank is not None:\n            # if linear_q_down_proj is ColumnParallelLinear:\n            #     q_compressed: [s, b, q_lora_rank / TP]\n            # elif linear_q_down_proj is Linear:\n            #     q_compressed: [s / TP, b, q_lora_rank]\n            q_compressed, _ = self.linear_q_down_proj(hidden_states)\n\n            # When output is sharded (ColumnParallelLinear), two things are needed to be\n            # identical to a normal Linear.\n            #   1. Manually gather output to restore output dim q_lora_rank;\n            #   2. Scatter sequence back to s / TP if sequence-parallel since it was\n            #      gathered by ColumnParallelLinear.\n            if q_compressed.size(-1) != self.config.q_lora_rank:\n                q_compressed = gather_from_tensor_model_parallel_region(q_compressed)\n                if self.config.sequence_parallel:\n                    q_compressed = scatter_to_sequence_parallel_region(q_compressed)\n        else:\n            q_compressed = hidden_states\n\n        # if linear_kv_down_proj is ColumnParallelLinear:\n        #     kv_combined: [s, b, (kv_lora_rank + qk_pos_emb_head_dim) / TP]\n        # elif linear_kv_down_proj is Linear:\n        #     kv_combined: [s / TP, b, (kv_lora_rank + qk_pos_emb_head_dim)]\n        kv_combined, _ = self.linear_kv_down_proj(hidden_states)\n        return q_compressed, kv_combined\n",
+          "sha256": "6e1c7d106c8c3ac103aa0a51df8db91cf567ca5bf2c53ecfbd68942bad4ccb15",
+          "annotations": [
+            {
+              "line": 656,
+              "text": "q_lora_rank=None 直接保留 hidden_states，后续 linear_q_proj；V2-Lite 不做低秩 Q norm。"
+            }
+          ]
+        },
+        {
+          "id": "mla-scale",
+          "title": "原始 Q head 维度决定 score scale",
+          "start_line": 177,
+          "end_line": 179,
+          "code": "        mscale = _yarn_get_mscale(self.config.rotary_scaling_factor, self.config.mscale_all_dim)\n        self.softmax_scale = mscale * mscale / math.sqrt(self.q_head_dim)\n        self.cache_mla_latents = self.config.cache_mla_latents\n",
+          "sha256": "3760f8ef9ea76c65b6e807b89648ebfeef0afbf1670092be80776e7604740bde",
+          "annotations": [
+            {
+              "line": 178,
+              "text": "吸收后 latent 维度改变也不更换 softmax scale；本例 mscale=1，不演算 YaRN 长度扩展。"
+            }
+          ]
         }
       ]
     },
@@ -1361,6 +1431,34 @@
               "text": "num_tokens路径在DP/CP组求和；生产梯度预缩放还需结合DDP配置。"
             }
           ]
+        },
+        {
+          "id": "moe-bias-global-batch",
+          "title": "global batch 结束时更新 router bias",
+          "start_line": 334,
+          "end_line": 371,
+          "code": "def _update_router_expert_bias(\n    model: List[torch.nn.Module],\n    config: TransformerConfig,\n    tp_dp_cp_group: Optional[torch.distributed.ProcessGroup] = None,\n):\n    \"\"\"\n    Update the expert bias of the router for a global batch.\n    This requires all-reduce of local_tokens_per_expert across TPxCPxDP ranks\n    \"\"\"\n    tokens_per_expert_list = []\n    expert_bias_list = []\n    for model_chunk in model:\n        for module in get_attr_wrapped_model(model_chunk, 'modules')():\n            # Only update expert_bias if this module is in the training mode. There are special\n            # cases where only the student is in training mode but the teacher is in eval mode\n            # when using online knoweldge-distillation with Model-Optimizer. In this case, we want\n            # to avoid updating teacher's expert_bias.\n            if (\n                hasattr(module, 'expert_bias')\n                and module.training\n                and not getattr(module, 'frozen_expert_bias', False)\n            ):\n                tokens_per_expert_list.append(module.local_tokens_per_expert)\n                expert_bias_list.append(module.expert_bias)\n    # For hybrid models with both MoE and Dense layers, this list can be empty.\n    if len(expert_bias_list) == 0:\n        return\n    stacked_tokens_per_expert = torch.stack(tokens_per_expert_list, dim=0)\n    stacked_expert_bias = torch.stack(expert_bias_list, dim=0)\n    stacked_updated_expert_bias = get_updated_expert_bias(\n        stacked_tokens_per_expert,\n        stacked_expert_bias,\n        config.moe_router_bias_update_rate,\n        tp_dp_cp_group=tp_dp_cp_group,\n    )\n\n    for expert_bias, updated_expert_bias in zip(expert_bias_list, stacked_updated_expert_bias):\n        expert_bias.copy_(updated_expert_bias)\n",
+          "sha256": "4f72a525f62b4bc77731e276d262f763335d273f605b0cdabf00cb7be0a6592b",
+          "annotations": [
+            {
+              "line": 353,
+              "text": "仅 training 且未冻结的 router 更新；按全局 batch 聚合，不是每个 token 更新。"
+            }
+          ]
+        },
+        {
+          "id": "moe-bias-finalize",
+          "title": "finalize 调用与计数复位",
+          "start_line": 665,
+          "end_line": 676,
+          "code": "    if config.moe_router_enable_expert_bias:\n        if pg_collection is None:\n            tp_dp_cp_group = parallel_state.get_tensor_and_data_parallel_group(\n                with_context_parallel=True\n            )\n        _update_router_expert_bias(model, config, tp_dp_cp_group=tp_dp_cp_group)\n\n    if config.moe_router_load_balancing_type == \"quantile_balancing\":\n        _update_router_qb_beta(model, config, dp_cp_group=dp_cp_group)\n\n    reset_model_temporary_tensors(config, model)\n\n",
+          "sha256": "d54066b8f33a1451279d50f1de6af7ba077e338df3717de30726a217572a18a0",
+          "annotations": [
+            {
+              "line": 670,
+              "text": "完成梯度归约后的 finalize 调用 bias 更新，再清临时计数；不把评估模式当训练。"
+            }
+          ]
         }
       ]
     },
@@ -1501,6 +1599,238 @@
             {
               "line": 2657,
               "text": "根据cu_seqlens和hybrid配置选择策略；本页没有实现hybrid。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "B-DS2",
+      "commit": "c0e164ed2aedac4ad1c877780e2564a19d5d54ec",
+      "path": "src/megatron/bridge/models/deepseek/deepseek_v2_bridge.py",
+      "git_blob_sha": "0a900ca287a4a3fd472e07d8998f8edb3d555162",
+      "copyright_header": "# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.\n#\n# Licensed under the Apache License, Version 2.0 (the \"License\");\n# you may not use this file except in compliance with the License.\n# You may obtain a copy of the License at\n#\n#     http://www.apache.org/licenses/LICENSE-2.0\n#\n# Unless required by applicable law or agreed to in writing, software\n# distributed under the License is distributed on an \"AS IS\" BASIS,\n# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n# See the License for the specific language governing permissions and\n# limitations under the License.\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "ds2-provider",
+          "title": "V2 独立 provider 与 dense/shared 布局",
+          "start_line": 44,
+          "end_line": 84,
+          "code": "    def provider_bridge(self, hf_pretrained: PreTrainedCausalLM) -> MLAModelProvider:\n        provider = super().provider_bridge(hf_pretrained)\n        hf_config = hf_pretrained.config\n\n        provider.transformer_layer_spec = partial(get_gpt_decoder_block_spec, use_transformer_engine=HAVE_TE)\n        provider.normalization = \"RMSNorm\"\n        provider.gated_linear_unit = True\n        provider.add_bias_linear = False\n        provider.share_embeddings_and_output_weights = False\n        provider.qk_layernorm = True\n        provider.multi_latent_attention = True\n\n        provider.moe_grouped_gemm = True\n        provider.moe_router_pre_softmax = True\n        provider.moe_token_dispatcher_type = \"alltoall\"\n        provider.moe_router_load_balancing_type = \"seq_aux_loss\"\n        provider.moe_shared_expert_overlap = True\n        provider.moe_router_dtype = \"fp32\"\n        provider.moe_permute_fusion = True\n\n        provider.apply_rope_fusion = False\n        provider.gradient_accumulation_fusion = True\n        provider.bias_activation_fusion = True\n        provider.bias_dropout_fusion = True\n        provider.cross_entropy_fusion_impl = \"te\"\n        provider.cross_entropy_loss_fusion = True\n        provider.masked_softmax_fusion = True\n        provider.persist_layer_norm = True\n\n        provider.hidden_dropout = 0.0\n        provider.attention_softmax_in_fp32 = False\n\n        provider.make_vocab_size_divisible_by = 3200\n        provider.seq_length = 4096\n\n        provider.moe_layer_freq = [0] * hf_config.first_k_dense_replace + [1] * (\n            hf_config.num_hidden_layers - hf_config.first_k_dense_replace\n        )\n        provider.moe_shared_expert_intermediate_size = hf_config.moe_intermediate_size * hf_config.n_shared_experts\n\n        return provider\n",
+          "sha256": "335dc9ef4d706b5249893de4a40c011293c934f5a4d6cf87de46b9767cbe58ca",
+          "annotations": [
+            {
+              "line": 57,
+              "text": "V2 的 pre-softmax、seq_aux_loss 与 V3 分开；直接 Q 取决于 q_lora_rank=None 的 Core 分支。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "C-ROUTER",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/transformer/moe/router.py",
+      "git_blob_sha": "e4591ce3acf73f245e9a5dbc2448b784c4142669",
+      "copyright_header": "# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n\nfrom abc import ABC, abstractmethod\nfrom typing import Optional, Union\n\nimport torch\n\nfrom megatron.core.inference.utils import InferenceMode\nfrom megatron.core.jit import jit_fuser\nfrom megatron.core.transformer.module import MegatronModule\nfrom megatron.core.transformer.moe.moe_logging import get_moe_metrics_tracker\nfrom megatron.core.transformer.moe.moe_utils import (\n    MoEAuxLossAutoScaler,\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "moe-seq-aux",
+          "title": "序列级辅助项与 B 归约",
+          "start_line": 446,
+          "end_line": 502,
+          "code": "\n    def _apply_seq_aux_loss(\n        self,\n        probs: torch.Tensor,\n        scores_for_aux_loss: torch.Tensor,\n        routing_map: torch.Tensor,\n        seq_length: int,\n        bsz: int,\n        with_padding_mask: bool = False,\n    ):\n        \"\"\"Apply the sequence-level auxiliary loss for the given scores and routing map.\n\n        To calculate the sequence-level aux loss, we reshape the batch_size dimension to\n        experts dimension. The resulted loss by switch_load_balancing_loss_func is equal\n        to the sum of aux loss for each sequence in the batch. And then we divide the aux\n        loss by the batch size to get averaged aux loss.\n        \"\"\"\n        seq_aux_loss_coeff = self.get_aux_loss_coeff(\"seq_aux_loss\")\n        if seq_aux_loss_coeff == 0:\n            return probs\n\n        scores_for_aux_loss = scores_for_aux_loss.reshape(seq_length, -1)\n        routing_map = routing_map.reshape(seq_length, -1)\n\n        global_tokens_per_expert, local_num_tokens, total_num_tokens = (\n            get_tokens_per_expert_and_token_count(\n                routing_map=routing_map,\n                reduce_group=self.tp_cp_group,\n                with_padding_mask=with_padding_mask,\n                topk=self.topk * bsz,\n            )\n        )\n\n        aux_loss = (\n            switch_load_balancing_loss_func(\n                probs=scores_for_aux_loss,\n                tokens_per_expert=global_tokens_per_expert,\n                total_num_tokens=total_num_tokens,\n                topk=self.topk,\n                num_experts=self.config.num_moe_experts,\n                moe_aux_loss_coeff=seq_aux_loss_coeff,\n                fused=self.config.moe_router_fusion,\n            )\n            / bsz\n        )\n\n        probs = self.attach_and_log_load_balancing_loss(\n            probs,\n            seq_aux_loss_coeff,\n            aux_loss,\n            \"seq_load_balancing_loss\",\n            self.tp_cp_group,\n            # local_num_tokens is per-sequence (bsz folded into the expert dim above);\n            # * bsz recovers the micro-batch total, else per-token-loss scaling keeps a 1/MBS.\n            valid_token_count=local_num_tokens * bsz,\n        )\n        return probs\n",
+          "sha256": "a6e77f0bb39bfcfb55fa288c7d81caab48050223a54b341230a3a2c537011905",
+          "annotations": [
+            {
+              "line": 461,
+              "text": "当前演算 B=1；不将相同公式扩展为任意变长 batch。辅助索引由无 bias 的 scores 单独计算。"
+            }
+          ]
+        },
+        {
+          "id": "moe-bias-count",
+          "title": "训练计数排除 padding",
+          "start_line": 728,
+          "end_line": 739,
+          "code": "    def _apply_expert_bias(\n        self, routing_map: torch.Tensor, padding_mask: Optional[torch.Tensor] = None\n    ):\n        \"\"\"\n        Update expert bias and tokens_per_expert\n        Prevent extra local tokens accumulation on evaluation or activation recomputation\n        \"\"\"\n        if self.enable_expert_bias and torch.is_grad_enabled():\n            with torch.no_grad():\n                if padding_mask is not None:\n                    routing_map = routing_map & (~padding_mask)\n                self.local_tokens_per_expert += routing_map.sum(dim=0)\n",
+          "sha256": "5d8e7009a734c8abbde7cd79bb68c762381d5c4bec054f03b31bf82a6ebe943f",
+          "annotations": [
+            {
+              "line": 738,
+              "text": "源码实际取 ~padding_mask，True 表示 padding；上方部分 docstring 不一致。主路由概率没有在这里清零。"
+            }
+          ]
+        },
+        {
+          "id": "moe-aux-attach",
+          "title": "辅助梯度挂接与全局 token scaling",
+          "start_line": 625,
+          "end_line": 637,
+          "code": "            # So pre-multiplying aux_loss by num_local_tokens * tp_cp_group.size() cancels\n            # that same factor in total_global_tokens above, leaving 1 / (num_micro_batches *\n            # dp_size) as the effective scaling on the aux_loss gradient — the target.\n            # Use valid_token_count (excluding padding) if provided, otherwise use total tokens.\n            num_local_tokens = (\n                valid_token_count if valid_token_count is not None else activation.shape[0]\n            )\n            activation = MoEAuxLossAutoScaler.apply(\n                activation, aux_loss * num_local_tokens * self.tp_cp_group.size()\n            )\n        else:\n            activation = MoEAuxLossAutoScaler.apply(activation, aux_loss)\n        return activation\n",
+          "sha256": "e27a3ab902a603b19e8f62eaaf3fc1ca924bbb11918df3778f44587623f92d54",
+          "annotations": [
+            {
+              "line": 632,
+              "text": "生产实现挂接辅助梯度；教学显式 CE+aux，仅 B=1、单次累积，不复制分布式 scaler。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "C-MOEUTIL",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/transformer/moe/moe_utils.py",
+      "git_blob_sha": "9b7cf177c79938379748a2367de49c645ffc3a06",
+      "copyright_header": "# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n\nimport functools\nimport math\nfrom dataclasses import dataclass\nfrom typing import List, Optional, Tuple, Union\n\nimport torch\n\nfrom megatron.core import parallel_state\nfrom megatron.core.extensions.transformer_engine import HAVE_TE\nfrom megatron.core.fp4_utils import get_fp4_align_size\nfrom megatron.core.fp8_utils import get_fp8_align_size\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "moe-route",
+          "title": "softmax / sigmoid、bias 与缩放",
+          "start_line": 834,
+          "end_line": 881,
+          "code": "\n    # Precision notes:\n    # - Logits are converted to fp32 for score functions.\n    # - All the intermediate calculations are in fp32.\n    # - The final probs are casted to the same dtype as the logits.\n    if score_function == \"softmax\":\n        if use_pre_softmax:\n            scores = torch.softmax(logits, dim=-1, dtype=torch.float32)\n            if precomputed_indices is not None:\n                top_indices = precomputed_indices\n                probs = torch.gather(scores, dim=1, index=top_indices)\n            else:\n                probs, top_indices = compute_topk(scores, topk, num_groups, group_topk)\n        else:\n            if precomputed_indices is not None:\n                top_indices = precomputed_indices\n                scores = torch.gather(logits, dim=1, index=top_indices)\n            else:\n                scores, top_indices = compute_topk(logits, topk, num_groups, group_topk)\n            probs = torch.softmax(scores, dim=-1, dtype=torch.float32)\n    elif score_function in (\"sigmoid\", \"sqrtsoftplus\"):\n        if score_function == \"sigmoid\":\n            scores = torch.sigmoid(logits.float())\n        else:\n            scores = torch.nn.functional.softplus(logits.float()).sqrt()\n        if precomputed_indices is not None:\n            top_indices = precomputed_indices\n            scores = torch.gather(scores, dim=1, index=top_indices)\n        elif expert_bias is not None:\n            scores_for_routing = scores + expert_bias.float()\n            _, top_indices = compute_topk(scores_for_routing, topk, num_groups, group_topk)\n            scores = torch.gather(scores, dim=1, index=top_indices)\n        else:\n            scores, top_indices = compute_topk(scores, topk, num_groups, group_topk)\n        probs = scores / (scores.sum(dim=-1, keepdim=True) + 1e-20) if topk > 1 else scores\n    else:\n        raise ValueError(f\"Invalid score_function: {score_function}\")\n\n    if scaling_factor:\n        probs = probs * scaling_factor\n\n    probs = probs.type_as(logits)\n\n    if dense_output:\n        return probs, top_indices\n\n    if torch.are_deterministic_algorithms_enabled():\n        # build [num_tokens, num_experts] from [num_tokens, topk]\n",
+          "sha256": "0ab89ce00055b6feaf4ffc570bd5dcb3ff2509e3324b36c7872d87af8ea477f3",
+          "annotations": [
+            {
+              "line": 861,
+              "text": "bias 只用于 sigmoid 专家选择；原 sigmoid 分数归一化后再缩放。fp32 生产路由不宣称与 float64 逐位相等。"
+            }
+          ]
+        },
+        {
+          "id": "moe-group-topk",
+          "title": "分组限制使用组内 top-k 和",
+          "start_line": 650,
+          "end_line": 669,
+          "code": "    Returns:\n        Tuple[torch.Tensor, torch.Tensor]: Probs and indices tensor.\n    \"\"\"\n    # Organize the experts into groups\n    # Select groups based on sum of top-(topk/group_topk) routing scores within each group\n    group_scores = (\n        scores.view(num_tokens, num_groups, -1).topk(topk // group_topk, dim=-1)[0].sum(dim=-1)\n    )\n    group_idx = torch.topk(group_scores, k=group_topk, dim=-1, sorted=False)[1]\n    group_mask = torch.zeros_like(group_scores)\n    group_mask.scatter_(1, group_idx, 1)\n\n    # Mask the experts based on selection groups\n    score_mask = (\n        group_mask.unsqueeze(-1)\n        .expand(num_tokens, num_groups, num_experts // num_groups)\n        .reshape(num_tokens, -1)\n    )\n\n    masked_scores = scores.masked_fill(~score_mask.bool(), float('-inf'))\n",
+          "sha256": "54d60c4fb349a9c0e6a0816fe8ab8b76379594f36641ea893e1736f546bb1e83",
+          "annotations": [
+            {
+              "line": 655,
+              "text": "组分数为组内 top-(topk/group_topk) 之和，不能固定替换为 max。"
+            }
+          ]
+        },
+        {
+          "id": "moe-aux-scores",
+          "title": "辅助项索引与 padding",
+          "start_line": 942,
+          "end_line": 960,
+          "code": "            scores = scores / (scores.sum(dim=-1, keepdim=True) + 1e-20)\n        else:\n            raise ValueError(f\"Invalid score_function: {score_function}\")\n\n        _, top_indices = torch.topk(scores, k=topk, dim=1)\n        routing_map = torch.zeros_like(logits).int().scatter(1, top_indices, 1).bool()\n\n    # Apply padding mask to scores if provided\n    if padding_mask is not None:\n        # Invert padding_mask and make True indicates valid tokens\n        valid_mask = (~padding_mask).unsqueeze(-1)\n        routing_map = routing_map * valid_mask\n        scores = scores * valid_mask\n    return routing_map, scores\n\n\ndef apply_router_token_dropping(\n    routing_probs: torch.Tensor,\n    routing_map: torch.Tensor,\n",
+          "sha256": "9c6300cf3bae7b406357be064e6c8607f96472c140cdc16566dd455fd8d65e6d",
+          "annotations": [
+            {
+              "line": 957,
+              "text": "辅助路由不复用带 bias/分组限制的 dispatch；True padding 被取反排除。"
+            }
+          ]
+        },
+        {
+          "id": "moe-aux-formula",
+          "title": "Switch 辅助损失归约",
+          "start_line": 139,
+          "end_line": 143,
+          "code": "    aggregated_probs_per_expert = probs.sum(dim=0)\n    aux_loss = torch.sum(aggregated_probs_per_expert * tokens_per_expert) * (\n        num_experts * moe_aux_loss_coeff / (topk * total_num_tokens * total_num_tokens)\n    )\n    return aux_loss\n",
+          "sha256": "1e5e930418abc5abfd8b1b9059c63d76514168e315900e017b3075d24566b6fc",
+          "annotations": [
+            {
+              "line": 141,
+              "text": "E*alpha/(k*N²) 乘 counts 与概率和；counts 不可导，概率保留梯度。"
+            }
+          ]
+        },
+        {
+          "id": "moe-bias-update",
+          "title": "专家偏置的无梯度符号更新",
+          "start_line": 1154,
+          "end_line": 1166,
+          "code": "    with torch.no_grad():\n        if tp_dp_cp_group is None:\n            # TODO(Hepteract): delete the usage of the global parallel_state.\n            tp_dp_cp_group = parallel_state.get_tensor_and_data_parallel_group(\n                with_context_parallel=True\n            )\n\n        # All Reduce Across TPxCPxDP group\n        torch.distributed.all_reduce(tokens_per_expert, group=tp_dp_cp_group)\n        average_tokens = tokens_per_expert.sum(dim=-1, keepdim=True) / tokens_per_expert.shape[-1]\n        offset = average_tokens - tokens_per_expert\n        updated_expert_bias = expert_bias + torch.sign(offset) * expert_bias_update_rate\n        return updated_expert_bias\n",
+          "sha256": "12e2de267a633b15c5397ef405fc11a22e7ffe1d59681d186dd5c8e1334cd57a",
+          "annotations": [
+            {
+              "line": 1163,
+              "text": "先在 TP×CP×DP 聚合计数，再按平均数减 count 的符号更新；不是 SGD 梯度。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "C-DISPATCH",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/transformer/moe/token_dispatcher.py",
+      "git_blob_sha": "5743a047960d99e9b8c694e7a6685c29fbf073e8",
+      "copyright_header": "# Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\n\nimport logging\nimport os\nimport warnings\nfrom abc import ABC, abstractmethod\nfrom typing import List, Optional, Tuple\n\nimport torch\n\nfrom megatron.core import utils\nfrom megatron.core.config import is_experimental_enabled\nfrom megatron.core.fusions.fused_indices_converter import fused_indices_to_multihot\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "moe-permute",
+          "title": "按专家排列 token 与对应概率",
+          "start_line": 645,
+          "end_line": 675,
+          "code": "            if is_experimental_enabled() and self.config.moe_permute_fusion:\n                self.routing_map = fused_pad_routing_map(self.routing_map, pad_multiple)\n            else:\n                self.routing_map = pad_routing_map(self.routing_map, pad_multiple)\n        self.tokens_per_expert = self.preprocess(self.routing_map)\n\n        if self.shared_experts is not None:\n            self.shared_experts.pre_forward_comm(hidden_states.view(self.hidden_shape))\n\n        # Permutation 1: input to AlltoAll input\n        self.tokens_per_expert = self._maybe_dtoh_and_synchronize(\n            \"before_permutation_1\", self.tokens_per_expert\n        )\n        self.hidden_shape_before_permute = hidden_states.shape\n        (\n            permutated_local_input_tokens,\n            permuted_probs,\n            self.reversed_local_input_permutation_mapping,\n            _,\n            _,\n        ) = permute(\n            hidden_states,\n            self.routing_map,\n            probs=probs,\n            num_out_tokens=self.num_out_tokens,\n            fused=self.config.moe_permute_fusion,\n            drop_and_pad=self.drop_and_pad,\n        )\n        return permutated_local_input_tokens, permuted_probs\n\n    def token_dispatch(self, permutated_local_input_tokens, permuted_probs):\n",
+          "sha256": "6a9b23624280168d08e221ab0d87dd0be70cbd4a7c85f72749fde7f24b6debac",
+          "annotations": [
+            {
+              "line": 661,
+              "text": "同一 token 的不同 top-k 槽位是不同派发，保留逆映射；本页只有 CPU 内存内模拟。"
+            }
+          ]
+        },
+        {
+          "id": "moe-combine",
+          "title": "逆排列恢复 token 并加 shared",
+          "start_line": 869,
+          "end_line": 900,
+          "code": "    def combine_postprocess(self, permutated_local_input_tokens):\n        \"\"\"Finalizes token reconstruction with un-permutation and reshaping.\n\n        This method un-permutes the tokens back to their original order,\n        reshapes the tensor to its original shape, and adds the shared\n        expert output if enabled.\n\n        Args:\n            permutated_local_input_tokens (torch.Tensor): Permuted hidden states from token combine.\n\n        Returns:\n            The final MoE layer output reshaped to its original dimensions.\n        \"\"\"\n\n        # Unpermutation 1: AlltoAll output to output\n        output = unpermute(\n            permutated_local_input_tokens,\n            self.reversed_local_input_permutation_mapping,\n            restore_shape=self.hidden_shape_before_permute,\n            routing_map=self.routing_map,\n            fused=self.config.moe_permute_fusion,\n            drop_and_pad=self.drop_and_pad,\n        )\n\n        # Reshape the output tensor\n        output = output.view(self.hidden_shape)\n\n        # Add shared experts output\n        if self.shared_experts is not None:\n            shared_expert_output = self.shared_experts.get_output()\n            output += shared_expert_output\n        return output\n",
+          "sha256": "3af5e8ad53258f98c26092882210bc5e5219b75c8fe557ad4da927f1c94b1664",
+          "annotations": [
+            {
+              "line": 884,
+              "text": "专家输出已经携带概率；unpermute 后将 shared 输出相加，不对 shared 作 router 加权。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "source_id": "C-EXPERT",
+      "commit": "a0f793dfa4e776d99a8aa63bed74e0fafc91b0db",
+      "path": "megatron/core/transformer/moe/experts.py",
+      "git_blob_sha": "7fc0725b9de7c57571c4a0c487e17e2c4136f877",
+      "copyright_header": "# Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.\nfrom __future__ import annotations\n\nimport inspect\nimport logging\nfrom collections.abc import Callable\nfrom contextlib import nullcontext\nfrom copy import deepcopy\nfrom dataclasses import dataclass\nfrom itertools import chain\nfrom math import ceil\nfrom typing import Optional, Protocol, Tuple\n\n",
+      "review_status": "ai_static_excerpt_review_pending_human",
+      "excerpts": [
+        {
+          "id": "moe-experts",
+          "title": "连续专家切片与成对输入概率",
+          "start_line": 1349,
+          "end_line": 1384,
+          "code": "\n            return output, output_bias\n        else:\n            tokens_per_expert = tokens_per_expert.tolist()\n            tokens_list = torch.split(permuted_local_hidden_states, tokens_per_expert)\n            probs_list = torch.split(permuted_probs, tokens_per_expert)\n\n            output_local_list = []\n\n            for expert, tokens, probs in zip(self.local_experts, tokens_list, probs_list):\n                if self.config.fp8 or self.config.fp4:\n                    hidden, probs = self._pad_tensor_for_quantization(tokens, probs)\n                    output, output_bias = expert(hidden, probs)\n                    output = output[: tokens.shape[0]]\n                else:\n                    output, output_bias = expert(tokens, probs)\n                output_local_list.append(output)\n\n            output_local = torch.cat(output_local_list, dim=0)\n            output_bias_local = None\n            # Note: if bias is enabled on experts, it is already added to the output at this point\n            return output_local, output_bias_local\n\n    def backward_dw(self):\n        \"\"\"Backward pass for weight gradients in SequentialMLP.\"\"\"\n        for expert in self.local_experts:\n            expert.backward_dw()\n\n    def sharded_state_dict(self, prefix='', sharded_offsets=(), metadata=None):\n        \"\"\"Maps local expert to global experts.\"\"\"\n        # Guard for cases metadata is not provided\n        metadata = ensure_metadata_has_dp_cp_group(metadata)\n\n        sharded_state_dict = {}\n        num_global_experts = self.ep_group.size() * self.num_local_experts\n        local_expert_indices_offset = self.ep_group.rank() * self.num_local_experts\n",
+          "sha256": "73148a66172dace99d286768cb6efd203ea2dc711e15f0e936eb386b64c305db",
+          "annotations": [
+            {
+              "line": 1361,
+              "text": "按 tokens_per_expert 切分，概率与 token 同步；实际 MLP/kernel 与本页 CPU SwiGLU 分开。"
+            }
+          ]
+        },
+        {
+          "id": "moe-expert-groups",
+          "title": "专家使用独立 EP/ETP/EDP",
+          "start_line": 1285,
+          "end_line": 1303,
+          "code": "        self.num_local_experts = num_local_experts\n        self.local_experts = torch.nn.ModuleList()\n        self.ep_group = pg_collection.ep\n        self.tp_group = pg_collection.expt_tp\n        # use pg_collection.expt_dp_group as data parallel group in this module.\n        # TODO (Hepteract): expt_dp wont be needed here once distributed checkpoint is refactored\n        self.dp_group = pg_collection.expt_dp\n\n        for expert_idx in range(self.num_local_experts):\n            expert = MLP(\n                self.config,\n                submodules,\n                ffn_hidden_size=self.config.moe_ffn_hidden_size,\n                is_expert=True,\n                tp_group=pg_collection.expt_tp,\n                name=(name + f\".local_experts.{expert_idx}\") if name is not None else None,\n            )\n            self.local_experts.append(expert)\n\n",
+          "sha256": "4185317d1ec8121b79e3462e16395ac711f6215f14b69fa1a5e23f3a10f19141",
+          "annotations": [
+            {
+              "line": 1291,
+              "text": "使用 expt_tp 与 expt_dp；页面只显示已数值验证的参考 rank 编号，不映射任意生产 world。"
             }
           ]
         }

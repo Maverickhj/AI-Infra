@@ -34,13 +34,13 @@
       "blocker": null
     },
     "G06": {
-      "status": "in_progress",
-      "report": null,
-      "report_sha256": null,
+      "status": "validated",
+      "report": "runs/program-v1/G06/20261004T174656964753Z/report.json",
+      "report_sha256": "13b69f18abf5fe84710590f150098c375bfb877ac301ee6c5ca4aef889912c97",
       "blocker": null
     },
     "G07": {
-      "status": "pending",
+      "status": "in_progress",
       "report": null,
       "report_sha256": null,
       "blocker": null

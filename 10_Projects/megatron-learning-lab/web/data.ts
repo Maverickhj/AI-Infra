@@ -58,6 +58,21 @@ export const labels: Record<string, string> = {
   refit: "Export / refit",
 };
 export type State = {
+  ep: number;
+  etp: number;
+  familyToken: number;
+  familyExpert: number;
+  familyHead: number;
+  familyPadding: number;
+  familyOp: string;
+  familyFault:
+    | "none"
+    | "wrong_weights"
+    | "duplicate_dispatch"
+    | "missing_shared"
+    | "wrong_norm"
+    | "wrong_scale"
+    | "missing_rope";
   model: string;
   scenario: "sft" | "rl";
   layer: number;
@@ -92,6 +107,14 @@ export type State = {
   sequenceFault: "none" | "local_kv" | "leak";
 };
 export const defaults: State = {
+  ep: 1,
+  etp: 1,
+  familyToken: 7,
+  familyExpert: 0,
+  familyHead: 0,
+  familyPadding: 0,
+  familyOp: "router",
+  familyFault: "none",
   model: "qwen3-06b",
   scenario: "sft",
   layer: 0,
@@ -132,6 +155,40 @@ export function normalize(s: State): State {
   return {
     ...defaults,
     ...s,
+    ep: s.ep === 2 ? 2 : 1,
+    etp: s.etp === 2 ? 2 : 1,
+    familyToken:
+      Number.isInteger(s.familyToken) &&
+      s.familyToken >= 0 &&
+      s.familyToken < 64
+        ? s.familyToken
+        : 7,
+    familyExpert: [0, 1, 2, 3].includes(s.familyExpert) ? s.familyExpert : 0,
+    familyHead: s.familyHead === 1 ? 1 : 0,
+    familyPadding: s.familyPadding === 2 ? 2 : 0,
+    familyOp: [
+      "router",
+      "dispatch",
+      "combine",
+      "aux",
+      "bias",
+      ...(model.attention === "mla"
+        ? ["mla-norm", "mla-expanded", "mla-cache"]
+        : []),
+    ].includes(s.familyOp)
+      ? s.familyOp
+      : "router",
+    familyFault: [
+      "none",
+      "wrong_weights",
+      "duplicate_dispatch",
+      ...(model.shared_experts > 0 ? ["missing_shared"] : []),
+      ...(model.attention === "mla"
+        ? ["wrong_norm", "wrong_scale", "missing_rope"]
+        : []),
+    ].includes(s.familyFault)
+      ? s.familyFault
+      : "none",
     pp: s.pp === 1 ? 1 : 2,
     microbatches:
       Number.isInteger(s.microbatches) &&
@@ -252,6 +309,12 @@ export function readState(): State {
     sftQuery: Number(p.get("sftQuery") || 0),
     decoderToken: Number(p.get("decoderToken") || 7),
     tinyLayer: Number(p.get("tinyLayer") || 0),
+    ep: Number(p.get("ep") || 1),
+    etp: Number(p.get("etp") || 1),
+    familyToken: Number(p.get("familyToken") ?? 7),
+    familyExpert: Number(p.get("familyExpert") ?? 0),
+    familyHead: Number(p.get("familyHead") ?? 0),
+    familyPadding: Number(p.get("familyPadding") ?? 0),
     tp: Number(p.get("tp") || 2),
     dp: Number(p.get("dp") || 2),
     parallelRank: Number(p.get("parallelRank") || 0),
