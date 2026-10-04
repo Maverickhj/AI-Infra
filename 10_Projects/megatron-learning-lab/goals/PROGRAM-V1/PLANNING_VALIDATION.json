@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-04",
+  "baseline_commit": "538afeb1745f69ec7c51d20d467b83a011d23752",
+  "scope": "program_planning_and_helper_only",
+  "unit_tests": {
+    "run": 21,
+    "failures": 0,
+    "errors": 0,
+    "command": "python -m unittest discover -s tests -p test_program_plan.py -v"
+  },
+  "plan_check": {
+    "stages": 11,
+    "next": "M00",
+    "status": "valid"
+  },
+  "json_and_frontmatter": "passed",
+  "local_staged_diff_check": "passed",
+  "full_project_tests_rerun": false,
+  "gpu_or_training_executed": false,
+  "native_codex_goal_started": false,
+  "limitations": [
+    "Tests use synthetic reports only; no model, numeric, browser, source-blob or training validation is claimed.",
+    "GitHub current project was read through the connector; container GitHub DNS failed, so the full project was not downloaded or executed.",
+    "program_plan.py checks report/file integrity, not report authenticity or correctness of the implemented lesson."
+  ]
+}

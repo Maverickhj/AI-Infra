@@ -16,7 +16,7 @@ Bridge-SFT 与 NeMo-RL 的实际来源分别记录，可在兼容验证通过后
 
 先读旧工程再复用，不删除/重置/覆盖未提交修改，不自动 commit/push、公开 Sites 或启动远程 GPU 作业。不要递归扫描用户 home。
 
-首轮范围由 CODEX_START.md 控制。每个任务必须同时实现内容、交互和行为测试，不先做万能平台。源码阅读器从现有 evidence entries 做起，不做全仓动态调用图。
+历史首轮范围由 CODEX_START.md 控制；用户启动连续多阶段模式时，以 goals/PROGRAM-V1/MASTER_GOAL.md、plan.json 和当前 STATE.json 为执行入口。PROGRAM-V1 明确替代旧 G01 的单目标停止条件，但不降低其技术验收和安全边界。阶段通过后继续下一个依赖已满足阶段，不逐项等待“继续”；最终完成或明确阻塞才停止。每个任务必须同时实现内容、交互和行为测试，不先做万能平台。源码阅读器从现有 evidence entries 做起，不做全仓动态调用图。
 
 ## 证据
 

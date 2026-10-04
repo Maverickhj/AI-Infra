@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "program_id": "PROGRAM-V1",
+  "updated_at": "2026-10-04",
+  "stages": {
+    "M00": {
+      "status": "pending",
+      "report": null,
+      "report_sha256": null,
+      "blocker": null
+    },
+    "G02": {
+      "status": "pending",
+      "report": null,
+      "report_sha256": null,
+      "blocker": null
+    },
+    "G03": {
+      "status": "pending",
+      "report": null,
+      "report_sha256": null,
+      "blocker": null
+    },
+    "G04": {
+      "status": "pending",
+      "report": null,
+      "report_sha256": null,
+      "blocker": null
+    },
+    "G05": {
+      "status": "pending",
+      "report": null,
+      "report_sha256": null,
+      "blocker": null
+    },
+    "G06": {
+      "status": "pending",
+      "report": null,
+      "report_sha256": null,
+      "blocker": null
+    },
+    "G07": {
+      "status": "pending",
+      "report": null,
+      "report_sha256": null,
+      "blocker": null
+    },
+    "G08": {
+      "status": "pending",
+      "report": null,
+      "report_sha256": null,
+      "blocker": null
+    },
+    "R01": {
+      "status": "pending",
+      "report": null,
+      "report_sha256": null,
+      "blocker": null
+    },
+    "R02": {
+      "status": "pending",
+      "report": null,
+      "report_sha256": null,
+      "blocker": null
+    },
+    "G09": {
+      "status": "pending",
+      "report": null,
+      "report_sha256": null,
+      "blocker": null
+    }
+  }
+}

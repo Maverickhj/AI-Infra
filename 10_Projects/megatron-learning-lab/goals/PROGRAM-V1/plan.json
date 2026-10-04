@@ -1,0 +1,211 @@
+{
+  "schema_version": 1,
+  "program_id": "PROGRAM-V1",
+  "baseline_commit": "538afeb1745f69ec7c51d20d467b83a011d23752",
+  "native_goal_model": "one_thread_goal_with_ordered_milestones",
+  "auto_continue_after_stage": true,
+  "stop_after_individual_stage": false,
+  "required_for_full_project": "all_stages",
+  "note": "npm scripts other than test:gqa are deliverables to implement, not present-tense claims.",
+  "stages": [
+    {
+      "id": "M00",
+      "title": "接续与基线",
+      "track": "software",
+      "depends_on": [],
+      "npm_check": null,
+      "requires_grant": null,
+      "browser_marker": null,
+      "required_checks": [
+        "baseline",
+        "gqa-regression",
+        "review"
+      ]
+    },
+    {
+      "id": "G02",
+      "title": "SFT 样本与监督",
+      "track": "software",
+      "depends_on": [
+        "M00"
+      ],
+      "npm_check": "test:sft-data",
+      "requires_grant": null,
+      "browser_marker": "[G02]",
+      "required_checks": [
+        "baseline",
+        "stage-specific",
+        "browser",
+        "source",
+        "review"
+      ]
+    },
+    {
+      "id": "G03",
+      "title": "完整 decoder 与更新",
+      "track": "software",
+      "depends_on": [
+        "G02"
+      ],
+      "npm_check": "test:decoder",
+      "requires_grant": null,
+      "browser_marker": "[G03]",
+      "required_checks": [
+        "baseline",
+        "stage-specific",
+        "browser",
+        "source",
+        "review"
+      ]
+    },
+    {
+      "id": "G04",
+      "title": "TP / DP",
+      "track": "software",
+      "depends_on": [
+        "G03"
+      ],
+      "npm_check": "test:tp-dp",
+      "requires_grant": null,
+      "browser_marker": "[G04]",
+      "required_checks": [
+        "baseline",
+        "stage-specific",
+        "browser",
+        "source",
+        "review"
+      ]
+    },
+    {
+      "id": "G05",
+      "title": "PP / SP / CP",
+      "track": "software",
+      "depends_on": [
+        "G02"
+      ],
+      "npm_check": "test:sequence",
+      "requires_grant": null,
+      "browser_marker": "[G05]",
+      "required_checks": [
+        "baseline",
+        "stage-specific",
+        "browser",
+        "source",
+        "review"
+      ]
+    },
+    {
+      "id": "G06",
+      "title": "MoE / MLA",
+      "track": "software",
+      "depends_on": [
+        "M00"
+      ],
+      "npm_check": "test:moe-mla",
+      "requires_grant": null,
+      "browser_marker": "[G06]",
+      "required_checks": [
+        "baseline",
+        "stage-specific",
+        "browser",
+        "source",
+        "review"
+      ]
+    },
+    {
+      "id": "G07",
+      "title": "RL 数值与更新",
+      "track": "software",
+      "depends_on": [
+        "G03"
+      ],
+      "npm_check": "test:rl-reference",
+      "requires_grant": null,
+      "browser_marker": "[G07]",
+      "required_checks": [
+        "baseline",
+        "stage-specific",
+        "browser",
+        "source",
+        "review"
+      ]
+    },
+    {
+      "id": "G08",
+      "title": "真实引擎接入软件",
+      "track": "software",
+      "depends_on": [
+        "G03",
+        "G07"
+      ],
+      "npm_check": "test:runtime-contracts",
+      "requires_grant": null,
+      "browser_marker": "[G08]",
+      "required_checks": [
+        "baseline",
+        "stage-specific",
+        "browser",
+        "source",
+        "review"
+      ]
+    },
+    {
+      "id": "R01",
+      "title": "真实 HF / Bridge SFT",
+      "track": "runtime",
+      "depends_on": [
+        "G08"
+      ],
+      "npm_check": null,
+      "requires_grant": "bridge_sft",
+      "browser_marker": null,
+      "required_checks": [
+        "runtime-sft",
+        "source",
+        "review"
+      ]
+    },
+    {
+      "id": "R02",
+      "title": "真实同步 RL",
+      "track": "runtime",
+      "depends_on": [
+        "R01",
+        "G07"
+      ],
+      "npm_check": null,
+      "requires_grant": "rl_training",
+      "browser_marker": null,
+      "required_checks": [
+        "runtime-rl",
+        "source",
+        "review"
+      ]
+    },
+    {
+      "id": "G09",
+      "title": "整合与最终交付",
+      "track": "software",
+      "depends_on": [
+        "G02",
+        "G03",
+        "G04",
+        "G05",
+        "G06",
+        "G07",
+        "G08"
+      ],
+      "npm_check": "test:release",
+      "requires_grant": null,
+      "browser_marker": "[G09]",
+      "required_checks": [
+        "baseline",
+        "integrated-regression",
+        "production-smoke",
+        "browser",
+        "source",
+        "review"
+      ]
+    }
+  ]
+}
