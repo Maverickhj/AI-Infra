@@ -1,3 +1,4 @@
+import { RuntimeLab } from "./runtime/RuntimeLab";
 import { RLJourney } from "./rl/RLJourney";
 import { FamilyWalkthrough } from "./family/FamilyWalkthrough";
 import { SequenceJourney } from "./sequence/SequenceJourney";
@@ -183,6 +184,7 @@ function App() {
                 ["atlas", "02", "模型对照"],
                 ["sample", "03", "样本与监督"],
                 ["course", "04", "完整课程"],
+                ["runtime", "05", "运行对照"],
                 ["basics", "00", "基础速览"],
               ] as const
             ).map(([id, num, label]) => (
@@ -231,46 +233,55 @@ function App() {
             <div>
               <div className="eyebrow">WHOLE MODEL · SOURCE CONNECTED</div>
               <h1>
-                {state.view === "atlas"
-                  ? "同一骨架，不同计算"
-                  : state.view === "sample"
-                    ? "一条对话，哪些位置参与监督？"
-                    : state.view === "course"
-                      ? "沿着源码，读懂完整链路"
-                      : state.view === "basics"
-                        ? "基础速览：先定位，再深入"
-                        : state.scenario === "rl"
-                          ? "一次更新，还不是一次 RL 迭代"
-                          : `${model.hf_id.split("/")[1]} 整模漫游`}
+                {state.view === "runtime"
+                  ? "运行证据，逐项核对"
+                  : state.view === "atlas"
+                    ? "同一骨架，不同计算"
+                    : state.view === "sample"
+                      ? "一条对话，哪些位置参与监督？"
+                      : state.view === "course"
+                        ? "沿着源码，读懂完整链路"
+                        : state.view === "basics"
+                          ? "基础速览：先定位，再深入"
+                          : state.scenario === "rl"
+                            ? "一次更新，还不是一次 RL 迭代"
+                            : `${model.hf_id.split("/")[1]} 整模漫游`}
               </h1>
               <p>
                 从输入、层内计算到参数更新。每一步都保留数学、实现分支与证据边界。
               </p>
             </div>
-            <Badge>derived · 非实测</Badge>
+            <Badge>
+              {state.view === "runtime"
+                ? "只读导入 · 不启动训练"
+                : "derived · 非实测"}
+            </Badge>
           </section>
-          <div className="context-bar">
-            <div className="segmented" aria-label="训练场景">
-              <button
-                aria-pressed={state.scenario === "sft"}
-                onClick={() => patch({ scenario: "sft" })}
-              >
-                SFT 全链路
-              </button>
-              <button
-                aria-pressed={state.scenario === "rl"}
-                onClick={() => patch({ scenario: "rl", view: "walkthrough" })}
-              >
-                RL Cycle
-              </button>
+          {state.view !== "runtime" && (
+            <div className="context-bar">
+              <div className="segmented" aria-label="训练场景">
+                <button
+                  aria-pressed={state.scenario === "sft"}
+                  onClick={() => patch({ scenario: "sft" })}
+                >
+                  SFT 全链路
+                </button>
+                <button
+                  aria-pressed={state.scenario === "rl"}
+                  onClick={() => patch({ scenario: "rl", view: "walkthrough" })}
+                >
+                  RL Cycle
+                </button>
+              </div>
+              <span className="context-model">
+                {model.family} · {model.layers} 层
+              </span>
+              <span className="run-state">
+                运行状态 <code>not_run</code>
+              </span>
             </div>
-            <span className="context-model">
-              {model.family} · {model.layers} 层
-            </span>
-            <span className="run-state">
-              运行状态 <code>not_run</code>
-            </span>
-          </div>
+          )}
+          {state.view === "runtime" && <RuntimeLab onSource={openSource} />}
           {state.view === "basics" ? (
             <section className="panel basics">
               <h2>你在完整训练链路的哪里？</h2>
@@ -465,7 +476,7 @@ function App() {
                 )}
             </>
           ) : null}
-          {state.view !== "basics" ? (
+          {state.view !== "basics" && state.view !== "runtime" ? (
             <section className="panel course">
               <div className="section-header">
                 <div>

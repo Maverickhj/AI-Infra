@@ -86,7 +86,7 @@ export type State = {
   layer: number;
   step: string;
   sourceLane: "reference" | "runtime";
-  view: "walkthrough" | "atlas" | "sample" | "course" | "basics";
+  view: "walkthrough" | "atlas" | "sample" | "course" | "basics" | "runtime";
   mode: "assistant" | "last_turn" | "full";
   mla: "train" | "decode";
   sample: number;
@@ -314,9 +314,14 @@ export function normalize(s: State): State {
       : 0,
     step: steps.includes(s.step) ? s.step : steps[0],
     sourceLane: s.sourceLane === "runtime" ? "runtime" : "reference",
-    view: ["walkthrough", "atlas", "sample", "course", "basics"].includes(
-      s.view,
-    )
+    view: [
+      "walkthrough",
+      "atlas",
+      "sample",
+      "course",
+      "basics",
+      "runtime",
+    ].includes(s.view)
       ? s.view
       : "walkthrough",
     mode: ["assistant", "last_turn", "full"].includes(s.mode)

@@ -22,7 +22,8 @@
     "data:parallel": "env -u PYTHONPATH CUDA_VISIBLE_DEVICES= python -m experiments.tp_dp_reference --export content/generated/tp-dp-cpu.json",
     "test:sequence": "node --experimental-strip-types tests/sequence.mjs",
     "test:moe-mla": "node --experimental-strip-types tests/moe-mla.mjs",
-    "test:rl-reference": "node --experimental-strip-types tests/rl-reference.mjs"
+    "test:rl-reference": "node --experimental-strip-types tests/rl-reference.mjs",
+    "test:runtime-contracts": "node --experimental-strip-types tests/runtime-contracts.mjs"
   },
   "dependencies": {
     "katex": "0.18.9",

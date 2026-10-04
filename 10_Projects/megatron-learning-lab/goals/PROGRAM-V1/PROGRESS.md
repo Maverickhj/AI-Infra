@@ -141,3 +141,35 @@ G08只读盘点已保存 runs/program-v1/G08/research/environment-metadata.json�
 另通过 npm run test:rl-reference：16 组配置、54957 数值、8 项真实 CPU 检查，最大误差 7.993605777301127e-15，atol=rtol=1e-10。TypeScript trace 检查接受 2 份 CPU reference，拒绝 15 个损坏/不合法输入；Python 新增 13 项合约测试包含在上述 102 项中。完整源码缓存校验通过 49 文件/111 片段。补充日志与源码清单在 runs/commit-check-_soev9ou/。
 
 这些检查证明当前参考数值和软件行为，不证明生产 runtime 兼容；导入元数据仍标 imported_claim，不作为真实运行证明。日志、截图、源码缓存、生成数据及临时凭据不加入 Git。下一步继续 G08 适配器、采集器、显式配置与只读导入交互。
+
+
+## G08 · 薄适配、采集器与只读导入子 checkpoint
+
+已新增 experiments/runtime/adapters.py 和 capture.py：显式 HF logits/Bridge token-loss 或 BSH/SBH logits/NeMo next-token 到 action 位置映射；普通 Bridge batch 追加真实末 target 的 context-only 槽，保留末位置监督，不重复 shift；未知 layout、缺 mask、packing/reset 和过滤样本拒绝。LossTap/BridgeForwardTap 委托原实现并返回原对象，ParameterSlice 观察实际 backward/SGD；不自写生产 trainer。采集器限定记录数、校验后才写文件、不覆盖既有记录，保存已加载 callable 的源码和实际配置值。正式运行入口及资源约束仍待接线。
+
+新增 web/runtime/RuntimeLab.tsx、content/cases/11_runtime_contracts.md、tests/browser/runtime.spec.ts、tests/runtime-contracts.mjs、tests/runtime_adapter_cpu_checks.py、tests/test_runtime_adapters.py、tests/test_runtime_capture.py，接入原有导航/URL 状态和 package test:runtime-contracts。双槽导入保留来源、mask、loss、版本、源码/config/input hash；导出已校验数据，比较要求同一输入与身份。JSON 中的命令/HTML 仅为文本，校验状态防止旧异步结果覆盖新输入。
+
+已通过 24 个 Python/TypeScript 交叉接受/拒绝用例、两份新执行 CPU reference 与现有样例逐字段对照、13 个 Python trace 合约和6个采集器测试。CPU 适配/观察器10项预检通过后，为 Ray 类 worker 传输补一个序列化反例，修正 LossTap 反序列化期间缺 delegate 时的递归 getattr；扩展后的11项已在 runs/program-v1/G08/runtime-contracts-serialization.log 通过；本次提交前又在 runtime-contracts-commit.log 复跑通过。runtime-contracts-preflight.log 保留前一10项版本。
+
+四条新 Chromium 路径通过（42.0s），日志 runs/program-v1/G08/browser-import-label.log，实际查看桌面/手机截图 runs/program-v1/g08-{desktop,mobile}.png。首轮3通过/1失败因序列控件标签定位，trace保留在preflight-import；为控件补显式 accessible label 后重验，没有延长超时或删断言。测试含 SFT token 表/导出、PPO mask/版本、恶意文本不执行、非法输入清除旧结果、来源/离线数学/键盘/窄屏。共享完整回归与最终 G08 gate 尚未执行，STATE 继续 in_progress。
+
+运行来源研究补读本地 Bridge AutoBridge.from_hf_config/from_hf_pretrained/to_megatron_provider/load_hf_weights/save_hf_pretrained、DatasetProvider、gpt_step、finetune、callbacks 与配置序列化。当前 Qwen3 recipe 固定 HF ID 且 load_weights=False，通用 runner 只允许已导出 recipe 名，不能把本地自定义 factory 路径塞进 --recipe。配置序列化实际来自当前 Core ConfigContainerBase.to_dict；Bridge/Core 与固定阅读档案仍分开。NeMo 两个固定 CLI 已完整读到 main/setup/train 分支；真正官方框架未安装或执行。继续实现明确本地权重来源的最小正式入口、effective config/dry-run 和资源绑定，再做整体验收。
+
+
+## G08 · 提交前配置与回归收尾
+
+新增 read_only_config.py 的解析检查只使用 Hydra/OmegaConf，不导入 Torch/Ray/NeMo launcher。六项配置测试覆盖继承、_override_、纯算术、命令行 override、环境/动态 resolver/路径越界拒绝，并与固定 NeMo 官方 helper 的 GRPO/PPO 配置逐字段一致。顶层 override 引用尚未合并的父变量会与当前官方 helper 一样失败；此边界有明确反例，未猜测结果。此前正例误用了该分支的失败日志保留在 runs/program-v1/G08/config-preflight.log。
+
+固定 helper 与两份 YAML 原文及许可证保存至 tests/fixtures/nemo-config/，以固定 commit、Git blob、SHA256 核对；required tests 不再依赖被忽略的 runs 缓存。样例是配置解析测试输入，不是已授权的训练 profile。本次读取实际配置依赖为 Hydra 1.3.2、OmegaConf 2.3.1、PyYAML 6.0.3。
+
+Bridge 配置探针走真实 AutoBridge.from_hf_config → to_megatron_provider(load_weights=False) → ConfigContainer.to_dict，在网络、CUDA、分布式初始化 guard 下通过。上游 optimizer.grad_norm_skip_threshold 的正无穷明确保存为 float_sentinel 标签；NaN 和非有限测量仍拒绝，并补独立测试。报告 runs/program-v1/G08/research/bridge-config-probe.json，effective config SHA256 c3689b3c505221032b93bb1656066bc2e30b29a67efae04be81933831b3fa37c；只证明配置构造/序列化，未创建模型或加载权重，不是训练兼容结论。
+
+npm run test:runtime-contracts 已通过 24 项跨语言合约、两份新执行 CPU reference、11 项 CPU 适配检查、13 项 Python trace 合约、7 项采集器和6项配置测试。日志 runs/program-v1/G08/runtime-contracts-commit.log。首轮提交基线在111项 Python 中发现课程符号表标题不符合 handoff 的“数学符号”约定；修正标题与对应浏览器内容断言，保留失败报告 runs/goal-g01/20261004T195902593337Z/report.json，并重新运行完整基线。
+
+原始源码文件归档方式的预检快照已通过完整基线：111项 Python、92项 Chromium，skipped/flaky/unexpected=0；数据生成、handoff、片段核验、生产构建和 diff 检查通过。报告 runs/goal-g01/20261004T200104491224Z/report.json，SHA256 3e03c74901b89c8108c404425ac23b30807fa8197b263376cb0aa3cadb8141bc；PROGRAM-V1 源码指纹 d1572551d19fab8811b77a1688fb955cb3b381989c30dbc95cf0c9af5dfa2e09。全部日志 hash 与当前源码指纹逐项核对；补充源码清单、49完整源码/111片段核验及截图归档位于 runs/commit-check-runtime/。
+
+用户本轮明确授权 commit & push，仅提交本项目代码、课程、固定小型测试源码样例及进度；日志、截图、生成数据与临时认证文件不入 Git。G08 仍为 in_progress，完整正式入口、dry-run 资源绑定及最终阶段验收尚待完成。R01/R02 未执行，PROGRAM-V1 未全部完成。
+
+固定上游 GRPO YAML 原文含尾空格；为保持原文/哈希且通过 Git whitespace 检查，三个固定源码文件以 manifest.json 中的 JSON 字符串逐字归档。测试先验证 SHA256/Git blob，再还原到临时目录调用官方 helper；不修改原文，不关闭 whitespace 检查。提交前完整基线随后再次复验。
+
+最终提交快照（JSON 原文归档后）再次通过111项 Python、92项 Chromium，skipped/flaky/unexpected=0，全部基线检查通过；专项 runtime 合约也再次通过，日志 runs/program-v1/G08/runtime-contracts-commit-archive.log。最终报告 runs/goal-g01/20261004T200900295032Z/report.json，SHA256 6faf808b788721161729f30474aea342fd270dae8b1485baf288babbf9e8d4b0；源码指纹 4863cd7c69b9b36d5b356027c7760a3866fe2e1407592d32edc30ae1212eeecf，全部日志与源码 hash 复核通过。最终核验记录和截图位于 runs/commit-check-runtime-archive/；已实际查看最终桌面/手机截图，布局与局部表格滚动正常。G08 状态及真实运行边界保持不变。
