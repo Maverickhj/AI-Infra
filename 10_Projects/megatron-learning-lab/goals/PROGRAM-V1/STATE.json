@@ -64,10 +64,11 @@
       "blocker": "Requires validated R01, explicit RL resource grant and an actual compatible NeMo checkout/backend. /opt/NeMo-RL and pinned checkpoint are absent; PPO needs separately authorized critic resources. Evidence: runs/program-v1/G08/startup-dry-run/runtime-{grpo,ppo}.json."
     },
     "G09": {
-      "status": "in_progress",
-      "report": null,
-      "report_sha256": null,
+      "status": "validated",
+      "report": "runs/program-v1/G09/20261005T002421065004Z/report.json",
+      "report_sha256": "6a8d85f74e1bf9e935d382c5292558ee548e3ada344f250c1aeca9997bf5c3d2",
       "blocker": null
     }
-  }
+  },
+  "project_status": "software_ready_runtime_blocked"
 }

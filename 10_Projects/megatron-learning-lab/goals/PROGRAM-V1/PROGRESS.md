@@ -9,7 +9,7 @@ reviewed: false
 
 # PROGRAM-V1 进度
 
-当前：M00/G02–G08 validated，G09 in_progress；R01/R02 blocked_external。最近已提交基点 cacaa13；本轮用户明确授权提交和推送当前工作。所有代码/测试在 minimind-megatron-bridge-dev-1 执行。
+当前：M00/G02/G03/G04/G05/G06/G07/G08/G09 validated；R01/R02 blocked_external，项目状态 software_ready_runtime_blocked。验收基点为 d060187；用户现已明确授权提交和推送 G09 交付改动，原生 Goal 未完成。所有代码/测试在 minimind-megatron-bridge-dev-1 执行。
 
 ## M00 · 2026-10-04
 
@@ -262,3 +262,20 @@ G08 gate 全部通过并核对当前源码、各日志和 artifact hash：runs/p
 53 项跨语言合约与全部 runtime CPU/配置检查已通过，日志 runs/program-v1/G09/comparison-contracts.log。新增浏览器行为检查覆盖相同输入的 loss/梯度/更新差、DP4 的 2688 B/rank 派生发送与接收、缺少尺寸或梯度、不兼容坐标及非法尺寸导入后清除旧结果。通信预算不代表 NCCL 实测，导入来源保持 imported_claim。真实 GPU/SFT/RL 仍未执行，资源阻塞不变。
 
 提交快照完整基线通过 172 项 Python、96 项 Chromium，skipped/flaky/unexpected=0；数据生成、handoff、源码片段、构建与 diff 检查全部通过。报告 runs/goal-g01/20261004T234439348128Z/report.json，SHA256 e9ca38243d43feab8cba6b97d916a4817b9b44d7c1a7fcb38cb89e9cc3ad8dc2，PROGRAM 源码指纹 02fdc3ffa4d13a36244a7bd70ddcdd53ba0fe137f828f2087f9de0a7f53808d4。当前源码与全部基线日志 hash 已复核，核验档案在 runs/commit-check-runtime-diagnostics/；已查看比较界面的手机截图，表格保持局部滚动。该提交不代表 G09 完整发布验收或真实训练完成。
+
+
+## G09 · 生产预览与最终验收执行
+
+从 d060187 恢复并 fetch，HEAD 与 origin/main 一致、工作区原本干净，planner 继续 G09；上一轮提交和 172 Python/96 Chromium 验证属于有效进展。新增范围为 tests/browser/release.spec.ts、tests/playwright.release.config.ts、tools/release_gate.py 及验收工具测试；更新 package.json、README.md、第 11 课符号/通信推导、G09-REVIEW.md、REPORT.md 和本进度。独立生产预览在 127.0.0.1:5174，拒绝复用现有服务；不公开部署。最终 gate 绑定实现、课程、测试、README/自审、依赖与配置，生产截图归档至本次不可变报告目录。R01/R02 资源和模型缺口不变，继续软件验收。
+
+生产首轮 smoke 为 1 通过/2 失败：集成测试在 Update/resume 子步骤后直接找 Decoder 层按钮，另一条对默认折叠符号表内公式断言可见。修正测试为先返回 Decoder、先展开符号表，保留原断言与超时；失败 JSON/截图/trace 已归档到 G09/preflight/production.log 和 first-failure-artifacts/。窄屏与缺失证据用例已通过；尚未宣布生产 gate 成功。
+
+G09 首轮最终回归过程中发现依赖元数据采集错误：-S 的 sysconfig 路径会跳过实际虚拟环境并读到被遮蔽的系统包。已用正常 CPU 解释器的 metadata.version 与实际 prefix/sys.path 修正，并增加回归测试；仅查询元数据，确认未导入训练框架。首轮报告 20261005T000716382044Z 保留诊断且不能作为最终证据，等待其当前子进程终结后再启动修正版本的完整 gate。
+
+G09 第二轮 20261005T001441019715Z 全部执行检查通过，但 report_issues 拒绝空 diff.log artifact。该轮保留为“执行成功、账本完整性未通过”的诊断，不更新 STATE。修正为记录真实零输出命令回执，仍保留原始日志/hash，并新增真实子进程回执测试和 gate 内最终完整性检查。源码改变后重新执行同一最终快照的全套验收。
+
+## G09 · 最终同一快照验收完成
+
+修正后的 gate runs/program-v1/G09/20261005T002421065004Z/report.json 已通过全部实际检查与内置报告完整性验证，外部 audit_current_release 再次核对当前 source/dependencies/config/dist 和所有日志/artifact hash。报告 SHA256 6a8d85f74e1bf9e935d382c5292558ee548e3ada344f250c1aeca9997bf5c3d2；源码指纹 2b71778880f36b2ecae8e8bfc4b963f191215ca14079eac0ad339d3179812ad3。实际 178 Python、99 Chromium、3 独立生产 smoke，skipped/flaky/unexpected=0；8 专项全部通过，固定源码 49 文件/111 原文片段通过。已查看本轮不可变归档的手机和桌面截图；具体索引、指纹、数值范围、启动与解阻条件见 REPORT.md。
+
+STATE 将 G09 标为 validated，项目状态为 software_ready_runtime_blocked，R01/R02 保持 blocked_external。软件阶段已无独立剩余工作；真实模型/tokenizer、NeMo 与明确资源授权仍缺失。本轮是有效进展，并在软件完成后首次到达仅剩外部运行资源的停点；没有将原生 Goal 标完成。本轮没有提交/推送、公开部署、模型下载或 GPU/Ray 训练。

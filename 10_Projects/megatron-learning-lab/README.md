@@ -2,108 +2,118 @@
 type: project
 status: draft
 created: 2026-09-30
-updated: 2026-09-30
+updated: 2026-10-05
 ai_generated: true
 reviewed: false
 ---
 
 # megatron-learning-lab
 
-**整模驱动、源码可追溯、连接真实 SFT/RL 的 Megatron 学习项目。**
+从一条样本走到完整模型、loss、梯度、更新与源码的中文学习工作台。默认进入 Qwen3-0.6B 整模；Qwen2.5、Qwen3 MoE 与 DeepSeek MLA/MoE 的配置差异可直接对照。基础速览可跳过，核心课程按需展开并保留独立数学符号表。
 
-方案版本：2.1，Review 修订日期：2026-09-30。源码研究沿用此前 2026-09-30 的记录；本轮不重新声称核验上游最新版本。替代旧方案的 MLP-first 路线，不替换或删除用户已有工程。
+当前阶段和验收证据见 [PROGRAM-V1 交付记录](goals/PROGRAM-V1/REPORT.md)、[阶段账本](goals/PROGRAM-V1/STATE.json) 与 [进度](goals/PROGRAM-V1/PROGRESS.md)。CPU 学习参考和运行接入软件不等于真实 pretrained 模型训练；R01/R02 必须使用获授权且就绪的资源单独验收。
 
-## 首轮实现：本地 review
+## 在现有开发容器运行
 
-项目继续保存在当前容器 overlay 目录。前端采用 React/TypeScript + Vite，复用现有模型档案、派生案例与三篇 Markdown 课程；数学公式及其字体随静态构建提供，不依赖在线 CDN。
+所有项目代码、生成器和测试均在 `minimind-megatron-bridge-dev-1` 中执行。先从宿主机进入已有容器：
 
 ```bash
-cd /opt/AI-Infra/10_Projects/megatron-learning-lab
-npm ci
+docker exec -it -w /opt/AI-Infra/10_Projects/megatron-learning-lab minimind-megatron-bridge-dev-1 bash
+```
+
+以下命令在容器内执行，复用已经准备好的 Node 与 Chromium 缓存：
+
+```bash
+export PATH=/data/cache/megatron-lab-node/bin:$PATH
+export PLAYWRIGHT_BROWSERS_PATH=/data/cache/megatron-lab-browsers
+export CUDA_VISIBLE_DEVICES=
+unset PYTHONPATH
 npm run dev
 ```
 
-访问 http://localhost:5173。容器外访问需已有端口映射或编辑器端口转发；服务监听 `0.0.0.0:5173`，没有公开部署。当前容器已安装 Node.js；新环境需 Node.js >=22.12、uv 和可用 Python。
+访问 http://localhost:5173。容器外需已有端口映射或编辑器转发；开发服务监听 0.0.0.0:5173，本项目未公开部署。默认开发启动会重新生成配置派生数据以及实际 CPU decoder/TP-DP 参考，可能需要几十秒。浏览器里载入样例或点击演算不会启动 GPU。
 
-默认 Qwen3-0.6B 整模漫游，可切换六个模型档案、全部 decoder 层、SFT 步骤与 RL 周期。模型对照、角色跨度监督模式、一次/重复 shift 反例、MLA 训练/decode 视图、独立符号表和完整课程均可直接访问。地址栏 hash 保存 model/scenario/layer/step/sourceLane 等状态，可复制后直接打开或刷新。
+换用新容器时，需要 Node >=22.12、Python、uv、当前 CPU 参考所需的 PyTorch，以及 package-lock.json 对应的前端依赖和 Playwright Chromium。先按 [最小兼容策略](profiles/minimum-compatibility.md) 核查已有环境，再补所需依赖；源码参考锁不是 Python 安装锁。不要求复制所有上游 optional extras，也不在宿主机安装训练依赖。
 
-源码侧栏内置 27 个证据入口的 45 段关键代码，保留固定 commit、原始行号和独立中文讲解；需要完整上下文时再打开 GitHub。上游版权头与许可证随片段保留。运行通道明确显示未建立映射。HF、Bridge、RL 实测均为 `not_run`；角色跨度不是 tokenizer trace，shape 是配置推导。完整 Qwen 课程以 Qwen3-0.6B 为演算基线，DeepSeek 课程以 V3 为主并列出 V2-Lite 差异。
+## 可以沿着哪些路径学习
+
+| 路径 | 可操作内容 | 数值与边界 |
+|---|---|---|
+| 样本与监督 | assistant/last_turn/full、一次 shift、截断、padding、pack/unpack、token 表 | 小词表 authored tokens；真实 tokenizer trace 可只读导入 |
+| Qwen decoder | embedding、两层 GQA/residual/SwiGLU、final norm/head、masked CE | 完整微型架构的 TS/CPU 对照，不是 pretrained Qwen 权重 |
+| 梯度与更新 | 选定参数 autograd/有限差分、冻结参数、共享 head、save/resume 下一步 | 实际 CPU 参考；不宣称 Bridge GPU resume 等价 |
+| TP/DP/PP/SP/CP | rank/group、QKV/FFN/词表分片、sum/count、1F1B、序列与 packing 边界 | CPU 数值切分或逻辑时间；不当作 NCCL 耗时/显存 |
+| MoE 与 MLA | router/top-k、dispatch/shared expert、EP/ETP、norm、latent/cache | 完整缩小模型参考；不等于全量 DeepSeek-V3 执行 |
+| GRPO/PPO | 四类 logprob、mask、advantage/GAE、clip/KL/value、更新/refit 版本 | authored trajectories 与 CPU 更新；非真实 rollout |
+| 运行对照 | 本地 JSON/粘贴、loss/梯度/更新差、来源/版本、完整配置、通信预算、导出 | 导入均标 imported_claim；缺失指标保持未采集 |
+
+顶层模型图来自完整 HF config/family 映射，微型可演算模型另有明确标签。切换 Qwen3/Qwen2.5 会改变 head_dim、QKV bias 和 QK norm；DeepSeek-R1-Distill-Qwen 仍是 Qwen/GQA，不标 MLA。
+
+地址栏 hash 保存 model/scenario/step/layer、数值子步骤与 rank 等状态，可直接打开或刷新，例如 `/#step=input&view=sample&sftLayout=packed`、`/#scenario=rl&rlAlgorithm=ppo&step=advantage`、`/#view=runtime`。生产预览也验证了嵌套路径下的 hash 入口；这不表示已经配置任意外部静态托管服务的 rewrite。
+
+## 源码与证据
+
+当前收录 49 个固定源码文件的 111 段原文，原始行号、Git blob、commit、许可证与中文讲解分开。源码弹窗按当前步骤、算法和分支定位；运行通道未建立时明确提示，不能用参考链接冒充实际 runtime 来源。
+
+`derived` 是配置/公式推导；`reference` 包括明确的 authored CPU 或 synthetic 合约；`observed_bridge`、`observed_rl` 需要运行清单和数值验收。即使导入文件字段自称 observed，网页也只证明结构/数值合约通过，不认证运行身份。比较同一 input/mask/version 定义；梯度还核对参数坐标、角色、dtype 和更新前值。
+
+PPO 样例记录完整可训练梯度 head[27,8] 与 critic[8] 的 float64 尺寸。DP 通信显示理想 ring AllReduce 的派生字节预算，实际通信仍为未采集；forward-only 样例缺梯度尺寸时不猜数值。
+
+公式和 KaTeX 字体、课程、参考数据与源码摘录均随构建打包，无 CDN 依赖。完整源码全文仅保存在忽略的 `runs/source-cache/`；网页使用打包的摘录。
 
 ```bash
-npm run test:metadata
+env -u PYTHONPATH python -S tools/verify_source_snippets.py
+env -u PYTHONPATH python -S tools/verify_source_snippets.py --cache runs/source-cache
+# 新环境缺完整缓存时，显式获取固定版本；不更新 source.lock
+env -u PYTHONPATH python -S tools/verify_source_snippets.py --fetch --cache runs/source-cache
+```
+
+研究背景见 [FINDINGS](research/FINDINGS.md)、[REFERENCES](research/REFERENCES.md)、[学习深度](CURRICULUM.md) 和 [实施方案](PLAN.md)。
+
+## 软件验收与生产预览
+
+保持上述容器环境变量：
+
+```bash
+npm run test:runtime-contracts
+npm run test:release
+```
+
+`test:release` 顺序执行完整 Python/元数据/handoff/源码/构建/Chromium 基线，以及 test:gqa、test:sft-data、test:decoder、test:tp-dp、test:sequence、test:moe-mla、test:rl-reference、test:runtime-contracts；随后对相同 dist 单独执行生产 smoke。所有检查必须实际通过，不能跳过、flaky 或零用例。
+
+生产 smoke 启动专属 127.0.0.1:5174 服务，拒绝复用已有服务，覆盖整条学习路线、直接/嵌套入口、离线数学/字体、窄屏、键盘和缺少运行证据的降级。请先停止占用 5173/5174 的个人预览；测试不会自动关闭不属于自己的服务。Firefox/WebKit 没有执行。
+
+每轮结果在 `runs/program-v1/G09/<run-id>/report.json`，包含真实命令/退出码/日志 hash、当前源码清单、已安装依赖版本与 lock 指纹、配置/构建清单、生产截图与阶段报告索引。完成后还需审读报告和截图，再更新 STATE；脚本不自动将阶段或原生 Goal 标完成。历史阶段报告只证明当时的源码快照。
+
+单独查看生产构建：
+
+```bash
 npm run build
-# 新浏览器环境只需安装一次
-npx playwright install --with-deps chromium
-npm run test:e2e
-# 生产构建预览（先停止占用 5173 的开发服务）
 npm run preview
+# 同一 dist 的独立 smoke，不执行构建或部署
+npm exec -- playwright test --config tests/playwright.release.config.ts
 ```
 
-浏览器报告位于 `runs/browser-report/index.html`，review 截图位于 `runs/screenshots/`；这些产物沿用现有忽略规则，不入知识库。测试实现见 `tests/browser/routes.spec.ts`。首轮实际验收状态见 `implementation-report.json`，原 `validation-report.json` 仍保留原始交付包的检查记录。
+普通 preview 使用 5173；独立 smoke 使用 5174。端口转发不会自动创建公开站点。
 
-## 这份交付包含什么
+## 真实 HF / Bridge / NeMo 运行
 
-原始 v2.1 交付是研究与实施包；当前已增加首轮 E0 静态学习前端，尚未完成 GPU 训练验证。它包含保留的参考源码快照、27 个源码证据条目、6 个模型档案、三篇整模/训练课程正文、页面验收要求、分阶段 Codex 指令，以及可运行的元数据生成/校验工具。没有附带模型权重；仅收录少量固定版本第三方源码摘录与相应许可证。
-
-首先阅读 [实施方案](PLAN.md)、[学习深度](CURRICULUM.md) 与 [最小兼容策略](profiles/minimum-compatibility.md)，然后执行 [Codex 首轮任务](CODEX_START.md)。源码问题按需查 [研究结论](research/FINDINGS.md) 与 [REFERENCES](research/REFERENCES.md)。`source.lock.json` 固定阅读证据，不是运行环境的安装锁。
-
-## 本轮 Review 决策
-
-目标读者为“有一定基础的初学者”：基础速览一页可跳过，核心实现与 SFT/RL/并行语义精讲。压缩的是前期铺垫和重复，保留独立符号表、必要推导与反例。
-
-环境优先复用、按场景最小满足：只要求 learning-lab 所需接口和数据/计算语义一致，不强制逐包复制上游 lock。版本不同但合约测试通过可接受；版本相同但语义不符应拒绝。真实行为测试尚未执行的能力保持未核验。
-
-## 最重要的路线变化
-
-旧方案从 Linear/MLP 与通用可视化组件起步，将完整模型、SFT 和 RL 推迟到后续。这会让“工具是否建好”挤占“用户是否学会整模训练”的目标。
-
-新版从一个真实 checkpoint、一条训练样本、一次模型计算/参数更新进入：
-
-`Qwen3-0.6B 整模 → Qwen2.5 对照 → SFT 样本/更新 → 同步 RL 闭环 → Qwen3 MoE / DeepSeek MLA+MoE → 并行与性能深挖`。
-
-MLP、collective、rank 图是整模流程中的局部解释，不再单独成为第一版终点。
-
-## 先完成的用户体验
-
-用户打开首页选择 Qwen3-0.6B，可从一条 messages 样本一直走到 embedding、全部 decoder 层、logits、loss、backward 和 optimizer。切换 Qwen2.5 时，QKV bias、QK norm、head shape 真正改变。切换 DeepSeek 时，attention 变为 MLA，层内出现 dense/MoE 与 shared expert 的真实差别。
-
-所有数值和图形都显示来源类型：`derived`、`reference` 或 `observed`。没有真实运行时，不显示 GPU 耗时、loss 曲线、热力图或“训练成功”。
-
-## 运行本包的本地检查
+接入脚本在 `experiments/runtime/`，只读 CLI 在 `tools/runtime_cli.py`：
 
 ```bash
-python tools/build_case_data.py
-python -m unittest discover -s tests -v
-python tools/verify_handoff.py
+env -u PYTHONPATH python -S tools/runtime_cli.py dry-run --plan profiles/runtime-plan.example.json
+env -u PYTHONPATH python -S tools/runtime_cli.py dry-run --plan profiles/runtime-grpo-plan.example.json
+env -u PYTHONPATH python -S tools/runtime_cli.py dry-run --plan profiles/runtime-ppo-plan.example.json
 ```
 
-这些命令只校验课程元数据和工具，不训练模型、不访问网络、不检查 GPU。结果见 `validation-report.json`。真正的 Bridge/NeMo RL 测试仍须在对应环境执行。
+样例输出路径为占位符，不含资源授权。正式运行先填写实际 pinned model/tokenizer、数据、backend、设备、步数、时限和专属输出目录，并按 [资源约定](goals/PROGRAM-V1/RESOURCES.md) 绑定明确授权及完整 plan hash。PPO critic 需要独立授权；不可把 synthetic 测试的 authorized=true 复制为权限。
 
-## 给 Codex
+启动前核查模型/tokenizer 元数据、实际源码/接口、配置与输入 hash；正式采集保留实际 runtime lineage。Linux 专属 subreaper/pidfd 负责本次子树的时限、日志上限和退出清理。NeMo refit acknowledged 只代表官方调用返回，端到端权重 hash 尚未验证；R02 仍须固定输入下训推 logprob 对齐。
 
-本项目工作目录为 `AI-Infra/10_Projects/megatron-learning-lab/`；在该目录执行。它独立于已有 MiniMind-Megatron-Bridge 项目，不搬移其他笔记。入口为 [_Project - megatron-learning-lab.md](_Project%20-%20megatron-learning-lab.md)。
+当前真实验证的缺口：没有明确 GPU/RL 授权；指定 Qwen3 权重/tokenizer snapshot 与 NeMo checkout 缺失。已发现的 GPU0 为 6 GiB，当前全参数 Adam 配置的权重、master、moments 推导约需 7.77 GiB，尚不含梯度/激活；这不是显存实测。实际 HF/Bridge 对齐、GPU SFT、save/resume、HF export、同步 rollout/update/refit 都留待 R01/R02，不能据 CPU 结果宣称完成。
 
-在已有工程中复用时发送：
+## 接续开发
 
-> 读取 AGENTS.md、PLAN.md、CURRICULUM.md、profiles/minimum-compatibility.md 和 CODEX_START.md，按需查研究证据。只执行 CODEX_START.md 中的首轮范围。优先做完整模型学习体验，复用已有可用代码，不重新搭建通用课程平台。区分已查证源码、推导数据与实际运行。不得以单独 MLP、占位页面或 mock 训练曲线交付。
+连续目标入口为 [MASTER_GOAL](goals/PROGRAM-V1/MASTER_GOAL.md) 与 [plan.json](goals/PROGRAM-V1/plan.json)，使用 `python -S tools/program_plan.py next` 读取下一阶段。该工具只检查账本/证据完整性，不代替运行验收。
 
-未确认的 HF revision、实际使用的运行镜像 digest、硬件能力和 GPU 实验状态必须保留为未验证，不填造数据。未使用的可选组件标记不适用，不成为环境门槛。生成的 model-cases、运行日志、权重、trace 和 caches 不入库，保留生成工具与小型摘要。
-
-## 源码锚点与实验结果格式
-
-`tools/audit_sources.py` 可只读检查显式指定的本地仓库，不访问网络或修改worktree。示例和实验数据字段见 [Trace 合约](profiles/trace-contract.md)。本次只对临时Git测试仓库验证了该工具行为，未在本地完整Bridge/Core仓库执行该脚本；源码调研证据来自已固定版本的远程读取。
-
-### 校验源码摘录
-
-源码存于 `content/source-snippets.json`，讲解注释与原文独立保存。原始全文仅缓存在被忽略的 `runs/source-cache/`；浏览器读取随构建打包的片段，无需联网获取代码。
-
-```bash
-# 离线校验来源、行数、片段校验和与注释范围
-uv run --no-project python tools/verify_source_snippets.py
-# 有完整源码缓存时，逐字比对真实行与 Git blob
-uv run --no-project python tools/verify_source_snippets.py --cache runs/source-cache
-# 仅在需要重新获取时显式联网；拒绝不匹配固定 blob 的内容
-uv run --no-project python tools/verify_source_snippets.py --fetch --cache runs/source-cache
-```
-
-后续 roadmap / 近两年关键 feature 研读 TODO 已记录在项目入口的“后续深入研读 TODO”，待基本概念掌握后启动。
+[CODEX_START](CODEX_START.md)、[implementation-report.json](implementation-report.json) 和 [validation-report.json](validation-report.json) 保留首轮历史；其旧计数和范围不代表当前版本。后续若 R01/R02 改变集成代码，将 G09 标记 revalidate 并重跑整体验收。日志、截图、生成数据、模型、trace 与缓存沿用现有忽略规则，不加入 Git。

@@ -23,7 +23,8 @@
     "test:sequence": "node --experimental-strip-types tests/sequence.mjs",
     "test:moe-mla": "node --experimental-strip-types tests/moe-mla.mjs",
     "test:rl-reference": "node --experimental-strip-types tests/rl-reference.mjs",
-    "test:runtime-contracts": "node --experimental-strip-types tests/runtime-contracts.mjs"
+    "test:runtime-contracts": "node --experimental-strip-types tests/runtime-contracts.mjs",
+    "test:release": "env -u PYTHONPATH CUDA_VISIBLE_DEVICES= python -S tools/release_gate.py run"
   },
   "dependencies": {
     "katex": "0.18.9",

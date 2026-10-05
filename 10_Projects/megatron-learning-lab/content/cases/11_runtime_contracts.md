@@ -29,6 +29,9 @@ SFT 的观测点在整模 head 与 masked CE 之间；RL 的观测点在固定 a
 | $L_\Sigma,L$ | loss sum 与全局有效 token 平均 |
 | $v_g,v_p,v_\theta,v_{after}$ | generation、previous、current 与一次更新后的 policy 版本 |
 | $\Delta_{max}$ | 两份可比较文件的最大绝对数值差 |
+| $g_k,\theta_k,\theta_k^+$ | 同一参数坐标的梯度、更新前值、更新后值 |
+| $n_t,b_t,G$ | 梯度张量 $t$ 的元素数、dtype 字节数；总缓冲 $G=\sum_t n_t b_t$，单位 B |
+| $p,C_{send},C_{recv}$ | 假设的 DP rank 数、每 rank 发送/接收字节数 |
 
 ## HF、Bridge 与 NeMo 的位置含义
 
@@ -78,6 +81,22 @@ $$
 $$
 
 页面同时显示两侧来源与 config hash。配置不同需要逐项解释；即使差为零，也只说明导入的这些数值相同，不能推出梯度、optimizer、save/resume 或跨引擎等价。当前 schema 不接受未限定的耗时，因此不会凭模拟生成 GPU 性能图。
+
+比较表还显示 loss 定义、同一参数坐标的 $g_k$ 与更新量 $\theta_k^+-\theta_k$。SFT 要求全局有效 token 平均；RL 核对算法、clip、KL 与 value 分支。梯度比较还要求参数坐标、模型参数/optimizer master 角色、dtype 与更新前值一致；未知别名不猜映射，缺值显示未采集。单个梯度值不代表整个梯度张量一致，也不证明保存/恢复正确。
+
+### 梯度通信预算的手算边界
+
+仅当 trace 明确记录完整可训练梯度的 shape 与 dtype 时，网页计算复制式 DP 的理想 ring AllReduce 预算：
+
+$$
+G=\sum_t n_t b_t,\qquad C_{send}=C_{recv}=2\frac{p-1}{p}G.
+$$
+
+这里是每 rank 的发送量与接收量，分别计量，不将二者相加后仍称发送量。假设每个 rank 都持有这份完整梯度，忽略协议、拓扑、分块填充、临时缓冲与 overlap；不覆盖 distributed optimizer 的 reduce-scatter/all-gather 分支。
+
+内置 PPO CPU 参考只训练 head $[27,8]$ 与 critic $[8]$，其余 backbone 冻结，梯度为 float64。因此 $G=(27\times8+8)\times8=1792$ B。假设 $p=4$，每 rank 发送与接收均为 $2\times3/4\times1792=2688$ B；$p=1$ 时为 0。改变网页的假设 rank 数不会执行 collective 或修改原 trace。
+
+反例：把一个选定参数 scalar 的 8 B 当作全模型梯度，或把 2688 B 标成实测 NCCL 通信，都是错误的。SFT forward-only 样例没有完整梯度尺寸，页面保持“不可推导”，实际通信一栏始终“未采集”。数值测试独立检查 224 元素/1792 B/2688 B，浏览器检查 rank 切换与缺失降级；未测试实际通信耗时。
 
 RL refit 只有完成 acknowledgment、export/ack hash 相同、generation 版本等于 after 才能标 synchronized。只递增一个版本整数不会自动替换生成引擎权重。
 
