@@ -11,6 +11,7 @@ import React, {
   useCallback,
   useMemo,
   useEffect,
+  useLayoutEffect,
   useReducer,
   useRef,
   useState,
@@ -72,12 +73,60 @@ function App() {
     string | undefined
   >();
   const sourceDialog = useRef<HTMLDialogElement>(null);
-  const sourceTrigger = useRef<HTMLButtonElement>(null);
+  const sourceTrigger = useRef<HTMLElement | null>(null);
+  const interactionTarget = useRef<HTMLElement | null>(null);
+  const readingAnchor = useRef<{ element: HTMLElement; top: number } | null>(
+    null,
+  );
   const model = models.find((m) => m.id === state.model)!;
   const steps: readonly string[] = state.scenario === "rl" ? rlSteps : sftSteps;
   const index = steps.indexOf(state.step);
   const ids = useMemo(() => sourceIds(state), [state]);
-  const patch = useCallback((value: Partial<State>) => dispatch(value), []);
+  useEffect(() => {
+    // Pointer activation need not focus a button (for example, on Safari).
+    // Remember the actual control instead of relying only on activeElement.
+    const rememberControl = (event: Event) => {
+      interactionTarget.current =
+        event.target instanceof Element
+          ? event.target.closest<HTMLElement>(
+              "button, input, select, textarea, summary, a[href]",
+            )
+          : null;
+    };
+    const events = ["pointerdown", "click", "keydown", "change"];
+    events.forEach((event) =>
+      document.addEventListener(event, rememberControl, true),
+    );
+    return () =>
+      events.forEach((event) =>
+        document.removeEventListener(event, rememberControl, true),
+      );
+  }, []);
+  const patch = useCallback((value: Partial<State>) => {
+    const control = interactionTarget.current ?? document.activeElement;
+    if (
+      control instanceof HTMLElement &&
+      control.closest("main") &&
+      !control.closest("dialog")
+    ) {
+      readingAnchor.current = {
+        element: control,
+        top: control.getBoundingClientRect().top,
+      };
+    }
+    dispatch(value);
+  }, []);
+  useLayoutEffect(() => {
+    const anchor = readingAnchor.current;
+    readingAnchor.current = null;
+    if (anchor?.element.isConnected) {
+      // Shared state can resize panels above the reader. Keep the control at
+      // its original viewport position before the updated layout is painted.
+      const offset = anchor.element.getBoundingClientRect().top - anchor.top;
+      if (Math.abs(offset) > 0.5)
+        window.scrollBy({ top: offset, behavior: "instant" });
+    }
+  }, [state]);
   useEffect(() => {
     const onHash = () => dispatch(readState());
     window.addEventListener("hashchange", onHash);
@@ -98,6 +147,11 @@ function App() {
   }, [sourceOpen]);
   const openSource = useCallback(
     (id?: string, excerpt?: string) => {
+      const trigger = interactionTarget.current ?? document.activeElement;
+      sourceTrigger.current =
+        trigger instanceof HTMLElement && !trigger.closest("dialog")
+          ? trigger
+          : null;
       setPreferredExcerpt(excerpt);
       setSourceId(id || ids[0] || "B-Q3");
       setSourceOpen(true);
@@ -374,11 +428,7 @@ function App() {
                       </span>
                     </h2>
                   </div>
-                  <button
-                    className="outline"
-                    ref={sourceTrigger}
-                    onClick={() => openSource()}
-                  >
+                  <button className="outline" onClick={() => openSource()}>
                     查看当前步骤源码 ↗
                   </button>
                 </div>
@@ -538,7 +588,8 @@ function App() {
         }}
         onClose={() => {
           setSourceOpen(false);
-          sourceTrigger.current?.focus();
+          if (sourceTrigger.current?.isConnected)
+            sourceTrigger.current.focus({ preventScroll: true });
         }}
       >
         <div className="source-content">
