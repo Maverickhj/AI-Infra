@@ -93,6 +93,14 @@ $$
 | $k,m$ | MoE top-k，以及第 $k$、$k+1$ 名路由分数的差 |
 | $T$ | 序列汇总或统计时的有效 token 数 |
 
+| $\theta,\theta_{\mathrm{old}}$ | RL 当前优化权重与 rollout 采样时的旧权重版本 |
+| $s_t,a_t$ | 第 $t$ 个预测位置的上下文状态与采样 token |
+| $\pi^{\mathrm{train}}_\theta,\pi^{\mathrm{rollout}}_\theta$ | 相同权重下训练/rollout 引擎实际实现的 token 条件分布 |
+| $\delta_t$ | 同一旧权重下的 train–rollout token logprob 差（TIM） |
+| $\Delta_t^{\mathrm{update}}$ | 同一训练引擎下，当前与旧策略 logprob 差 |
+| $\rho_t^{\mathrm{beh}},\rho_t^{\mathrm{train}}$ | 分母分别为实际 rollout 行为分布与 trainer 旧策略分布的比率 |
+| $\widehat A_t,\varepsilon_{\mathrm{clip}}$ | RL 中第 $t$ 个 token 的优势估计、PPO 风格裁剪阈值 |
+
 ## 3. 确定性与数值误差的计算原理
 
 ### 3.1 三个不同目标
@@ -665,7 +673,254 @@ $$
 
 **最有价值的产物是一条具体归因记录**：在固定输入与权重后，最早发生差异的算子是哪个，差异来自 partial computation / cast / SUM / attention merge / route 的哪一步，哪项精度干预使误差收敛，以及相应的性能代价。没有这些证据，不应该将 $10^{-2}$ 直接判为“正常浮点误差”。
 
-## 8. References
+## 8. RL / Post-training 领域相关研究与系统性影响
+
+> [!note]
+> 本章补充截至 **2026-10-13** 可查的 RL/Post-training 论文与工程报告。研究结论分为：**论文/项目在其给定实验条件下报告的结果**、**可以由定义和公式直接推导的结论**、以及**对当前 Megatron 跨并行实验的待验证启发**。不能把 Train–Rollout Mismatch、跨 TP 数值不一致和真正的异步 Off-policy 漂移直接当成同一问题。
+
+### 8.1 为什么 RL 比普通 SFT 更关心 Forward 数值一致性？
+
+SFT 的 token-level cross entropy 主要由训练引擎计算；而典型 GRPO/PPO/RLVR 把**采样行为**和**梯度更新**拆到两套执行系统：
+
+~~~text
+rollout engine（SGLang / vLLM 等）
+  -> 按某一权重版本生成 token，保存 token IDs 和 old logprobs
+  -> training engine（Megatron / FSDP 等）
+  -> 对相同 token 重算当前 logprobs、构造 policy ratio、clip 和 loss
+  -> 梯度更新；随后同步新权重
+~~~
+
+因此即使权重完全相同，也可能有两个**不同的实际概率分布**：
+
+$
+\pi_{\theta}^{\mathrm{rollout}}(a_t\mid s_t)
+\ne
+\pi_{\theta}^{\mathrm{train}}(a_t\mid s_t).
+$
+
+这就是 **Training-Inference Mismatch（TIM）** 的一种来源；它不是随机 seed 不同的同义词，也不等于模型权重版本已经过期。尤其在不同 TP、CP、EP、batch shape、FP8 scaling 和 kernel 实现之间，TIM 可能来自本报告第 4 节讨论的真实计算路径差异。[R16][R18]
+
+**三种应分开记录的偏差：**
+
+| 偏差 | 两侧权重版本 | 核心原因 | 应先控制的变量 |
+|---|---|---|---|
+| 跨并行布局 Forward Diff | 相同 | TP/CP/EP/ETP 等改变局部算子与合并 | canonical weights、输入、layout、dtype、kernel |
+| TIM（训推数值不一致） | 相同 | rollout 与 trainer 的模型/kernel/量化实现不同 | 相同 token、prefix、mask、词表和精度语义 |
+| Policy Staleness / Off-policy Drift | 不同 | 异步 rollout、PPO/GRPO 多次 mini-step 更新 | 权重版本、生成时间、optimizer step、replay age |
+
+**重要边界**：纯粹的 teacher–student KL 或 OPD 中教师与学生本来不同的分布，是**预期中的建模差异**，不能直接称为 TIM。只有同一个逻辑策略、同一个权重快照在训练/推理路径给出不同数值时，才是本章关心的系统级 mismatch。
+
+### 8.2 Mismatch 如何进入 PPO / GRPO 的 Importance Ratio？
+
+设 rollout 使用旧权重 $\theta_{\mathrm{old}}$ 生成 $a_t$，其上下文为 $s_t$。在同一权重快照下定义 token-level 数值差：
+
+$
+\delta_t
+=
+\log\pi^{\mathrm{train}}_{\theta_{\mathrm{old}}}(a_t\mid s_t)
+-
+\log\pi^{\mathrm{rollout}}_{\theta_{\mathrm{old}}}(a_t\mid s_t).
+$
+
+在 trainer 上，当前与旧权重之间**真正希望用于更新的** logprob 变化可以写为：
+
+$
+\Delta_t^{\mathrm{update}}
+=
+\log\pi^{\mathrm{train}}_{\theta}(a_t\mid s_t)
+-
+\log\pi^{\mathrm{train}}_{\theta_{\mathrm{old}}}(a_t\mid s_t).
+$
+
+若 denominator 使用实际行为策略的 rollout logprob，则：
+
+$
+\rho_t^{\mathrm{beh}}
+=
+\frac{\pi^{\mathrm{train}}_{\theta}(a_t\mid s_t)}
+{\pi^{\mathrm{rollout}}_{\theta_{\mathrm{old}}}(a_t\mid s_t)}
+=
+\exp\left(\Delta_t^{\mathrm{update}}+\delta_t\right).
+$
+
+若把旧 logprob 在 trainer 重算作为 denominator，得到：
+
+$
+\rho_t^{\mathrm{train}}
+=
+\frac{\pi^{\mathrm{train}}_{\theta}(a_t\mid s_t)}
+{\pi^{\mathrm{train}}_{\theta_{\mathrm{old}}}(a_t\mid s_t)}
+=
+\exp\left(\Delta_t^{\mathrm{update}}\right).
+$
+
+所以有精确关系：
+
+$
+\boxed{
+\rho_t^{\mathrm{beh}}
+=
+\rho_t^{\mathrm{train}}\,e^{\delta_t}.
+}
+$
+
+**关键区分**：
+
+- 若还未执行任何 optimizer update，且当前权重与 rollout 权重确实相同，理论上没有 policy-update drift；此时 $\rho_t^{\mathrm{train}}=1$，但 $\rho_t^{\mathrm{beh}}=e^{\delta_t}$ 仍可能偏离 1。
+- **执行过 PPO/GRPO mini-step 后，ratio 不等于 1 本来就是正常现象**；不能把所有 $r\ne1$ 都诊断成 TIM。
+- 使用 trainer-recomputed old logprob 可使第一种 ratio 接近 1，但此时 denominator 不再是实际采样所用概率；并不等于已消除两套策略的数值差异。
+- 直接使用 rollout logprob 保留了真实 denominator，但 trainer 的当前分布和更新梯度可能仍不能完全反映 rollout engine 部署后的分布。VeXact 的消融实验专门研究了这两类失败路径。[R18]
+
+以 PPO 风格 surrogate 为例：
+
+$
+L_t^{\mathrm{clip}}
+=
+\min\left(
+\rho_t\widehat A_t,\;
+\operatorname{clip}(\rho_t,1-\varepsilon_{\mathrm{clip}},1+\varepsilon_{\mathrm{clip}})
+\widehat A_t
+\right).
+$
+
+若 $\delta_t=0.01$，则 $e^{\delta_t}\approx1.01005$；这只是约 1% 的**单 token 比率乘性扰动**，**不必然**触发 PPO clipping。但当正常参数更新已接近 clipping 边界、负优势 token 分布不均、MoE top-k 出现离散跳变，或按序列合并误差时，其训练影响可能与平均 $|\delta_t|$ 很不相称。[R18][R23]
+
+还有一个单独的语义前提：若 rollout 采样经过 temperature、top-p/top-k 或其他过滤，**参与实际采样的行为分布**与 raw model logprobs 可能不同。必须先明确对比的是 raw policy，还是已处理的 sampling policy，不能在公式中混用。
+
+### 8.3 与本问题最直接相关的系统研究
+
+以下优先选取直接研究**计算路径数值对齐**的工作，而不是泛泛讨论 RL 稳定性。
+
+| 工作 | 直接研究对象 | 主要结果与边界 | 对当前 Megatron 实验的价值 |
+|---|---|---|---|
+| **TBIK**，ICML 2026 | **不同 TP size、batch size 的数值一致性** | BIO+TBIK 在论文支持的 vLLM/FSDP 配置中实现位级一致；不是任意 MCore 并行组合的保证。[R16] | 优先研究分片内部与跨卡 **Reduction Tree** 如何统一 |
+| **RL-Kernel**，2026-09 | Megatron train ↔ vLLM rollout 的严格 logprob parity | Qwen3-8B BF16、Megatron TP4/CP2 的 CUDA/ROCm strict path，团队报告 200 steps 内 mismatch 指标为 0。[R17] | 最贴近 Megatron；学习逐算子的数值执行契约与 provenance |
+| **VeXact**，2026-05 / v2 2026-09 | Zero-TIM 对照组及 mismatch 对 RL 的影响 | FSDP 与 VeXact 统一 kernel/模型路径；在论文设置中揭示 TIM 独立导致的训练不稳定。[R18] | 引入 zero-mismatch baseline，区分误差根因与优化后果 |
+| **NeMo-RL DTensor TP 指南** | TP plan、row-wise SUM 与 batch-variant kernels | 官方 nightly 文档记录：某些实验中对齐 microbatch 后 ratio 恢复；row-wise TP 是另一个贡献因素。[R21] | 直接增加 TP plan 和 microbatch-shape 对照 |
+
+#### TBIK：跨 TP 的计算树一致性
+
+Zhang 等在 ICML 2026 提出 **Tree-Based Invariant Kernels（TBIK）**，让 GPU 内 GEMM 与 GPU 间归约采用跨 TP 配置一致的计算树；实现基于 Triton，并结合 **Batch-Invariant Operations（BIO）** 对齐 batch 相关路径。[R16]
+
+原论文的 AIME'24 Table 2（L40S；数值单位为 $10^{-3}$）：
+
+| 模型 | 原生 BF16 | BIO | BIO + TBIK |
+|---|---:|---:|---:|
+| Qwen3-8B | 10.01 | 9.10 | **0** |
+| Mistral-7B-Instruct | 17.37 | 14.10 | **0** |
+| Llama-3.1-8B-Instruct | 26.48 | 27.54 | **0** |
+| Qwen3-32B | 8.01 | 7.79 | **0** |
+
+这里的指标是作者定义的 **Average Maximum Probability Divergence**，**不是目标 token logprob MAE**。论文还报告，在特定 Qwen3-8B / H20 / TP4 设置下，BIO+TBIK 相比原生 BF16 的端到端延迟开销约 **22%–63%**。不能将这些数字直接外推为你的 Megatron 实验误差预算或性能代价。
+
+**直接启发**：对一个 row-parallel GEMM，不能只统一 NCCL `NCCL_ALGO`；还要对齐 local GEMM 的累加树、partial output cast、跨 GPU 合并树和输出舍入。如果要求 bitwise invariance，需要的是**端到端算术执行协议**，而不是简单提高 SUM dtype。
+
+#### RL-Kernel：Megatron × vLLM 的执行契约
+
+RL-Kernel 将数值一致性要求具体化为：相同逻辑输入与状态、相同 reduction domain、分片与 merge tree、精度/舍入边界，以及 `exp`/`log`/`rsqrt`/`SiLU` 等数值 primitive 的实现。[R17]
+
+其技术报告列出的涉及范围包括 RMSNorm、Attention、GEMM、SwiGLU、linear logprob 与 distributed collectives；并使用训练/rollout 各自采用 Production（P）还是 Aligned（R）实现的 **P/P、P/R、R/P、R/R** 对照，追踪具体是哪个算子带来差异。
+
+团队报告的两组代表性 end-to-end strict path：
+
+| GPU | 训练布局 | Rollout | 模型 | 结果 |
+|---|---|---|---|---|
+| 8×H100（CUDA） | Megatron TP4/CP2/PP1 | 2×vLLM TP4 | Qwen3-8B BF16 | 200 steps，`mismatch_count=0`、`max_abs_diff=0` |
+| 8×MI300X（ROCm） | Megatron TP4/CP2/PP1 | 2×vLLM TP4 | Qwen3-8B BF16 | 200 steps，两个指标同为 0 |
+
+**边界**：这是项目团队对其版本、固定逻辑输入、受控 backend / fallback 的**自报告结果**；不能直接证明所有其他 GPU、模型、MoE、CP 实现或动态批处理路径也具有位级一致性。
+
+特别值得借鉴的是它的 **execution provenance**：仅在配置中打开 `strict` 并不构成证明，还要确认实际 kernel、通信路径、CUDA/HIP Graph、fallback 状态，且比较对象确实相同。
+
+#### NeMo-RL：同 TP 下 microbatch 也能改变 logprob
+
+NeMo-RL DTensor TP 的官方指南指出两个独立因素：[R21]
+
+1. `train_micro_batch_size` 与 `logprob_batch_size` 不同，导致 batch-dependent GEMM/归约/融合路径变化；该文档所述实验中对齐后 `probs_ratio` 恢复到 1。
+2. Row-wise TP 需要跨卡 partial sum，与 column-wise 分片的归约结构不同；指南提供了调整 TP plan 的思路。
+
+这不是对 Megatron 的逐位保证，且 nightly 文档可能持续修改。**工程建议**：在测试跨 TP 数值一致性前，先保证不同配置的 local token/batch shape 和对应 kernel 信息可追溯，避免把 batch shape 变化归因给 TP 算术本身。
+
+### 8.4 TIM 是否会影响 RL 的真实优化？VeXact 的诊断意义
+
+Zhong 等的 **Diagnosing Training-Inference Mismatch in LLM Reinforcement Learning via a Zero-Mismatch Reference**（arXiv:2605.14220v2，2026-09-29）构建 VeXact：使用和 FSDP 训练侧对齐的模型/kernel、batch-invariant 路径，尽量隔离 TIM 对 REINFORCE/GRPO 稳定性的影响。[R18]
+
+其观察包括：
+
+- Dense Qwen3-1.7B 和 MoE Qwen3-30B-A3B 的特定 REINFORCE 实验中，非精确 rollout 路径出现了 reward/gradient 不稳定，而 zero-mismatch baseline 更稳定。
+- 在一段报告的 Qwen3-8B token 轨迹样例中，出现绝对 logprob 差 $0.133$；这是**个别实例**，不能代表总体均值。
+- PPO/GRPO 中直接拿 trainer-recomputed old logprob 当 denominator，或完全绕过 recomputation，分别有不同偏差；PPO ratio 之外还需检查由哪个执行路径计算的梯度。
+- 论文发现平均 KL 指标未必能第一时间反映按优势符号区分的更新方向偏差。
+
+**实验上的最重要启示**：应区分 “`train_logp - rollout_logp` 是否不同” 与 “这种不同是否**因果性**改变梯度、reward 或训练质量”。先建立可控的 zero-mismatch baseline，再用单变量干预隔离 TP / CP / EP，不能只比较两条自由运行的 reward 曲线。
+
+### 8.5 MoE 专项：Rollout Routing Replay（R3）
+
+Ma 等的 **Stabilizing MoE Reinforcement Learning by Aligning Training and Inference Routers**（ICML 2026）提出 **Rollout Routing Replay（R3）**。[R19]
+
+问题是：即使权重一致，router 分数出现微小差异，也可能在 top-k 的边界切换专家集合，使训练和 rollout 计算不再位于同一个稀疏分支。R3 记录 rollout 的 routing 分布/选择信息并在训练侧重放，以降低训练与推理路由不一致所带来的额外偏差。作者报告 policy KL 差异降低及训练稳定性改善。
+
+这里必须分开两类“修复”：
+
+- **Routing replay**：对齐走哪些专家，优先修复离散路由变化。
+- **Numerical kernel alignment**：对齐每个专家的 GEMM、ETP reduce、combine、attention 和最后 logprob。
+
+R3 不承诺后者全部位级相等。因此若你在 TP/EP/ETP 改变后遇到 $10^{-2}$ diff，建议先分析不同 token 的 expert-set mismatch 与 router margin，再用固定专家 ID/权重的 replay 单独测专家执行路径。
+
+### 8.6 算法补偿：IcePop、CIS 与 FP8 Calibrated Clipping
+
+系统级对齐通常成本较高，RL 研究也有**允许 mismatch 存在，降低其训练伤害**的路线。
+
+| 工作 | 主要机制 | 不能解决什么 |
+|---|---|---|
+| **IcePop**（Ring-1T / AReaL） | 对重要性比率超出给定区间的 token 进行 masking / clipping，降低异常 token 对更新的影响。[R20] | 不会令 train/rollout hidden states、logits、router bitwise 一致 |
+| **Calibrated Importance Sampling（CIS）**，2026-09 | 研究 log-odds displacement 与 token confidence，设计 confidence-aware 截断以控制权重矩并权衡偏差。[R22] | 是采样/更新权重校正，不是 GEMM/CP 的数值修复 |
+| **Calibrated Clipping for FP8 RL**，2026-09 | 研究 FP8 量化噪声对 importance ratio、负优势 token clipping 的影响，按高精度参考分布校准剪裁范围。[R23] | 不提供跨并行位级一致保证 |
+
+IcePop 的 AReaL 实现可通过 `use_decoupled_loss` 与 token-level ratio rejection 配置启用；超阈值 token 不贡献对应 loss。是否值得部署，要看 rejection 比例、有效梯度 token 数，以及是否伤害长尾样本。[R20]
+
+这些措施是**容错/补偿层**，不应拿来证明 underlying forward kernel 已数值一致。也不能简单声称它们“恢复真正 on-policy”，因为过滤与裁剪本身可能引入目标函数偏差。
+
+### 8.7 应在本地 Megatron 实验中增加哪些观测？
+
+**第一层：相同权重、固定 token 的纯数值对齐**（本报告第 5 节的延伸）。
+
+| 实验 | 固定变量 | 只改变 | 主要指标 |
+|---|---|---|---|
+| E0 | 所有输入与权重 | 无，同配置重复 | 原始 dtype 的 bitwise parity |
+| E1 | 权重、token、batch shape | TP=1/2/4/8 | earliest divergent operator、partial GEMM、collective |
+| E2 | TP、权重、逻辑 tokens | CP=1/2/4（仅受支持组合） | QKV、block LSE/output correction |
+| E3 | TP/CP、权重、token | EP/ETP、MoE dispatcher | expert-set diff、expert output、combine |
+| E4 | 完整 logits | native logprob vs 统一 FP64 log-softmax | target-logit / LSE / logprob 的误差分解 |
+| E5 | 同一语义输入 | training/rollout Production/Aligned 2×2 | 由哪一端的算子实现造成差异 |
+
+**第二层：控制变量的 RL 敏感性实验**：
+
+1. 在固定权重版本下保存完整 rollout 样本，严格记录行为策略版本、token IDs、mask、原生 rollout logprobs 与 trainer 重算 logprobs。
+2. 分开计算 $\delta_t$、$\rho_t^{\mathrm{beh}}$、$\rho_t^{\mathrm{train}}$；按层、token 位置、response length、router margin、优势符号、是否接近 clipping 边界分组。
+3. 记录 `p50/p95/p99/max |delta_logp|`、异常 token 比例、clip fraction、expert-set mismatch、update 前后 ratio，并同时比较完整 logits 和 LSE。
+4. 在**同一固定样本**上，比较原生 kernel、统一高精度合并、固定 routing 与完全对齐 kernel 的差别；优先定位最早引入误差的 operator。
+5. 在独立受控训练中比较 zero-mismatch/reference 与 native mismatch，记录梯度差、KL、有效样本数、reward 和验证指标。不同动态 rollout 轨迹的 reward 对比不能单独当作算子级因果证据。
+
+**要特别防止的假阳性**：不同 rollout weight version、position / attention mask、KV cache 逻辑语义、tokenizer/vocab mapping、packing 以及 raw/temperature/top-p 后处理，本质上让两边比较的不是同一个条件概率。应先通过 `comparable=true` 的数据契约，否则所有后续差异统计都失去解释力。
+
+### 8.8 研究优先级与未解决问题
+
+基于现有论文和当前实验现象，建议：
+
+1. **优先复现 TBIK 的跨 TP reduction-tree 论证**：在 Megatron BF16 row-linear 和 column-linear 上，以最小 operator replay 比较 local GEMM partial、cast 和 collective；这是与“改 TP 后 diff 约 $10^{-2}$”最直接的对应关系。
+2. **借鉴 RL-Kernel 的 numerical contract / execution provenance**：把 reduction domain、分块、merge tree、输入/内部/输出精度、数值 primitive 和 fallback 写入 snapshot 元数据。
+3. **参考 VeXact 做 zero-mismatch control**：在真实 GRPO/PPO 训练前先问“相同 $\theta$ 的 $\delta_t$ 是否为零”，随后才研究 clipped ratio 与训练稳定性。
+4. **MoE 优先追加 R3 风格 routing replay 对照**：先隔离是否更换专家，再测 expert GEMM、ETP 和 combine。
+5. **IcePop/CIS/Calibrated Clipping 作为第二阶段的算法补偿研究**：在确认 mismatch 来源和规模后，量化偏差、丢弃 token 比例与训练收敛，而不是以 mask 掩盖根因。
+
+**尚无通用结论的部分**：TBIK 并未覆盖任意 Megatron CP/EP/ETP 路径；RL-Kernel 的严格一致结果有特定模型、硬件和执行契约约束；VeXact 的论文主线是 FSDP/train–rollout；NeMo-RL nightly 是工程案例。它们共同支持“跨并行数值路径值得作为 RL 一等公民来处理”，但**仍不足以断言你目前的 $10^{-2}$ diff 来自哪一层，更不足以预测它一定导致 RL 崩溃**。
+
+本章的长期研究方向可概括为：
+
+> **Megatron-Core 多维并行下的 Forward Numerical Consistency：从 Reduction / Routing / Attention 逐算子归因，到 PPO/GRPO/OPD 的训练目标敏感性。**
+
+## 9. References
 
 以下链接优先固定已讨论的源码 tag；网页文档可能继续更新。**链接用于溯源，不表示本文已在本地 GPU 逐一实验验证。**
 
@@ -684,6 +939,15 @@ $$
 - **[R13]** NVIDIA Megatron-Core `core_v0.19.2`, [training/determinism.py](https://github.com/NVIDIA/Megatron-LM/blob/core_v0.19.2/megatron/training/determinism.py), [training/arguments.py](https://github.com/NVIDIA/Megatron-LM/blob/core_v0.19.2/megatron/training/arguments.py).
 - **[R14]** NVIDIA NCCL `v2.28.9-1`, [device/reduce_kernel.h](https://github.com/NVIDIA/nccl/blob/v2.28.9-1/src/device/reduce_kernel.h)（特定版本设备端归约实现；不外推到所有运行环境）。
 - **[R15]** Dao-AILab, [FlashAttention README](https://github.com/Dao-AILab/flash-attention/blob/main/README.md); Dao et al., [FlashAttention](https://arxiv.org/abs/2205.14135).
+
+- **[R16]** Zhang et al., [Deterministic Inference across Tensor Parallel Sizes That Eliminates Training-Inference Mismatch](https://proceedings.mlr.press/v306/zhang26ag.html), ICML 2026; [arXiv HTML, v2](https://arxiv.org/html/2511.17826)（TBIK，跨 TP/BIO，论文 Table 2 与延迟对照）。
+- **[R17]** RL-Kernel Team, [RL-Kernel v0.1.0: Train–Rollout Bitwise Consistency](https://rl-align.github.io/RL-Kernel/blog/2026-09-18-rl-kernel-amd-vime-qwen3-8b-train-rollout-bitwise-consistency/) (2026-09-18); [项目仓库](https://github.com/RL-Align/RL-Kernel)（Megatron/vLLM strict path、execution provenance、200-step CUDA/ROCm 自报告）。
+- **[R18]** Zhong et al., [Diagnosing Training-Inference Mismatch in LLM Reinforcement Learning via a Zero-Mismatch Reference](https://arxiv.org/html/2605.14220v2), arXiv:2605.14220v2 (updated 2026-09-29); [VeXact](https://github.com/verl-project/vexact).
+- **[R19]** Ma et al., [Stabilizing MoE Reinforcement Learning by Aligning Training and Inference Routers](https://proceedings.mlr.press/v306/ma26aw.html), ICML 2026; [arXiv:2510.11370](https://arxiv.org/abs/2510.11370)（Rollout Routing Replay / R3）。
+- **[R20]** Ling Team, [Every Step Evolves: Scaling Reinforcement Learning for Trillion-Scale Thinking Model](https://arxiv.org/abs/2510.18855) (2025); AReaL [GRPO Series: IcePop](https://github.com/areal-project/AReaL/blob/main/docs/en/algorithms/grpo_series.md).
+- **[R21]** NVIDIA NeMo-RL, [DTensor Tensor Parallel Accuracy Issue](https://docs.nvidia.com/nemo/rl/nightly/guides/dtensor-tp-accuracy.html)（**nightly 文档，可能变动**；microbatch 与 row-wise TP 诊断）。
+- **[R22]** Yu et al., [Rethinking Training-Inference Mismatch in LLM Reinforcement Learning: Where It Arises and How to Correct It](https://arxiv.org/abs/2609.32444) (2026-09); [CIS project](https://kzhao5.github.io/CIS-website/)（Calibrated Importance Sampling）。
+- **[R23]** Chen et al., [Towards Full Pipeline FP8 Reinforcement Learning for LLMs](https://arxiv.org/abs/2609.22870) (2026-09)（FP8 importance-ratio 噪声与 Calibrated Clipping）。
 
 ---
 
