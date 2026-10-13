@@ -692,11 +692,11 @@ rollout engine（SGLang / vLLM 等）
 
 因此即使权重完全相同，也可能有两个**不同的实际概率分布**：
 
-$
+$$
 \pi_{\theta}^{\mathrm{rollout}}(a_t\mid s_t)
 \ne
 \pi_{\theta}^{\mathrm{train}}(a_t\mid s_t).
-$
+$$
 
 这就是 **Training-Inference Mismatch（TIM）** 的一种来源；它不是随机 seed 不同的同义词，也不等于模型权重版本已经过期。尤其在不同 TP、CP、EP、batch shape、FP8 scaling 和 kernel 实现之间，TIM 可能来自本报告第 4 节讨论的真实计算路径差异。[R16][R18]
 
@@ -714,55 +714,55 @@ $
 
 设 rollout 使用旧权重 $\theta_{\mathrm{old}}$ 生成 $a_t$，其上下文为 $s_t$。在同一权重快照下定义 token-level 数值差：
 
-$
+$$
 \delta_t
 =
 \log\pi^{\mathrm{train}}_{\theta_{\mathrm{old}}}(a_t\mid s_t)
 -
 \log\pi^{\mathrm{rollout}}_{\theta_{\mathrm{old}}}(a_t\mid s_t).
-$
+$$
 
 在 trainer 上，当前与旧权重之间**真正希望用于更新的** logprob 变化可以写为：
 
-$
+$$
 \Delta_t^{\mathrm{update}}
 =
 \log\pi^{\mathrm{train}}_{\theta}(a_t\mid s_t)
 -
 \log\pi^{\mathrm{train}}_{\theta_{\mathrm{old}}}(a_t\mid s_t).
-$
+$$
 
 若 denominator 使用实际行为策略的 rollout logprob，则：
 
-$
+$$
 \rho_t^{\mathrm{beh}}
 =
 \frac{\pi^{\mathrm{train}}_{\theta}(a_t\mid s_t)}
 {\pi^{\mathrm{rollout}}_{\theta_{\mathrm{old}}}(a_t\mid s_t)}
 =
 \exp\left(\Delta_t^{\mathrm{update}}+\delta_t\right).
-$
+$$
 
 若把旧 logprob 在 trainer 重算作为 denominator，得到：
 
-$
+$$
 \rho_t^{\mathrm{train}}
 =
 \frac{\pi^{\mathrm{train}}_{\theta}(a_t\mid s_t)}
 {\pi^{\mathrm{train}}_{\theta_{\mathrm{old}}}(a_t\mid s_t)}
 =
 \exp\left(\Delta_t^{\mathrm{update}}\right).
-$
+$$
 
 所以有精确关系：
 
-$
+$$
 \boxed{
 \rho_t^{\mathrm{beh}}
 =
 \rho_t^{\mathrm{train}}\,e^{\delta_t}.
 }
-$
+$$
 
 **关键区分**：
 
@@ -773,7 +773,7 @@ $
 
 以 PPO 风格 surrogate 为例：
 
-$
+$$
 L_t^{\mathrm{clip}}
 =
 \min\left(
@@ -781,7 +781,7 @@ L_t^{\mathrm{clip}}
 \operatorname{clip}(\rho_t,1-\varepsilon_{\mathrm{clip}},1+\varepsilon_{\mathrm{clip}})
 \widehat A_t
 \right).
-$
+$$
 
 若 $\delta_t=0.01$，则 $e^{\delta_t}\approx1.01005$；这只是约 1% 的**单 token 比率乘性扰动**，**不必然**触发 PPO clipping。但当正常参数更新已接近 clipping 边界、负优势 token 分布不均、MoE top-k 出现离散跳变，或按序列合并误差时，其训练影响可能与平均 $|\delta_t|$ 很不相称。[R18][R23]
 
