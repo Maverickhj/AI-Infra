@@ -85,6 +85,23 @@ s_{t,i}^{(s)}&=(\boldsymbol q_t^{(s)}\boldsymbol k_i^{(s)\top})\sigma,
 \end{aligned}
 $$
 
+后续按公式项统计成本，统一使用以下分支符号：
+
+$$
+\begin{aligned}
+\boldsymbol q_{t,C}^{(s)}&=\boldsymbol c_t'W_{qc}^{(s)}
+\in\mathbb R^{1\times d_k},&
+\boldsymbol q_{t,R}^{(s)}&=(\boldsymbol c_t'W_{qr}^{(s)})\mathcal R_t
+\in\mathbb R^{1\times d_r},\\
+\boldsymbol k_{i,C}^{(s)}&=\boldsymbol c_iW_{kc}^{(s)}
+\in\mathbb R^{1\times d_k},&
+\boldsymbol k_{i,R}&=(\boldsymbol x_iW_{kr})\mathcal R_i
+\in\mathbb R^{1\times d_r}.
+\end{aligned}
+$$
+
+因此 $\boldsymbol q_t^{(s)}=[\boldsymbol q_{t,C}^{(s)},\boldsymbol q_{t,R}^{(s)}]$，$\boldsymbol k_i^{(s)}=[\boldsymbol k_{i,C}^{(s)},\boldsymbol k_{i,R}]$。成本表使用这些公式项或已定义的张量符号指代操作与数据。
+
 将各头的结果拼接后，进行输出投影（output projection）：
 
 $$
@@ -113,7 +130,7 @@ RMSNorm 与 RoPE 分别属于归一化和位置编码，按独立操作统计；
 - 指数、比较、除法和平方根倒数分别列出操作次数，不将它们与普通加乘视为等成本指令。平方根倒数在公式中记为 rsqrt。
 - 显存访存量指高带宽内存（High Bandwidth Memory，HBM）与片上存储之间的数据搬运量，不等于张量占用容量。同一份数据重复读取时，需要重复计数。
 - 理论模型统一采用每元素 $b$ 字节，包含 RMSNorm 权重；实际数据类型（dtype）不同时，应按张量分别核算。片上累加可以使用 32 位浮点格式（FP32）。
-- 降维投影、压缩表示的 RMSNorm 和位置 K 投影由各头共享。它们按新词元的位置数计数，不按历史查询与键的配对数计数。
+- $\boldsymbol x_tW_c'$、$\boldsymbol x_iW_c$、$\mathrm{RMSNorm}(\boldsymbol z_t^Q)$、$\mathrm{RMSNorm}(\boldsymbol z_i^{KV})$ 和 $\boldsymbol k_{i,R}=(\boldsymbol x_iW_{kr})\mathcal R_i$ 由各头共享，按新词元的位置数计数。
 - 分数缩放（score scaling）按每个分数一次乘法计数，$\sigma$ 已预先计算。若计算内核（kernel）将缩放移到 Q 或其他操作中，应按实际执行方式调整。
 - 偏置（bias）、注意力输入端的归一化、残差连接（residual connection）、随机失活（dropout）、掩码（mask）处理、缓存写入和通信不纳入当前合计，见第 7 节。
 
@@ -316,23 +333,23 @@ $$
 
 预填充为每个输入位置生成 Q、K、V。下表以一个位置和一个头展示算子成本，同时标明哪些操作由多头共享。注意力中的查询与键配对次数另行累计。
 
-| 算子 | 公式 | 运算量 | 执行频率 |
+| 操作 | 公式项 | 运算量 | 执行频率 |
 |---|---|---:|---|
 | Q 降维投影 | $\boldsymbol z_t^Q=\boldsymbol x_tW_c'$ | $2dd_c'$ FLOPs | 每个新词元一次，多头共享 |
 | Q 压缩表示的 RMSNorm | $\boldsymbol c_t'=\mathrm{RMSNorm}(\boldsymbol z_t^Q)$ | $4d_c'+1$ FLOPs，另有 1 次 rsqrt | 每个新词元一次，多头共享 |
 | KV 降维投影 | $\boldsymbol z_i^{KV}=\boldsymbol x_iW_c$ | $2dd_c$ FLOPs | 每个新词元一次，多头共享 |
 | KV 压缩表示的 RMSNorm | $\boldsymbol c_i=\mathrm{RMSNorm}(\boldsymbol z_i^{KV})$ | $4d_c+1$ FLOPs，另有 1 次 rsqrt | 每个新词元一次，多头共享 |
-| Q 展开投影 | $[\boldsymbol c_t'W_{qc},\boldsymbol c_t'W_{qr}]$ | $2d_c'(d_k+d_r)$ FLOPs | 每个当前查询、每个头一次 |
-| Q 旋转 | $(\boldsymbol c_t'W_{qr})\mathcal R_t$ | $3d_r$ FLOPs | 每个当前查询、每个头一次 |
-| 内容 K 展开投影 | $\boldsymbol c_iW_{kc}$ | $2d_cd_k$ FLOPs | 每个新 K、每个头一次 |
+| Q 展开投影 | $[\boldsymbol c_t'W_{qc}^{(s)},\boldsymbol c_t'W_{qr}^{(s)}]$ | $2d_c'(d_k+d_r)$ FLOPs | 每个当前查询、每个头一次 |
+| Q 旋转 | $(\boldsymbol c_t'W_{qr}^{(s)})\mathcal R_t$，仅乘 $\mathcal R_t$ | $3d_r$ FLOPs | 每个当前查询、每个头一次 |
+| 内容 K 展开投影 | $\boldsymbol c_iW_{kc}^{(s)}$ | $2d_cd_k$ FLOPs | 每个新 K、每个头一次 |
 | 位置 K 投影 | $\boldsymbol x_iW_{kr}$ | $2dd_r$ FLOPs | 每个新 K 一次，所有头共享 |
-| K 旋转 | $(\boldsymbol x_iW_{kr})\mathcal R_i$ | $3d_r$ FLOPs | 每个新 K 一次，所有头共享 |
-| V 展开投影 | $\boldsymbol c_iW_v$ | $2d_cd_v$ FLOPs | 每个新 V、每个头一次 |
-| QK 内积 | $\boldsymbol q_t\boldsymbol k_i^\top$ | 约 $2p$ FLOPs | 每对查询与键、每个头一次 |
-| 分数缩放 | $s_{t,i}=(\boldsymbol q_t\boldsymbol k_i^\top)\sigma$ | 1 FLOP | 每对查询与键、每个头一次 |
-| Softmax | $\alpha_{t,i}=\operatorname{softmax}_i(s_{t,i})$ | 对长度 $L$ 的整组分数为 $O(L)$ | 每个查询、每个头做一次整体归一化 |
-| V 加权累加 | $\boldsymbol o_t\mathrel{+}=\alpha_{t,i}\boldsymbol v_i$ | 约 $2d_v$ FLOPs | 每对查询与值、每个头一次 |
-| 输出投影 | $\boldsymbol o_tW_O^{(s)}$ | $2d_vd$ FLOPs | 历史位置求和完成后，每个查询、每个头一次 |
+| K 旋转 | $(\boldsymbol x_iW_{kr})\mathcal R_i$，仅乘 $\mathcal R_i$ | $3d_r$ FLOPs | 每个新 K 一次，所有头共享 |
+| V 展开投影 | $\boldsymbol c_iW_v^{(s)}$ | $2d_cd_v$ FLOPs | 每个新 V、每个头一次 |
+| QK 内积 | $\boldsymbol q_t^{(s)}\boldsymbol k_i^{(s)\top}$ | 约 $2p$ FLOPs | 每对查询与键、每个头一次 |
+| 分数缩放 | $s_{t,i}^{(s)}=(\boldsymbol q_t^{(s)}\boldsymbol k_i^{(s)\top})\sigma$，仅乘 $\sigma$ | 1 FLOP | 每对查询与键、每个头一次 |
+| Softmax | $\alpha_{t,i}^{(s)}=\operatorname{softmax}_i(s_{t,i}^{(s)})$ | 对长度 $L$ 的整组分数为 $O(L)$ | 每个查询、每个头做一次整体归一化 |
+| V 加权累加 | $\boldsymbol o_t^{(s)}\mathrel{+}=\alpha_{t,i}^{(s)}\boldsymbol v_i^{(s)}$ | 约 $2d_v$ FLOPs | 每对查询与值、每个头一次 |
+| 输出投影 | $\boldsymbol o_t^{(s)}W_O^{(s)}$ | $2d_vd$ FLOPs | 历史位置求和完成后，每个查询、每个头一次 |
 
 每个位置的 K、V 只生成一次；Q 投影和输出投影也按查询位置执行一次。只有 QK 内积、分数缩放和 V 加权累加按查询与键的配对数累计。
 
@@ -342,7 +359,7 @@ KV 降维投影与位置 K 投影可融合为输出宽度 $d_c+d_r$ 的矩阵乘
 
 本节统计单向量算子的理想访存成本，不代表实际预填充的批量访存量。假设：权重初始未驻留片上，每个元素从显存读入一次；输入读取一次；中间激活在片上复用；输出写回一次；正余弦与分数缩放系数已在片上。Softmax、注意力对历史 K/V 的读取及持久缓存写入不计入本节。
 
-固定一个头，并将共享路径计一次，定义：
+固定词元位置 $t$ 和一个头 $s$，并将该位置的共享公式项计一次，定义：
 
 $$
 \begin{aligned}
@@ -352,15 +369,15 @@ G&=d_c'+d_c.
 \end{aligned}
 $$
 
-$A$ 为展开投影、位置 K 投影和输出投影的权重元素数；$C$ 为降维投影的权重元素数；$G$ 为 RMSNorm 的权重元素数。
+$A$ 对应 $W_{qc}^{(s)}$、$W_{qr}^{(s)}$、$W_{kc}^{(s)}$、$W_v^{(s)}$、$W_{kr}$ 和 $W_O^{(s)}$ 的权重元素数；$C$ 对应 $W_c'$、$W_c$；$G$ 对应两次 RMSNorm 的权重。
 
-| 算子组 | 计算量 | 显存访存量 |
+| 公式项或张量 | 计算量 | 显存访存量 |
 |---|---:|---:|
-| 降维投影 | $2C$ | 权重：$bC$ |
-| 压缩表示的 RMSNorm | $4G+2$，另有 2 次 rsqrt | 权重：$bG$；压缩表示在片上复用 |
-| 展开投影、位置 K 投影和输出投影 | $2A$ | 权重：$bA$ |
-| Q/K 旋转 | $6d_r$ | 正余弦系数在片上复用 |
-| 词元输入与输出 | — | 输入读取与输出写回：$2bd$ |
+| $\boldsymbol x_tW_c'$、$\boldsymbol x_tW_c$ | $2C$ | 权重：$bC$ |
+| $\mathrm{RMSNorm}(\boldsymbol z_t^Q)$、$\mathrm{RMSNorm}(\boldsymbol z_t^{KV})$ | $4G+2$，另有 2 次 rsqrt | 权重：$bG$；$\boldsymbol c_t'$、$\boldsymbol c_t$ 在片上复用 |
+| $\boldsymbol c_t'W_{qc}^{(s)}$、$\boldsymbol c_t'W_{qr}^{(s)}$、$\boldsymbol c_tW_{kc}^{(s)}$、$\boldsymbol c_tW_v^{(s)}$、$\boldsymbol x_tW_{kr}$、$\boldsymbol o_t^{(s)}W_O^{(s)}$ | $2A$ | 权重：$bA$ |
+| $(\boldsymbol c_t'W_{qr}^{(s)})\mathcal R_t$、$(\boldsymbol x_tW_{kr})\mathcal R_t$，仅乘旋转矩阵 | $6d_r$ | 正余弦系数在片上复用 |
+| $\boldsymbol x_t$ 读取、$\boldsymbol y_t$ 写回 | — | 输入读取与输出写回：$2bd$ |
 
 因此：
 
@@ -460,12 +477,12 @@ $$
 
 将第 3.2 节的单位置成本拆成共享路径与各头路径：
 
-| 路径 | 包含的操作 | 每个词元位置的计算量 |
+| 路径 | 公式项 | 每个词元位置的计算量 |
 |---|---|---:|
-| 多头共享 | Q/KV 降维投影、两次 RMSNorm、位置 K 投影与旋转 | $f_{\mathrm{shared}}=2[C+dd_r]+4G+2+3d_r$ |
-| 每头独立 | Q 展开投影与旋转、内容 K/V 展开投影、该头的输出投影 | $f_{\mathrm{head}}=2[d_c'p+d_c(d_k+d_v)+d_vd]+3d_r$ |
+| 多头共享 | $\boldsymbol x_tW_c'$、$\boldsymbol x_tW_c$、$\mathrm{RMSNorm}(\boldsymbol z_t^Q)$、$\mathrm{RMSNorm}(\boldsymbol z_t^{KV})$、$\boldsymbol k_{t,R}=(\boldsymbol x_tW_{kr})\mathcal R_t$ | $f_{\mathrm{shared}}=2[C+dd_r]+4G+2+3d_r$ |
+| 每头独立 | $\boldsymbol q_t^{(s)}=[\boldsymbol c_t'W_{qc}^{(s)},(\boldsymbol c_t'W_{qr}^{(s)})\mathcal R_t]$、$\boldsymbol k_{t,C}^{(s)}=\boldsymbol c_tW_{kc}^{(s)}$、$\boldsymbol v_t^{(s)}=\boldsymbol c_tW_v^{(s)}$、$\boldsymbol o_t^{(s)}W_O^{(s)}$ | $f_{\mathrm{head}}=2[d_c'p+d_c(d_k+d_v)+d_vd]+3d_r$ |
 
-其中 $C=d(d_c'+d_c)$、$G=d_c'+d_c$。位置 K 的投影与旋转由所有头共享；Q 的位置分支属于各自的头，因此 Q 旋转需要累计 $h$ 次。输出投影按拼接后的矩阵乘法计数，其权重形状为 $hd_v\times d$，不另计逐头输出相加。
+其中 $C=d(d_c'+d_c)$、$G=d_c'+d_c$。$\boldsymbol k_{t,R}$ 由所有头共享；$(\boldsymbol c_t'W_{qr}^{(s)})\mathcal R_t$ 按头执行，因此旋转成本累计 $h$ 次。$[\boldsymbol o_t^{(1)},\ldots,\boldsymbol o_t^{(h)}]W_O$ 按一个矩阵乘法计数，$W_O$ 的形状为 $hd_v\times d$，不另计逐头输出相加。
 
 每个词元位置的固定成本为：
 
@@ -514,14 +531,14 @@ $$
 
 本节分析 Q、K、V 已生成之后的注意力计算，即第 2.2 节约定的注意力核心。先固定一条序列和一个头。假设 Q 从显存读取一次，输出写回一次，分数与权重通过融合的 softmax 保留在片上，不写回完整注意力矩阵。
 
-设 $\rho$ 为该头全部 K/V 元素从显存读取的平均次数。此处选择显式存储完整 $p$ 维 K 的布局：共享位置 K 被复制到各头的 K 中，因此各头的 K/V 读取分别计数。整个批次的注意力计算成本如下，其中 softmax 运算量单列：
+设 $\rho$ 为该头全部 K/V 元素从显存读取的平均次数。此处显式存储完整的 $p$ 维 $\boldsymbol k_i^{(s)}=[\boldsymbol k_{i,C}^{(s)},\boldsymbol k_{i,R}]$：$\boldsymbol k_{i,R}$ 被复制到各头的 $\boldsymbol k_i^{(s)}$ 中，因此各头的 K/V 读取分别计数。整个批次的注意力计算成本如下，其中 softmax 运算量单列：
 
 | 项目 | 多头、多批次的合计 |
 |---|---:|
 | 因果注意力有效 Q–K 位置对应的计算量 | $Bh\,S(S+1)F_{\mathrm{pair}}/2$ |
-| Q 读取 | $bBS hp$ |
-| K/V 读取 | $bBS h\rho(p+d_v)$ |
-| 注意力输出写回 | $bBS hd_v$ |
+| $\boldsymbol q_t^{(s)}$ 读取 | $bBS hp$ |
+| $\boldsymbol k_i^{(s)}$、$\boldsymbol v_i^{(s)}$ 读取 | $bBS h\rho(p+d_v)$ |
+| $\boldsymbol o_t^{(s)}$ 写回 | $bBS hd_v$ |
 
 “有效 Q–K 位置”指注意力矩阵中满足 $i\le t$ 的查询—键配对位置，即包含对角线的下三角区域。每个位置对应的 $F_{\mathrm{pair}}$ 包含 QK 内积、分数缩放和该位置的 V 加权累加，不包含 softmax 的成本。
 
@@ -588,10 +605,10 @@ $$
 
 计算量可以直接相加；访存量还需要确定算子之间哪些张量写回显存。本节选择以下可核对的参考路径：
 
-1. Q/KV 降维投影、RMSNorm、位置 K 的投影与旋转组成前处理阶段，写出 $\boldsymbol c'$、$\boldsymbol c$ 与共享的位置 K；输入 $\boldsymbol x$ 读一次。
-2. 展开阶段将上述结果各读一次并跨头复用，写出所有头的完整 Q、K、V；Q 旋转在该阶段完成。
-3. 融合注意力阶段读取 Q 和展开 K/V，写出各头输出；K/V 的平均读取次数为 $\rho$。
-4. 输出投影读取拼接后的各头输出，写出最终隐藏状态。
+1. 读取 $\boldsymbol x_t$ 一次，执行 $\boldsymbol x_tW_c'$、$\boldsymbol x_tW_c$、两次 RMSNorm 和 $(\boldsymbol x_tW_{kr})\mathcal R_t$，写出 $\boldsymbol c_t'$、$\boldsymbol c_t$、$\boldsymbol k_{t,R}$。
+2. 将上述结果各读一次并跨头复用，计算并写出 $\boldsymbol q_t^{(s)}=[\boldsymbol c_t'W_{qc}^{(s)},(\boldsymbol c_t'W_{qr}^{(s)})\mathcal R_t]$、$\boldsymbol k_t^{(s)}=[\boldsymbol c_tW_{kc}^{(s)},\boldsymbol k_{t,R}]$、$\boldsymbol v_t^{(s)}=\boldsymbol c_tW_v^{(s)}$。
+3. 读取 $\boldsymbol q_t^{(s)}$、$\boldsymbol k_i^{(s)}$、$\boldsymbol v_i^{(s)}$，计算注意力并写出 $\boldsymbol o_t^{(s)}$；$\boldsymbol k_i^{(s)}$、$\boldsymbol v_i^{(s)}$ 的平均读取次数为 $\rho$。
+4. 读取 $[\boldsymbol o_t^{(1)},\ldots,\boldsymbol o_t^{(h)}]$，计算并写出 $\boldsymbol y_t=[\boldsymbol o_t^{(1)},\ldots,\boldsymbol o_t^{(h)}]W_O$。
 
 假设各阶段的权重在 $N=BS$ 个位置间复用，各元素从显存读一次；前处理和展开阶段内部的临时结果不写回显存；不计持久 KV cache 的额外写入。该路径用于明确计数边界，不表示目标框架一定采用这些融合方式。
 
@@ -606,13 +623,13 @@ $$
 | 数据 | 整个预填充的显存访存量 |
 |---|---:|
 | 矩阵投影与 RMSNorm 权重 | $b(W_h+G)$ |
-| 原始输入读取、最终输出写回 | $2bNd$ |
-| 压缩表示与共享位置 K：写出、再读入 | $2bN(G+d_r)$ |
-| Q：写出、再读入；注意力输出：写出、再读入 | $2bNh(p+d_v)$ |
-| 展开 K/V 写出 | $bNh(p+d_v)$ |
-| 展开 K/V 供注意力读取 | $bNh\rho(p+d_v)$ |
+| $\boldsymbol x_t$ 读取、$\boldsymbol y_t$ 写回 | $2bNd$ |
+| $\boldsymbol c_t'$、$\boldsymbol c_t$、$\boldsymbol k_{t,R}$：写出、再读入 | $2bN(G+d_r)$ |
+| $\boldsymbol q_t^{(s)}$、$\boldsymbol o_t^{(s)}$：写出、再读入 | $2bNh(p+d_v)$ |
+| $\boldsymbol k_t^{(s)}$、$\boldsymbol v_t^{(s)}$ 写出 | $bNh(p+d_v)$ |
+| $\boldsymbol k_i^{(s)}$、$\boldsymbol v_i^{(s)}$ 供注意力读取 | $bNh\rho(p+d_v)$ |
 
-共享位置 K 的生成成本只计一次；本路径将其复制到各头完整 K 中，复制后的写入与读取已经包含在展开 K 的流量中。若位置 K 分开存储并跨头复用，应重新计算相应流量。
+$\boldsymbol k_{t,R}$ 的生成成本只计一次；本路径将其复制到各头的 $\boldsymbol k_t^{(s)}$ 中，复制后的写入与读取已包含在该张量的流量中。若 $\boldsymbol k_{t,R}$ 单独存储并跨头复用，应重新计算相应流量。
 
 合计得到：
 
@@ -697,12 +714,12 @@ $$
 
 假设 Q 和输出累加器保留在片上，每个历史 K/V 从显存读取一次。Softmax 与注意力计算融合，不把完整分数和权重写回显存。在线 softmax 的累加器重缩放等实现开销在第 7 节单列。
 
-| 算子 | 运算量 | 显存读取 | 显存写入 |
+| 公式项 | 运算量 | 显存读取 | 显存写入 |
 |---|---:|---:|---:|
-| QK 内积 | 约 $2p$ FLOPs | K 读取：$bp$ Bytes | 分数在片上，0 |
-| 分数缩放 | 1 FLOP | 分数与缩放系数在片上，0 | 0 |
-| Softmax | 每个键值位置摊销约 5 次标量操作 | 分数在片上，0 | 权重在片上，0 |
-| V 加权累加 | 约 $2d_v$ FLOPs | V 读取：$bd_v$ Bytes | 累加器在片上，0 |
+| $\boldsymbol q_t^{(s)}\boldsymbol k_i^{(s)\top}$ | 约 $2p$ FLOPs | $\boldsymbol k_i^{(s)}$ 读取：$bp$ Bytes | 分数在片上，0 |
+| $(\boldsymbol q_t^{(s)}\boldsymbol k_i^{(s)\top})\sigma$，仅乘 $\sigma$ | 1 FLOP | 分数与 $\sigma$ 在片上，0 | 0 |
+| $\alpha_{t,i}^{(s)}=\operatorname{softmax}_i(s_{t,i}^{(s)})$ | 每个键值位置摊销约 5 次标量操作 | 分数在片上，0 | 权重在片上，0 |
+| $\boldsymbol o_t^{(s)}\mathrel{+}=\alpha_{t,i}^{(s)}\boldsymbol v_i^{(s)}$ | 约 $2d_v$ FLOPs | $\boldsymbol v_i^{(s)}$ 读取：$bd_v$ Bytes | 累加器在片上，0 |
 | **合计，softmax 操作单列** | **$2(p+d_v)+1$ FLOPs** | **$b(p+d_v)$ Bytes** | **不按键值位置写回输出** |
 
 计入 QK 内积、分数缩放和 V 加权累加后，该历史位置的计算强度为：
@@ -782,21 +799,21 @@ $$
 
 假设所有权重从显存读入一次，当前隐藏状态读入一次后复用；中间激活、Q 和累加器保留在片上，最终输出写回一次。固定一个头，并计入一次共享路径成本：
 
-| 算子 | 运算量 | 显存读取 | 显存写入 |
+| 公式项 | 运算量 | 显存读取 | 显存写入 |
 |---|---:|---:|---:|
-| Q 降维投影 | $2dd_c'$ | 权重 $bdd_c'$；输入 $bd$ | 0，结果留片上 |
-| Q 压缩表示的 RMSNorm | $4d_c'+1$，另有 1 次 rsqrt | $\gamma_Q$：$bd_c'$ | 0 |
-| KV 降维投影 | $2dd_c$ | 权重 $bdd_c$；复用输入 | 0 |
-| KV 压缩表示的 RMSNorm | $4d_c+1$，另有 1 次 rsqrt | $\gamma_{KV}$：$bd_c$ | 0 |
-| Q 展开投影 | $2d_c'p$ | 权重 $bd_c'p$ | 0 |
-| Q 旋转 | $3d_r$ | 0 | 0 |
-| K 展开投影与位置投影 | $2d_cd_k+2dd_r$ | 权重 $b(d_cd_k+dd_r)$ | 0 |
-| K 旋转 | $3d_r$ | 0 | 0 |
-| V 展开投影 | $2d_cd_v$ | 权重 $bd_cd_v$ | 0 |
-| QK 内积与分数缩放 | $L(2p+1)$ | 展开 K：$bLp$ | 0 |
-| Softmax | 特殊操作和求和单列，见第 2.4 节 | 分数在片上，0 | 0 |
-| V 加权累加 | $2Ld_v$ | 展开 V：$bLd_v$ | 0 |
-| 输出投影 | $2d_vd$ | 权重 $bd_vd$ | 输出 $bd$ |
+| $\boldsymbol z_t^Q=\boldsymbol x_tW_c'$ | $2dd_c'$ | 权重 $bdd_c'$；$\boldsymbol x_t$：$bd$ | 0，结果留片上 |
+| $\boldsymbol c_t'=\mathrm{RMSNorm}(\boldsymbol z_t^Q)$ | $4d_c'+1$，另有 1 次 rsqrt | $\gamma_Q$：$bd_c'$ | 0 |
+| $\boldsymbol z_t^{KV}=\boldsymbol x_tW_c$ | $2dd_c$ | 权重 $bdd_c$；复用 $\boldsymbol x_t$ | 0 |
+| $\boldsymbol c_t=\mathrm{RMSNorm}(\boldsymbol z_t^{KV})$ | $4d_c+1$，另有 1 次 rsqrt | $\gamma_{KV}$：$bd_c$ | 0 |
+| $[\boldsymbol c_t'W_{qc}^{(s)},\boldsymbol c_t'W_{qr}^{(s)}]$ | $2d_c'p$ | 权重 $bd_c'p$ | 0 |
+| $(\boldsymbol c_t'W_{qr}^{(s)})\mathcal R_t$，仅乘 $\mathcal R_t$ | $3d_r$ | 0 | 0 |
+| $\boldsymbol c_tW_{kc}^{(s)}$、$\boldsymbol x_tW_{kr}$ | $2d_cd_k+2dd_r$ | 权重 $b(d_cd_k+dd_r)$ | 0 |
+| $(\boldsymbol x_tW_{kr})\mathcal R_t$，仅乘 $\mathcal R_t$ | $3d_r$ | 0 | 0 |
+| $\boldsymbol v_t^{(s)}=\boldsymbol c_tW_v^{(s)}$ | $2d_cd_v$ | 权重 $bd_cd_v$ | 0 |
+| $(\boldsymbol q_t^{(s)}\boldsymbol k_i^{(s)\top})\sigma$，累计 $L$ 个位置 | $L(2p+1)$ | $\boldsymbol k_i^{(s)}$：$bLp$ | 0 |
+| $\alpha_{t,i}^{(s)}=\operatorname{softmax}_i(s_{t,i}^{(s)})$ | 特殊操作和求和单列，见第 2.4 节 | $s_{t,i}^{(s)}$ 在片上，0 | 0 |
+| $\boldsymbol o_t^{(s)}=\sum_{i\le t}\alpha_{t,i}^{(s)}\boldsymbol v_i^{(s)}$ | $2Ld_v$ | $\boldsymbol v_i^{(s)}$：$bLd_v$ | 0 |
+| $\boldsymbol o_t^{(s)}W_O^{(s)}$ | $2d_vd$ | 权重 $bd_vd$ | $\boldsymbol y_t$：$bd$ |
 
 $$
 \boxed{
@@ -825,7 +842,7 @@ $$
 
 访存模型暂不计当前 K/V 的缓存写入。若 $L$ 包含当前位置，且其 K/V 由片上直接供注意力计算使用，可减去对应的缓存读取量。由原始隐藏状态生成的压缩表示不再作为外部输入重复读取。
 
-$B=1,h=1$ 只是本层推导的简化条件。扩展到多头时，共享的降维投影、RMSNorm 和位置 K 路径只计一次，不能把全部合计直接乘以 $h$。
+$B=1,h=1$ 只是本层推导的简化条件。扩展到多头时，$\boldsymbol x_tW_c'$、$\boldsymbol x_tW_c$、两次 RMSNorm 和 $\boldsymbol k_{t,R}$ 只计一次，不能把全部合计直接乘以 $h$。
 
 ### 4.6 扩展到批次与多头
 
@@ -851,28 +868,13 @@ $$
 
 ## 5. 预填充 × 吸收
 
-本节参考 vLLM FlashMLA 路径采用的基本组织：将 K 的展开变换移到 Q 侧，在共享压缩 K/V 上计算注意力，再执行 V 和输出投影。实现可以在部分短预填充中选择这条路径；本节只分析其数学操作与数据搬运，不展开调度与内核细节。
+本节参考 vLLM FlashMLA 路径采用的基本组织：执行 $\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top}$，在共享 $[\boldsymbol c_i,\boldsymbol k_{i,R}]$ 上计算注意力，再执行 $\boldsymbol u_t^{(s)}W_v^{(s)}$ 和 $[\boldsymbol o_t^{(1)},\ldots,\boldsymbol o_t^{(h)}]W_O$。实现可以在部分短预填充中选择这条路径；本节只分析其数学操作与数据搬运，不展开调度与内核细节。
 
 为与第 3 节直接比较，继续采用无前缀缓存、$B$ 条长度为 $S$ 的序列、$h$ 个头和包含对角线的因果注意力，令 $N=BS$。已有长前缀时，查询位置数与缓存位置数需要分别计数，不直接套用本节的等长公式。
 
 ### 5.1 计算组织：Q 变换、潜在空间聚合与后置 V 投影
 
-先保留原来的压缩表示与各头的 Q 分支：
-
-$$
-\begin{aligned}
-\boldsymbol c_t'&=\mathrm{RMSNorm}(\boldsymbol x_tW_c'),&
-\boldsymbol c_i&=\mathrm{RMSNorm}(\boldsymbol x_iW_c),\\
-\boldsymbol q_{t,C}^{(s)}&=\boldsymbol c_t'W_{qc}^{(s)}
-\in\mathbb R^{1\times d_k},&
-\boldsymbol q_{t,R}^{(s)}&=\boldsymbol c_t'W_{qr}^{(s)}\mathcal R_t
-\in\mathbb R^{1\times d_r},\\
-\boldsymbol k_{i,R}&=\boldsymbol x_iW_{kr}\mathcal R_i
-\in\mathbb R^{1\times d_r}.
-\end{aligned}
-$$
-
-将内容 K 的展开变换放到 Q 侧，定义吸收后的 Q、共享 K 和共享 V：
+$\boldsymbol c_t'$、$\boldsymbol c_i$、$\boldsymbol q_{t,C}^{(s)}$、$\boldsymbol q_{t,R}^{(s)}$ 和 $\boldsymbol k_{i,R}$ 沿用第 2.2 节的定义。通过 $\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top}$ 构造 $\widehat{\boldsymbol q}_t^{(s)}$，并定义对应的 $\widehat{\boldsymbol k}_i$、$\widehat{\boldsymbol v}_i$：
 
 $$
 \begin{aligned}
@@ -888,7 +890,7 @@ $$
 \end{aligned}
 $$
 
-记 $p_a=d_c+d_r$ 为吸收后的 Q/K 维度；原有的 $p=d_k+d_r$ 保持不变。原始与吸收后的分数相同：
+记 $p_a=d_c+d_r$ 为 $\widehat{\boldsymbol q}_t^{(s)}$、$\widehat{\boldsymbol k}_i$ 的维度；$\boldsymbol q_t^{(s)}$、$\boldsymbol k_i^{(s)}$ 的维度仍为 $p=d_k+d_r$。两种形式的内积相同：
 
 $$
 \begin{aligned}
@@ -916,28 +918,25 @@ $$
 \end{aligned}
 $$
 
-这里按运行时先生成内容 Q、再乘 $W_{kc}^{(s)\top}$ 统计；$W_v^{(s)}$ 与 $W_O$ 也按两步投影统计。未预先将这些权重相乘为新的大矩阵。
-
-~~~text
-共享路径：x → c′、c、位置 K
-每头 Q：c′ → 原始 Q → 内容 Q 乘 K 展开权重的转置 → 吸收后的 Q
-注意力：吸收后的 Q × 共享 K → softmax → 对共享 c 加权 → u
-输出侧：u → V 投影 → 每头输出 o → 拼接后乘 Wₒ → y
-~~~
+运行时按 $\boldsymbol c_t'W_{qc}^{(s)}$、$\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top}$ 两步统计；$\boldsymbol u_t^{(s)}W_v^{(s)}$ 与 $[\boldsymbol o_t^{(1)},\ldots,\boldsymbol o_t^{(h)}]W_O$ 也按两步统计。权重保持分别存储，不预先相乘为新的大矩阵。
 
 ### 5.2 单个词元位置：哪些投影换了执行位置
 
 固定一个头，并将共享路径计一次。共享成本沿用 $C=d(d_c'+d_c)$、$G=d_c'+d_c$；下表的权重读取量假设每个元素读一次，激活读写在第 5.5 节统一累计。
 
-| 操作 | 计算量 | 权重读取量 | 频率 |
+| 公式项 | 计算量 | 权重读取量 | 频率 |
 |---|---:|---:|---|
-| Q/KV 降维、两次 RMSNorm、位置 K 投影与旋转 | $f_{\mathrm{shared}}=2(C+dd_r)+4G+2+3d_r$，另有 2 次 rsqrt | $b(C+dd_r+G)$ | 每个词元一次，多头共享 |
-| 生成原始 Q，含 Q 位置分支的 RoPE | $2d_c'p+3d_r$ | $bd_c'p$ | 每个查询、每个头一次 |
-| 内容 Q 乘 $W_{kc}^{(s)\top}$，得到 $d_c$ 维内容查询 | $2d_kd_c$ | $bd_kd_c$ | 每个查询、每个头一次 |
-| 潜在聚合结果乘 $W_v^{(s)}$，恢复 $d_v$ 维输出 | $2d_cd_v$ | $bd_cd_v$ | 注意力完成后，每个查询、每个头一次 |
-| 输出投影的该头贡献 | $2d_vd$ | $bd_vd$ | 每个查询、每个头一次 |
+| $\boldsymbol x_tW_c'$、$\boldsymbol x_tW_c$ | $2C$ | $bC$ | 每个词元一次，多头共享 |
+| $\mathrm{RMSNorm}(\boldsymbol z_t^Q)$、$\mathrm{RMSNorm}(\boldsymbol z_t^{KV})$ | $4G+2$，另有 2 次 rsqrt | $bG$ | 每个词元一次，多头共享 |
+| $\boldsymbol k_{t,R}=(\boldsymbol x_tW_{kr})\mathcal R_t$ | $2dd_r+3d_r$ | $bdd_r$ | 每个词元一次，多头共享 |
+| $\boldsymbol q_t^{(s)}=[\boldsymbol c_t'W_{qc}^{(s)},(\boldsymbol c_t'W_{qr}^{(s)})\mathcal R_t]$ | $2d_c'p+3d_r$ | $bd_c'p$ | 每个查询、每个头一次 |
+| $\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top}=(\boldsymbol c_t'W_{qc}^{(s)})W_{kc}^{(s)\top}$，仅右乘 $W_{kc}^{(s)\top}$ | $2d_kd_c$ | $bd_kd_c$ | 每个查询、每个头一次 |
+| $\boldsymbol o_t^{(s)}=\boldsymbol u_t^{(s)}W_v^{(s)}$ | $2d_cd_v$ | $bd_cd_v$ | 注意力完成后，每个查询、每个头一次 |
+| $\boldsymbol o_t^{(s)}W_O^{(s)}$ | $2d_vd$ | $bd_vd$ | 每个查询、每个头一次 |
 
-在无前缀缓存的预填充中，查询位置数与新 K/V 位置数相等：展开形式在每个 K 位置执行 $2d_cd_k$ 的投影，吸收形式在每个 Q 位置执行同量投影；V 投影也从每个 V 位置移到每个查询的聚合结果上。因此每头的固定成本仍为：
+前三行合计为 $f_{\mathrm{shared}}$。$\boldsymbol q_t^{(s)}$ 一行同时包含 $2d_c'd_k$、$2d_c'd_r$ 的矩阵乘法与 $3d_r$ 的旋转；下一行复用已生成的 $\boldsymbol q_{t,C}^{(s)}$，不重复计算 $\boldsymbol c_t'W_{qc}^{(s)}$。
+
+在无前缀缓存的预填充中，查询位置数与新 K/V 位置数相等。$\boldsymbol c_iW_{kc}^{(s)}$ 与 $\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top}$ 的单位置成本均为 $2d_cd_k$；$\boldsymbol c_iW_v^{(s)}$ 与 $\boldsymbol u_t^{(s)}W_v^{(s)}$ 的单位置成本均为 $2d_cd_v$。因此每头的固定成本仍为：
 
 $$
 f_{\mathrm{head}}
@@ -948,7 +947,7 @@ $$
 
 ### 5.3 从一对有效 Q–K 位置扩展到整条序列与批次
 
-固定一个头，吸收后的 Q/K 为 $p_a=d_c+d_r$ 维，V 聚合为 $d_c$ 维。每对有效 Q–K 位置的主项计算量为：
+固定一个头，$\widehat{\boldsymbol q}_t^{(s)}$、$\widehat{\boldsymbol k}_i$ 为 $p_a=d_c+d_r$ 维，$\boldsymbol u_t^{(s)}=\sum_{i\le t}\alpha_{t,i}^{(s)}\boldsymbol c_i$ 为 $d_c$ 维。每对有效 Q–K 位置的主项计算量为：
 
 $$
 \begin{aligned}
@@ -1014,9 +1013,9 @@ $$
 
 | 数据 | 多头、多批次的显存访存量 |
 |---|---:|
-| 吸收后的 Q 读取 | $bBS hp_a$ |
-| 共享 K/V 读取 | $bBS\rho_a n_g p_a$ |
-| 潜在输出 $\boldsymbol u$ 写回 | $bBS hd_c$ |
+| $\widehat{\boldsymbol q}_t^{(s)}$ 读取 | $bBS hp_a$ |
+| $[\boldsymbol c_i,\boldsymbol k_{i,R}]$ 读取，$\boldsymbol c_i$ 同时用于 V 聚合 | $bBS\rho_a n_g p_a$ |
+| $\boldsymbol u_t^{(s)}$ 写回 | $bBS hd_c$ |
 
 于是：
 
@@ -1052,14 +1051,14 @@ $$
 
 ### 5.5 完整前向：逐项累计中间结果的显存读写
 
-为与第 3.4.4 节的参考路径对照，本节显式保留运行时两步 Q 变换与两步输出投影的中间张量：
+为与第 3.4.4 节的参考路径对照，本节按以下公式项执行，并保留阶段间的显存写回：
 
-1. 前处理读取输入，写出归一化后的 $\boldsymbol c'$ 与共享 $[\boldsymbol c,\boldsymbol k_R]$；阶段内部的降维和归一化临时结果留在片上。
-2. Q 投影与 RoPE 写出原始 $p$ 维 Q。
-3. Q 吸收变换读取原始 Q，写出 $p_a$ 维 $\widehat{\boldsymbol q}$。
-4. 融合注意力读取 $\widehat{\boldsymbol q}$ 与共享 K/V，写出 $d_c$ 维潜在结果 $\boldsymbol u$。
-5. V 投影读取 $\boldsymbol u$，写出 $d_v$ 维每头结果 $\boldsymbol o$。
-6. 输出投影读取各头结果，写出最终 $d$ 维隐藏状态。
+1. 读取 $\boldsymbol x_t$，计算并写出 $\boldsymbol c_t'=\mathrm{RMSNorm}(\boldsymbol x_tW_c')$、$\boldsymbol c_t=\mathrm{RMSNorm}(\boldsymbol x_tW_c)$ 与 $\boldsymbol k_{t,R}=(\boldsymbol x_tW_{kr})\mathcal R_t$；阶段内部临时结果留在片上。
+2. 计算并写出 $\boldsymbol q_t^{(s)}=[\boldsymbol c_t'W_{qc}^{(s)},(\boldsymbol c_t'W_{qr}^{(s)})\mathcal R_t]\in\mathbb R^{1\times p}$。
+3. 读取 $\boldsymbol q_t^{(s)}$，计算并写出 $\widehat{\boldsymbol q}_t^{(s)}=[\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top},\boldsymbol q_{t,R}^{(s)}]\in\mathbb R^{1\times p_a}$。
+4. 读取 $\widehat{\boldsymbol q}_t^{(s)}$、$[\boldsymbol c_i,\boldsymbol k_{i,R}]$，计算注意力并写出 $\boldsymbol u_t^{(s)}=\sum_{i\le t}\alpha_{t,i}^{(s)}\boldsymbol c_i\in\mathbb R^{1\times d_c}$。
+5. 读取 $\boldsymbol u_t^{(s)}$，计算并写出 $\boldsymbol o_t^{(s)}=\boldsymbol u_t^{(s)}W_v^{(s)}\in\mathbb R^{1\times d_v}$。
+6. 读取 $[\boldsymbol o_t^{(1)},\ldots,\boldsymbol o_t^{(h)}]$，计算并写出 $\boldsymbol y_t=[\boldsymbol o_t^{(1)},\ldots,\boldsymbol o_t^{(h)}]W_O\in\mathbb R^{1\times d}$。
 
 各投影的权重在 $N=BS$ 个位置间复用，按每个元素从显存读一次统计。所有矩阵权重总数仍与展开形式相同：
 
@@ -1072,14 +1071,14 @@ $$
 | 数据 | 整个预填充的显存访存量 |
 |---|---:|
 | 矩阵投影与 RMSNorm 权重 | $b(W_h+G)$ |
-| 原始输入读取、最终输出写回 | $2bNd$ |
-| 查询压缩表示 $\boldsymbol c'$：写出、再读入 | $2bNd_c'$ |
-| 共享 $[\boldsymbol c,\boldsymbol k_R]$ 写出 | $bNp_a$ |
-| 原始 Q：写出、再读入 | $2bNhp$ |
-| 吸收后的 Q：写出、再读入 | $2bNhp_a$ |
-| 共享 K/V 供注意力读取 | $bN\rho_a n_g p_a$ |
-| 潜在结果 $\boldsymbol u$：写出、再读入 | $2bNhd_c$ |
-| 每头结果 $\boldsymbol o$：写出、再读入 | $2bNhd_v$ |
+| $\boldsymbol x_t$ 读取、$\boldsymbol y_t$ 写回 | $2bNd$ |
+| $\boldsymbol c_t'$：写出、再读入 | $2bNd_c'$ |
+| $[\boldsymbol c_t,\boldsymbol k_{t,R}]$ 写出 | $bNp_a$ |
+| $\boldsymbol q_t^{(s)}=[\boldsymbol q_{t,C}^{(s)},\boldsymbol q_{t,R}^{(s)}]$：写出、再读入 | $2bNhp$ |
+| $\widehat{\boldsymbol q}_t^{(s)}=[\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top},\boldsymbol q_{t,R}^{(s)}]$：写出、再读入 | $2bNhp_a$ |
+| $[\boldsymbol c_i,\boldsymbol k_{i,R}]$ 供注意力读取 | $bN\rho_a n_g p_a$ |
+| $\boldsymbol u_t^{(s)}$：写出、再读入 | $2bNhd_c$ |
+| $\boldsymbol o_t^{(s)}=\boldsymbol u_t^{(s)}W_v^{(s)}$：写出、再读入 | $2bNhd_v$ |
 
 因此：
 
@@ -1113,7 +1112,7 @@ $$
 
 该模型已经包含共享 K/V 的写出。若该缓冲区直接作为持久 KV cache，这次写出也完成新位置的缓存数据写入；若再复制到独立缓存，需要增加复制的读取和写入，不能把缓存构建统一视为零成本或重复计数。
 
-上述显存边界是明确的参考选择。若原始 Q 的生成与吸收变换在片上衔接，可省去 $2bNhp$；若 V 与输出投影在片上衔接，可省去每头结果的 $2bNhd_v$。取消写回不改变这里按两步矩阵乘法统计的计算量。实际权重重复加载、压缩表示反复读取或额外布局搬运则需要追加流量。
+上述显存边界是明确的参考选择。若 $\boldsymbol q_t^{(s)}\to\widehat{\boldsymbol q}_t^{(s)}$ 在片上衔接，可省去 $\boldsymbol q_t^{(s)}$ 的 $2bNhp$；若 $\boldsymbol u_t^{(s)}W_v^{(s)}$ 的结果直接在片上参与 $[\boldsymbol o_t^{(1)},\ldots,\boldsymbol o_t^{(h)}]W_O$，可省去 $\boldsymbol o_t^{(s)}$ 的 $2bNhd_v$。取消写回不改变这里按两步矩阵乘法统计的计算量。实际权重重复加载、压缩表示反复读取或额外布局搬运则需要追加流量。
 
 ### 5.6 与展开形式对照：降低 K/V 读取不等于降低全部成本
 
@@ -1124,7 +1123,7 @@ p=192,\qquad p_a=320,\qquad
 F_{\mathrm{pair,exp}}=641,\qquad F_{\mathrm{pair,abs}}=1153.
 $$
 
-为单独观察跨头复用，暂令两种形式的查询块大小均为 $M=32$，故 $\rho_e=\rho_a=2.5$。注意力计算的统计范围均从已生成 Q/K/V 开始，到各自空间的加权聚合结果写回结束，softmax 额外操作单列：
+为单独观察跨头复用，暂令两种形式的查询块大小均为 $M=32$，故 $\rho_e=\rho_a=2.5$。展开形式读取 $\boldsymbol q_t^{(s)}$ 并写回 $\boldsymbol o_t^{(s)}$，吸收形式读取 $\widehat{\boldsymbol q}_t^{(s)}$ 并写回 $\boldsymbol u_t^{(s)}$；统计范围到这两种聚合结果写回为止，softmax 额外操作单列：
 
 | 形式 | 注意力主项计算量（FLOPs） | Q 读取与聚合输出写回（Bytes） | K/V 读取（Bytes） | 核心总访存量（Bytes） | 核心计算强度（FLOPs/Byte） |
 |---|---:|---:|---:|---:|---:|
@@ -1132,7 +1131,7 @@ $$
 | 吸收，$g=1$，各头独立读取 | 76,153,344 | 1,179,648 | 1,638,400 | 2,818,048 | 27.02 |
 | 吸收，$g=8$，全部头共用读取 | 76,153,344 | 1,179,648 | 204,800 | 1,384,448 | 55.01 |
 
-本例中，单份压缩 K/V 的宽度 $d_c+d_r=320$ 恰好等于单头展开 K/V 的宽度 $p+d_v=320$。因此 $g=1$ 时 K/V 读取量相同；$g=8$ 时，K/V 读取量降至展开形式的 $1/8$。但吸收后的 Q 与聚合输出更宽，计算量和这部分激活读写均增加。
+本例中，$[\boldsymbol c_i,\boldsymbol k_{i,R}]$ 的宽度 $d_c+d_r=320$ 恰好等于单头 $\boldsymbol k_i^{(s)}$、$\boldsymbol v_i^{(s)}$ 的宽度合计 $p+d_v=320$。因此 $g=1$ 时 K/V 读取量相同；$g=8$ 时，K/V 读取量降至展开形式的 $1/8$。$\widehat{\boldsymbol q}_t^{(s)}$、$\boldsymbol u_t^{(s)}$ 的宽度合计为 $p_a+d_c=576$，大于 $\boldsymbol q_t^{(s)}$、$\boldsymbol o_t^{(s)}$ 的 $p+d_v=320$，对应的计算量与激活读写增加。
 
 进一步加入投影、归一化与中间张量流量，展开形式使用第 3.4.4 节边界，吸收形式使用第 5.5 节边界：
 
@@ -1150,11 +1149,11 @@ $$
 
 ### 6.1 单个解码词元
 
-待分析。每条序列的查询长度为 Q_len=1；在相同统计范围内，分别计算 Q 侧变换、共享压缩缓存读取、压缩空间中的注意力和输出投影。
+待分析。每条序列的查询长度为 Q_len=1；在相同统计范围内，分别统计 $\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top}$、$[\boldsymbol c_i,\boldsymbol k_{i,R}]$ 的读取、$\boldsymbol u_t^{(s)}=\sum_{i\le t}\alpha_{t,i}^{(s)}\boldsymbol c_i$、$\boldsymbol u_t^{(s)}W_v^{(s)}$ 和 $[\boldsymbol o_t^{(1)},\ldots,\boldsymbol o_t^{(h)}]W_O$ 的成本。
 
 ### 6.2 扩展到批次与多头
 
-待分析。头数与批大小分别处理。共享缓存的实际读取次数取决于内核能否跨头复用，不能将单头访存量直接乘以 $h$，作为共享缓存的总流量。
+待分析。头数与批大小分别处理。$[\boldsymbol c_i,\boldsymbol k_{i,R}]$ 的实际读取次数取决于内核能否跨头复用，不能将单头访存量直接乘以 $h$，作为该缓存的总流量。
 
 得到计算量与访存量之后，再用屋顶线模型比较增加计算和减少访存带来的性能收益。
 
@@ -1181,9 +1180,9 @@ $$
 
 | 项目 | 统计要求 |
 |---|---|
-| 缓存写入 | 单头展开形式的完整 K/V 每个新词元写入 $b(p+d_v)$ Bytes；压缩缓存和跨头共享 RoPE 需按各自布局统计 |
-| 压缩缓存与运行时展开 | 计入实际展开的历史位置的展开投影和中间读写 |
-| 中间结果写入显存 | 独立算子的分数、权重、压缩表示、Q/K/V 可能产生额外显存读写 |
+| 缓存写入 | 单头 $(\boldsymbol k_t^{(s)},\boldsymbol v_t^{(s)})$ 每个新词元写入 $b(p+d_v)$ Bytes；$[\boldsymbol c_t,\boldsymbol k_{t,R}]$ 及单独存储 $\boldsymbol k_{t,R}$ 的布局分别统计 |
+| 压缩缓存与运行时展开 | 按实际展开的历史位置计入 $\boldsymbol c_iW_{kc}^{(s)}$、$\boldsymbol c_iW_v^{(s)}$ 的计算和中间读写 |
+| 中间结果写入显存 | $s_{t,i}^{(s)}$、$\alpha_{t,i}^{(s)}$、$\boldsymbol c_t'$、$\boldsymbol c_i$、$\boldsymbol q_t^{(s)}$、$\boldsymbol k_i^{(s)}$、$\boldsymbol v_i^{(s)}$ 等在独立算子间可能产生额外显存读写 |
 | 物理维度补齐 | 数学维度不一定等于内核实际计算的宽度；参考分块融合注意力算法（FlashAttention）的路径可能将 V 补齐（padding）至 Q/K 维度 |
 | 布局变换 | 形状重排或视图可只修改元数据；连续化、实际拼接和广播复制可能搬运数据 |
 | 分段并行与结果合并 | 按键值长度分段并行（split-K）时，计入局部输出和归一化统计量的读写及合并运算 |
