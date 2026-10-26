@@ -2,10 +2,11 @@
 type: knowledge
 status: draft
 created: 2026-10-25
-updated: 2026-10-25
+updated: 2026-10-26
 domains: [llm, attention, performance]
 source:
   - https://spaces.ac.cn/archives/10091
+  - https://spaces.ac.cn/archives/8265
 ai_generated: true
 reviewed: false
 ---
@@ -107,6 +108,8 @@ $$
 
 ### 2.4 RMSNorm、RoPE 与 softmax
 
+#### 2.4.1 RMSNorm
+
 对 $n$ 维向量：
 
 $$
@@ -122,9 +125,169 @@ $$
 
 另列一次 rsqrt，并读取 $n$ 个 $\gamma$ elements。Latent RMSNorm 已纳入 aggregate，rsqrt 不折算为普通 FLOPs。
 
-RoPE 每对坐标使用 4 次 multiplication、2 次 addition/subtraction，故每个 $d_r$ 维向量需要 $3d_r$ FLOPs。Sin/cos coefficients 已准备好；不执行 dense rotation-matrix multiplication。
+#### 2.4.2 RoPE：二维 rotation
 
-Stable softmax 对 $L$ 个 scores 需要约 $L-1$ 次 comparison、$L$ 次 subtraction、$L$ 次 exp、$L-1$ 次 sum reduction addition 和 $L$ 次 division。可用一次 reciprocal 加 $L$ 次 multiplication 实现 normalization。约 $5L$ 次 scalar operations 仅是 operation count；当前 FLOPs aggregate 不包含这些 softmax operations。Online softmax 的 implementation overhead 见第 7 节。
+RoPE 将 position 映射为 rotation angle。以下采用相邻 coordinate pairing 和 row-vector convention；“二维”指一对 feature coordinates，不指图像等二维 position coordinates。构造参考苏剑林的[《Transformer升级之路：2、博采众长的旋转式位置编码》](https://spaces.ac.cn/archives/8265)。
+
+设位置为 $m$，一对坐标为 $\boldsymbol u=[u_0,u_1]$，对应 angular frequency 为 $\theta$。Row-vector rotation matrix 定义为：
+
+$$
+R_{\mathrm{2D}}(\phi)=
+\begin{bmatrix}
+\cos\phi&\sin\phi\\
+-\sin\phi&\cos\phi
+\end{bmatrix},
+\qquad \phi=m\theta.
+$$
+
+因此：
+
+$$
+\begin{aligned}
+\widetilde{\boldsymbol u}_m
+&=\boldsymbol uR_{\mathrm{2D}}(m\theta)\\
+&=[u_0\cos(m\theta)-u_1\sin(m\theta),\quad
+u_0\sin(m\theta)+u_1\cos(m\theta)].
+\end{aligned}
+$$
+
+与 column-vector convention 的对应关系为：
+
+$$
+\widetilde{\boldsymbol u}_m^\top
+=R_{\mathrm{2D}}(m\theta)^\top\boldsymbol u^\top
+=
+\begin{bmatrix}
+\cos(m\theta)&-\sin(m\theta)\\
+\sin(m\theta)&\cos(m\theta)
+\end{bmatrix}
+\boldsymbol u^\top.
+$$
+
+原文的 column-vector rotation 与本文的 row-vector rotation 互为 transpose；数值变换一致。每对坐标执行 4 次 multiplication、2 次 addition/subtraction，共 6 FLOPs。
+
+#### 2.4.3 RoPE：多维 block-diagonal form
+
+设 RoPE branch dimension $d_r$ 为偶数，将 $\boldsymbol u\in\mathbb R^{1\times d_r}$ 划分为 $d_r/2$ 个 coordinate pairs，第 $j$ 对使用 frequency $\theta_j$：
+
+$$
+\theta_j=\mathrm{base}^{-2j/d_r},
+\qquad j=0,\ldots,d_r/2-1.
+$$
+
+经典 RoPE 使用 $\mathrm{base}=10000$；具体模型的 base、frequency scaling 按配置确定。本文涉及的旋转维度是 $d_r$，而非 model dimension $d$ 或 expanded head dimension $p=d_k+d_r$。
+
+多维 rotation matrix 为：
+
+$$
+\mathcal R_m
+=\operatorname{blockdiag}
+\left(R_{\mathrm{2D}}(m\theta_0),R_{\mathrm{2D}}(m\theta_1),\ldots,R_{\mathrm{2D}}(m\theta_{d_r/2-1})\right)
+\in\mathbb R^{d_r\times d_r}.
+$$
+
+以 $d_r=4$ 为例：
+
+$$
+\mathcal R_m=
+\begin{bmatrix}
+\cos(m\theta_0)&\sin(m\theta_0)&0&0\\
+-\sin(m\theta_0)&\cos(m\theta_0)&0&0\\
+0&0&\cos(m\theta_1)&\sin(m\theta_1)\\
+0&0&-\sin(m\theta_1)&\cos(m\theta_1)
+\end{bmatrix}.
+$$
+
+一般情形逐 pair 计算：
+
+$$
+\begin{aligned}
+\widetilde u_{m,2j}
+&=u_{2j}\cos(m\theta_j)-u_{2j+1}\sin(m\theta_j),\\
+\widetilde u_{m,2j+1}
+&=u_{2j}\sin(m\theta_j)+u_{2j+1}\cos(m\theta_j).
+\end{aligned}
+$$
+
+因此实现采用 elementwise multiplication 与 pairwise addition/subtraction，无需执行 dense $d_r\times d_r$ GEMM。Sin/cos coefficients 已准备好时：
+
+$$
+F_{\mathrm{RoPE}}=6\frac{d_r}{2}=3d_r\ \mathrm{FLOPs/vector}.
+$$
+
+Coordinate pairing 的物理 layout 可通过 permutation 调整；具体 kernel 的 interleaved 或 split-half layout 应与权重及 feature ordering 一致。
+
+#### 2.4.4 RoPE：relative position identity
+
+各二维 block 满足 rotation composition 和 orthogonality，因此：
+
+$$
+\mathcal R_m\mathcal R_n=\mathcal R_{m+n},
+\qquad
+\mathcal R_m^\top=\mathcal R_{-m},
+\qquad
+\mathcal R_t\mathcal R_i^\top=\mathcal R_{t-i}.
+$$
+
+设 $\boldsymbol u_t,\boldsymbol w_i\in\mathbb R^{1\times d_r}$ 为未施加 RoPE 的 query/key position-branch vectors。旋转后的内积为：
+
+$$
+\begin{aligned}
+(\boldsymbol u_t\mathcal R_t)
+(\boldsymbol w_i\mathcal R_i)^\top
+&=\boldsymbol u_t\mathcal R_t\mathcal R_i^\top\boldsymbol w_i^\top\\
+&=\boldsymbol u_t\mathcal R_{t-i}\boldsymbol w_i^\top.
+\end{aligned}
+$$
+
+Rotation 引入的 position dependence 通过 relative offset $t-i$ 进入 dot product。MLA decoupled RoPE 将该运算限制在 position branch；content branch 不施加 rotation，保留 absorption 所需的线性结构。
+
+#### 2.4.5 Softmax 与 stable softmax
+
+固定 query position $t$ 和 head $s$，将 $L$ 个可见 KV positions 的 logits 记为 $s_i=s_{t,i}^{(s)}$，其中已包含 score scaling。Softmax 定义为：
+
+$$
+\alpha_i=\operatorname{softmax}(\boldsymbol s)_i
+=\frac{\exp(s_i)}{\sum_{j=1}^{L}\exp(s_j)},
+\qquad
+\alpha_i\ge0,\quad \sum_{i=1}^{L}\alpha_i=1.
+$$
+
+Stable softmax 使用 shift invariance，将最大 logit 从每一项中减去：
+
+$$
+\begin{aligned}
+m&=\max_{1\le j\le L}s_j,\\
+e_i&=\exp(s_i-m),\\
+\ell&=\sum_{j=1}^{L}e_j,\\
+\alpha_i&=e_i/\ell.
+\end{aligned}
+$$
+
+该变换保持 softmax 的数学结果：
+
+$$
+\frac{\exp(s_i-m)}{\sum_j\exp(s_j-m)}
+=\frac{\exp(-m)\exp(s_i)}
+{\exp(-m)\sum_j\exp(s_j)}
+=\frac{\exp(s_i)}{\sum_j\exp(s_j)}.
+$$
+
+对于有限 logits，$s_i-m\le0$，避免直接计算较大正数的 exp。V 不参与 softmax；normalization 后的 weights 用于：
+
+$$
+\boldsymbol o_t^{(s)}=\sum_{i=1}^{L}\alpha_i\boldsymbol v_i^{(s)}.
+$$
+
+| Operation | Count / query / head |
+|---|---:|
+| Maximum reduction | $L-1$ comparisons |
+| Shift | $L$ subtractions |
+| Exponentiation | $L$ exp operations |
+| Sum reduction | $L-1$ additions |
+| Normalization | $L$ divisions，或 1 次 reciprocal 与 $L$ 次 multiplications |
+
+约 $5L$ 次 scalar operations 是粗略 operation count，不表示这些指令具有相同硬件成本。当前 FLOPs aggregate 不包含 softmax operations；online softmax 的 tile-wise accumulator update 与 implementation overhead 见第 7.1 节，不能与另一套 normalization 实现重复累计。
 
 ### 2.5 Arithmetic intensity 与 Roofline
 
@@ -480,6 +643,7 @@ Projection + RMSNorm 的 fusion 决定 latent 是否经过 HBM round trip；RMSN
 ## 8. Sources 与 validation status
 
 - 苏剑林：[《缓存与效果的极限拉扯：从 MHA、MQA、GQA 到 MLA》](https://spaces.ac.cn/archives/10091)，2024-05-13。公式使用其 Part 2、Part 3 的 row-vector convention，并补充 latent RMSNorm。
+- 苏剑林：[《Transformer升级之路：2、博采众长的旋转式位置编码》](https://spaces.ac.cn/archives/8265)，2021-03-23，2026-10-26 查阅。第 2.4 节采用其二维 rotation 与多维 block-diagonal 构造，并显式转换为 row-vector convention；算术计数按本文统计约定推导。
 - [DeepSeek-V2 technical report](https://arxiv.org/html/2405.04434v5) 与 [official reference implementation](https://huggingface.co/deepseek-ai/DeepSeek-V2/blob/main/modeling_deepseek.py)，2026-10-25 查阅。Reference implementation 用于确认 RMSNorm、score scaling、cache update 与部分路径的 V padding，不代表所有 deployment kernels。
 - Local source inspection：Megatron-LM/megatron/core/transformer/multi_latent_attention.py 的 down-projection、latent normalization、absorption paths，以及 experimental_attention_variant/ops/tilelang_sparse_mla_fwd.py 的 online softmax update。核对时 repository HEAD 为 83392004c81b6e477002ae84d4f0b1271518c1d1。
 - FLOPs、HBM traffic、arithmetic intensity 均为声明假设下的推导；尚未进行 model execution 或 kernel profiling。具体 load counts、fusion、cache layout 与 throughput 需结合目标实现验证。
