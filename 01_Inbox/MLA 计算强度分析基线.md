@@ -85,7 +85,7 @@ s_{t,i}^{(s)}&=(\boldsymbol q_t^{(s)}\boldsymbol k_i^{(s)\top})\sigma,
 \end{aligned}
 $$
 
-后续按公式项统计成本，统一使用以下分支符号：
+后续按公式项统计成本，统一使用以下分支符号；分支下标 $C$、$R$ 分别标识内容与位置分支：
 
 $$
 \begin{aligned}
@@ -868,13 +868,15 @@ $$
 
 ## 5. 预填充 × 吸收
 
-本节参考 vLLM FlashMLA 路径采用的基本组织：执行 $\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top}$，在共享 $[\boldsymbol c_i,\boldsymbol k_{i,R}]$ 上计算注意力，再执行 $\boldsymbol u_t^{(s)}W_v^{(s)}$ 和 $[\boldsymbol o_t^{(1)},\ldots,\boldsymbol o_t^{(h)}]W_O$。实现可以在部分短预填充中选择这条路径；本节只分析其数学操作与数据搬运，不展开调度与内核细节。
+本节参考 vLLM FlashMLA 路径采用的基本组织：执行 $\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top}$，在共享 $[\boldsymbol c_i,\boldsymbol k_{i,R}]$ 上计算注意力，再执行 $(\sum_{i\le t}\alpha_{t,i}^{(s)}\boldsymbol c_i)W_v^{(s)}$ 和 $[\boldsymbol o_t^{(1)},\ldots,\boldsymbol o_t^{(h)}]W_O$。实现可以在部分短预填充中选择这条路径；本节只分析其数学操作与数据搬运，不展开调度与内核细节。
 
 为与第 3 节直接比较，继续采用无前缀缓存、$B$ 条长度为 $S$ 的序列、$h$ 个头和包含对角线的因果注意力，令 $N=BS$。已有长前缀时，查询位置数与缓存位置数需要分别计数，不直接套用本节的等长公式。
 
+成本符号沿用第 2 节：$F$ 表示所列主要算术操作的计算量，单位为 FLOPs；$D$ 表示显存读写量，单位为 Bytes；$I=F/D$ 表示对应计算强度，单位为 FLOPs/Byte。下标与上标用于标明计算形式和统计范围，具体含义在首次使用时说明。
+
 ### 5.1 计算组织：Q 变换、潜在空间聚合与后置 V 投影
 
-$\boldsymbol c_t'$、$\boldsymbol c_i$、$\boldsymbol q_{t,C}^{(s)}$、$\boldsymbol q_{t,R}^{(s)}$ 和 $\boldsymbol k_{i,R}$ 沿用第 2.2 节的定义。通过 $\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top}$ 构造 $\widehat{\boldsymbol q}_t^{(s)}$，并定义对应的 $\widehat{\boldsymbol k}_i$、$\widehat{\boldsymbol v}_i$：
+$\boldsymbol c_t'$、$\boldsymbol c_i$、$\boldsymbol q_{t,C}^{(s)}$、$\boldsymbol q_{t,R}^{(s)}$ 和 $\boldsymbol k_{i,R}$ 沿用第 2.2 节的定义。符号上的帽号标识本节吸收形式的注意力输入。通过 $\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top}$ 构造 $\widehat{\boldsymbol q}_t^{(s)}$，并定义对应的 $\widehat{\boldsymbol k}_i$、$\widehat{\boldsymbol v}_i$；后两者由各头共享，因此不带头下标 $s$：
 
 $$
 \begin{aligned}
@@ -890,7 +892,7 @@ $$
 \end{aligned}
 $$
 
-记 $p_a=d_c+d_r$ 为 $\widehat{\boldsymbol q}_t^{(s)}$、$\widehat{\boldsymbol k}_i$ 的维度；$\boldsymbol q_t^{(s)}$、$\boldsymbol k_i^{(s)}$ 的维度仍为 $p=d_k+d_r$。两种形式的内积相同：
+记 $p_a=d_c+d_r$ 为 $\widehat{\boldsymbol q}_t^{(s)}$、$\widehat{\boldsymbol k}_i$ 的维度，下标 $a$ 表示 absorbed（吸收形式）；$\boldsymbol q_t^{(s)}$、$\boldsymbol k_i^{(s)}$ 的维度仍为 $p=d_k+d_r$。两种形式的内积相同：
 
 $$
 \begin{aligned}
@@ -902,7 +904,7 @@ $$
 \end{aligned}
 $$
 
-分数仍乘模型原有的 $\sigma=1/\sqrt p$；变换后的维度 $p_a$ 不用于重新定义缩放系数。Softmax 权重 $\alpha_{t,i}^{(s)}$ 因而保持相同。先在 $d_c$ 维空间聚合，再恢复每头的 $d_v$ 维输出：
+分数仍乘模型原有的 $\sigma=1/\sqrt p$；变换后的维度 $p_a$ 不用于重新定义缩放系数。Softmax 权重 $\alpha_{t,i}^{(s)}$ 因而保持相同。用 $\boldsymbol u_t^{(s)}$ 表示第 $s$ 个头对 $\boldsymbol c_i$ 加权后得到的 $d_c$ 维向量，再计算 $\boldsymbol o_t^{(s)}$ 和 $\boldsymbol y_t$：
 
 $$
 \begin{aligned}
@@ -922,7 +924,7 @@ $$
 
 ### 5.2 单个词元位置：哪些投影换了执行位置
 
-固定一个头，并将共享路径计一次。共享成本沿用 $C=d(d_c'+d_c)$、$G=d_c'+d_c$；下表的权重读取量假设每个元素读一次，激活读写在第 5.5 节统一累计。
+固定一个头，并将共享路径计一次。$C=d(d_c'+d_c)$、$G=d_c'+d_c$ 分别沿用第 3.2 节的降维投影权重元素数与 RMSNorm 权重元素数；$f_{\mathrm{shared}}$、$f_{\mathrm{head}}$ 沿用第 3.4.1 节，分别表示每个词元位置的多头共享成本与每头独立的固定成本。下表的权重读取量假设每个元素读一次，激活读写在第 5.5 节统一累计。
 
 | 公式项 | 计算量 | 权重读取量 | 频率 |
 |---|---:|---:|---|
@@ -947,7 +949,7 @@ $$
 
 ### 5.3 从一对有效 Q–K 位置扩展到整条序列与批次
 
-固定一个头，$\widehat{\boldsymbol q}_t^{(s)}$、$\widehat{\boldsymbol k}_i$ 为 $p_a=d_c+d_r$ 维，$\boldsymbol u_t^{(s)}=\sum_{i\le t}\alpha_{t,i}^{(s)}\boldsymbol c_i$ 为 $d_c$ 维。每对有效 Q–K 位置的主项计算量为：
+固定一个头，$\widehat{\boldsymbol q}_t^{(s)}$、$\widehat{\boldsymbol k}_i$ 为 $p_a=d_c+d_r$ 维，$\boldsymbol u_t^{(s)}=\sum_{i\le t}\alpha_{t,i}^{(s)}\boldsymbol c_i$ 为 $d_c$ 维。将每对有效 Q–K 位置的主项计算量记为 $F_{\mathrm{pair,abs}}$：下标 $\mathrm{pair}$ 表示一对满足 $i\le t$ 的查询—键位置，$\mathrm{abs}$ 是 absorbed（吸收形式）的缩写。计算量为：
 
 $$
 \begin{aligned}
@@ -959,7 +961,7 @@ F_{\mathrm{pair,abs}}
 \end{aligned}
 $$
 
-位置 $t$ 有 $t$ 对有效位置，因此单头、单序列的合计为：
+用 $F_{\mathrm{prefill,absorbed}}^{(B,h)}$ 表示整个吸收形式预填充的主项计算量；下标 $\mathrm{prefill,absorbed}$ 表示阶段与计算形式，上标 $(B,h)$ 表示统计时采用的批大小与头数。位置 $t$ 有 $t$ 对有效位置，因此 $B=h=1$ 时的合计为：
 
 $$
 \begin{aligned}
@@ -981,7 +983,7 @@ F_{\mathrm{prefill,absorbed}}^{(B,h)}
 }
 $$
 
-令 $F_{\mathrm{pair,exp}}=F_{\mathrm{pair}}=2(d_k+d_r+d_v)+1$ 表示第 3 节的展开形式。两种形式的固定成本相同，计算量之差来自注意力维度：
+令 $F_{\mathrm{pair,exp}}=F_{\mathrm{pair}}=2(d_k+d_r+d_v)+1$ 表示第 3.3 节中展开形式每对有效 Q–K 位置的主项计算量，其中 $\mathrm{exp}$ 是 expanded（展开形式）的缩写。两种形式的固定成本相同，计算量之差来自注意力维度：
 
 $$
 F_{\mathrm{prefill,absorbed}}-F_{\mathrm{prefill,expanded}}
@@ -992,7 +994,7 @@ $$
 
 ### 5.4 注意力的显存读取：查询复用与跨头复用分别计数
 
-先看一个 K/V 位置。共享 K 为 $[\boldsymbol c_i,\boldsymbol k_{i,R}]$，V 直接引用其中的 $\boldsymbol c_i$。本节假设读入的 $\boldsymbol c_i$ 在片上同时用于 QK 与 V 聚合，因此一次完整数据读取为：
+先看一个 K/V 位置。共享 K 为 $[\boldsymbol c_i,\boldsymbol k_{i,R}]$，V 直接引用其中的 $\boldsymbol c_i$。本节假设读入的 $\boldsymbol c_i$ 在片上同时用于 QK 与 V 聚合。将一个位置的数据完整读入一次的显存读取量记为 $D_{\mathrm{KV,load,abs}}$；下标 $\mathrm{KV}$ 将范围限定为 K/V 数据，$\mathrm{load}$ 表示对该位置的一次读取，$\mathrm{abs}$ 表示吸收形式。因此：
 
 $$
 D_{\mathrm{KV,load,abs}}=b(d_c+d_r)=bp_a.
@@ -1000,7 +1002,7 @@ $$
 
 这里没有将同一个 $\boldsymbol c_i$ 作为 K、V 各从显存读取一次；若实现确实重复加载，应增加相应流量。
 
-固定一条序列、一个头，令 $\rho_a$ 为共享 K/V 各元素的平均显存读取次数。Q 读一次、潜在输出 $\boldsymbol u$ 写一次，则：
+固定一条序列、一个头，令 $\rho_a$ 为每个共享 K/V 元素在整条序列的注意力计算中从显存读入的平均次数；下标 $a$ 与 $p_a$ 一致，表示吸收形式。$\widehat{\boldsymbol q}_t^{(s)}$ 读一次、$\boldsymbol u_t^{(s)}$ 写一次，将该注意力范围的总访存量记为 $D_{\mathrm{core,abs}}$；$\mathrm{core}$ 沿用第 2.2 节的注意力核心范围，不含投影与缓存构建。于是：
 
 $$
 D_{\mathrm{core,abs}}^{(B=1,h=1)}
@@ -1009,7 +1011,7 @@ $$
 
 其中 $p_a+d_c=2d_c+d_r$ 来自 Q 读取和潜在输出写回，$\rho_a p_a$ 来自共享 K/V 读取。
 
-扩展到多头时，不能从“所有头引用同一份 K/V”直接推出只读一次。设每组最多有 $g$ 个头在片上复用同一次 K/V 读取，头组数为 $n_g=\lceil h/g\rceil$。每个头组采用相同的查询分块方式，组间不复用显存读取；$\rho_a$ 统计每个头组内部由查询分块产生的平均读取次数。
+扩展到多头时，不能从“所有头引用同一份 K/V”直接推出只读一次。设每组最多有 $g$ 个头在片上复用同一次 K/V 读取，其中 $g$ 为满足 $1\le g\le h$ 的整数；用 $n_g=\lceil h/g\rceil$ 表示头组数量，最后一组可以少于 $g$ 个头。每个头组采用相同的查询分块方式，组间不复用显存读取；$\rho_a$ 统计每个头组内部由查询分块产生的平均读取次数。
 
 | 数据 | 多头、多批次的显存访存量 |
 |---|---:|
@@ -1017,7 +1019,7 @@ $$
 | $[\boldsymbol c_i,\boldsymbol k_{i,R}]$ 读取，$\boldsymbol c_i$ 同时用于 V 聚合 | $bBS\rho_a n_g p_a$ |
 | $\boldsymbol u_t^{(s)}$ 写回 | $bBS hd_c$ |
 
-于是：
+将注意力范围内的主项计算量除以 $D_{\mathrm{core,abs}}$，得到 $I_{\mathrm{core,abs}}$；它是吸收形式注意力核心的计算强度，softmax 等额外操作仍单列。整个批次的访存量与计算强度分别为：
 
 $$
 \boxed{
@@ -1037,9 +1039,9 @@ $$
 
 当 $g=1$ 时，$n_g=h$，每个头仍独立读取共享缓存；当 $g=h$ 时，$n_g=1$，每个查询块的 K/V 读取可由所有头复用。批大小 $B$ 从比值中约去，不同序列的 K/V 仍分别读取。
 
-若查询分块采用第 3.4.3 节的假设，$\rho_a$ 可按该节的 $M$ 公式估算。但吸收后 Q 和输出更宽，片上容量可能限制查询块大小及跨头复用规模；$\rho_a$ 与展开形式的 $\rho_e$ 需要分别确定。
+将第 3.4.3 节展开形式的平均读取次数 $\rho$ 在本节记为 $\rho_e$，下标 $e$ 表示 expanded。若查询分块采用该节的假设，$\rho_a$ 可按同一公式估算，其中 $M$ 表示每个查询块的位置数。但两种形式的 Q 与聚合输出宽度不同，片上容量可能限制查询块大小及跨头复用规模，因此 $\rho_a$、$\rho_e$ 需要分别确定。
 
-仅比较注意力的 K/V 读取，在两种形式的查询复用相同，即 $\rho_a=\rho_e$，且 $h$ 可被 $g$ 整除时：
+用 $D_{\mathrm{KV,abs}}$、$D_{\mathrm{KV,exp}}$ 分别表示整个批次在吸收、展开形式下的注意力 K/V 读取量，均不包含 Q 读取与聚合输出写回。在两种形式的查询复用相同，即 $\rho_a=\rho_e$，且 $h$ 可被 $g$ 整除时：
 
 $$
 \frac{D_{\mathrm{KV,abs}}}{D_{\mathrm{KV,exp}}}
@@ -1060,7 +1062,7 @@ $$
 5. 读取 $\boldsymbol u_t^{(s)}$，计算并写出 $\boldsymbol o_t^{(s)}=\boldsymbol u_t^{(s)}W_v^{(s)}\in\mathbb R^{1\times d_v}$。
 6. 读取 $[\boldsymbol o_t^{(1)},\ldots,\boldsymbol o_t^{(h)}]$，计算并写出 $\boldsymbol y_t=[\boldsymbol o_t^{(1)},\ldots,\boldsymbol o_t^{(h)}]W_O\in\mathbb R^{1\times d}$。
 
-各投影的权重在 $N=BS$ 个位置间复用，按每个元素从显存读一次统计。所有矩阵权重总数仍与展开形式相同：
+各投影的权重在 $N=BS$ 个位置间复用，按每个元素从显存读一次统计。沿用第 3.4.4 节的 $W_h$，表示所有 $h$ 个头及共享路径的矩阵投影权重元素总数，不含 RMSNorm 权重。该数量仍与展开形式相同：
 
 $$
 W_h=C+dd_r+h[d_c'p+d_cd_k+d_cd_v+d_vd],
@@ -1080,7 +1082,7 @@ $$
 | $\boldsymbol u_t^{(s)}$：写出、再读入 | $2bNhd_c$ |
 | $\boldsymbol o_t^{(s)}=\boldsymbol u_t^{(s)}W_v^{(s)}$：写出、再读入 | $2bNhd_v$ |
 
-因此：
+用 $D_{\mathrm{prefill,absorbed}}^{(B,h)}$ 表示上表全部数据的显存读写量，$I_{\mathrm{prefill,absorbed}}^{(B,h)}$ 表示完整前向主项计算量与该读写量之比；下标与上标沿用第 5.3 节的阶段、形式和统计范围约定。因此：
 
 $$
 \boxed{
