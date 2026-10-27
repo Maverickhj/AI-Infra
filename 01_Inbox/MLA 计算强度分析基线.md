@@ -1157,12 +1157,18 @@ $$
 
 ### 6.1 一个查询位置：Q 变换与潜在空间聚合
 
-固定一条序列和一个头，沿用第 5.1 节的张量与维度：
+固定一条序列和一个头，沿用第 5.1 节的张量与维度。为区分查询生成与后续内积，将已生成的 $\widehat{\boldsymbol q}_t^{(s)}$ 的内容分支、位置分支分别记为 $\widehat{\boldsymbol q}_{t,C}^{(s)}$、$\widehat{\boldsymbol q}_{t,R}^{(s)}$：
 
 $$
 \begin{aligned}
+\widehat{\boldsymbol q}_{t,C}^{(s)}
+&=\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top}
+\in\mathbb R^{1\times d_c},\\
+\widehat{\boldsymbol q}_{t,R}^{(s)}
+&=\boldsymbol q_{t,R}^{(s)}
+\in\mathbb R^{1\times d_r},\\
 \widehat{\boldsymbol q}_t^{(s)}
-&=[\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top},\ \boldsymbol q_{t,R}^{(s)}]
+&=[\widehat{\boldsymbol q}_{t,C}^{(s)},\ \widehat{\boldsymbol q}_{t,R}^{(s)}]
 \in\mathbb R^{1\times p_a},\\
 \widehat K_{\le t}
 &\in\mathbb R^{L\times p_a},\\
@@ -1177,8 +1183,9 @@ $\widehat K_{\le t}$ 的第 $i$ 行为 $[\boldsymbol c_i,\boldsymbol k_{i,R}]$�
 $$
 \begin{aligned}
 s_{t,i}^{(s)}
-&=\left[(\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top})\boldsymbol c_i^\top
-+\boldsymbol q_{t,R}^{(s)}\boldsymbol k_{i,R}^\top\right]\sigma,
+&=(\widehat{\boldsymbol q}_t^{(s)}\widehat{\boldsymbol k}_i^\top)\sigma\\
+&=\left[\widehat{\boldsymbol q}_{t,C}^{(s)}\boldsymbol c_i^\top
++\widehat{\boldsymbol q}_{t,R}^{(s)}\boldsymbol k_{i,R}^\top\right]\sigma,
 \qquad \sigma=1/\sqrt p,\\
 \alpha_{t,i}^{(s)}&=\operatorname{softmax}_{i\le t}(s_{t,i}^{(s)}),\\
 \boldsymbol u_t^{(s)}&=\sum_{i\le t}\alpha_{t,i}^{(s)}\boldsymbol c_i
@@ -1193,12 +1200,12 @@ $$
 
 ### 6.2 一个历史位置：同一份压缩表示服务两项运算
 
-先假设 $\widehat{\boldsymbol q}_t^{(s)}$ 已生成，查询与输出累加器保留在片上，分数与权重不写回显存。读入的 $\boldsymbol c_i$ 在片上同时用于 QK 内积和 V 聚合；不将它作为两份独立数据重复读取。
+先假设 $\widehat{\boldsymbol q}_t^{(s)}$ 已生成，查询与输出累加器保留在片上，分数与权重不写回显存。下表的 QK 运算是已生成查询与缓存向量的内积；$\widehat{\boldsymbol q}_{t,C}^{(s)}=\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top}$ 的生成成本不在表中，而是在第 6.4 节按每个查询、每个头一次计入。读入的 $\boldsymbol c_i$ 在片上同时用于 QK 内积和 V 聚合；不将它作为两份独立数据重复读取。
 
 | 公式项 | 主项计算量 | 显存读取 | 显存写入 |
 |---|---:|---:|---:|
-| $(\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top})\boldsymbol c_i^\top$ | $2d_c$ FLOPs | $\boldsymbol c_i$：$bd_c$ Bytes | 0 |
-| $\boldsymbol q_{t,R}^{(s)}\boldsymbol k_{i,R}^\top$ | $2d_r$ FLOPs | $\boldsymbol k_{i,R}$：$bd_r$ Bytes | 0 |
+| $\widehat{\boldsymbol q}_{t,C}^{(s)}\boldsymbol c_i^\top$ | $2d_c$ FLOPs | $\boldsymbol c_i$：$bd_c$ Bytes | 0 |
+| $\widehat{\boldsymbol q}_{t,R}^{(s)}\boldsymbol k_{i,R}^\top$ | $2d_r$ FLOPs | $\boldsymbol k_{i,R}$：$bd_r$ Bytes | 0 |
 | $s_{t,i}^{(s)}$ 中的分数缩放，仅乘 $\sigma$ | 1 FLOP | 0 | 0 |
 | $\alpha_{t,i}^{(s)}=\operatorname{softmax}_{i\le t}(s_{t,i}^{(s)})$ | 按整组 $L$ 个分数单列，见第 2.4.5 节 | 0 | 0 |
 | $\boldsymbol u_t^{(s)}\mathrel{+}=\alpha_{t,i}^{(s)}\boldsymbol c_i$ | $2d_c$ FLOPs | 复用已读入的 $\boldsymbol c_i$，0 | 0 |
