@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1020" height="1470" viewBox="0 0 1020 1470" role="img" aria-labelledby="s-title s-desc">
+<title id="s-title">Profiling 四个入门可视化案例</title><desc id="s-desc">所有数据均为教学假设。图1计算通信重叠；图2 CUDA 分配器缓存；图3 Roofline 概念；图4 分布式 straggler 等待。</desc>
+<rect x="0" y="0" width="1020" height="1470" fill="#ffffff" />
+<text x="32" y="34" fill="#0f172a" font-size="27" font-weight="700" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">LLM AI-Infra Profiling · 四个直觉图</text>
+<text x="32" y="61" fill="#9a3412" font-size="14" font-weight="600" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">全部为教学假设数据 / NOT MEASURED GPU RESULTS</text>
+<defs><pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#e2e8f0"/><line x1="0" y1="0" x2="0" y2="8" stroke="#64748b" stroke-width="2"/></pattern></defs>
+<rect x="22" y="79" width="976" height="329" fill="#f8fafc" rx="12" stroke="#dbe3ed"/><text x="46" y="112" fill="#0f172a" font-size="22" font-weight="700" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">01  Timeline：串行 vs. 计算通信重叠</text><text x="46" y="139" fill="#475569" font-size="14" font-weight="400" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">A=2ms，B=4ms，AllReduce=4ms；B 不依赖通信结果，并假设无资源争用</text>
+<text x="56" y="223" fill="#0f172a" font-size="15" font-weight="500" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">串行 / 计算</text>
+<text x="56" y="266" fill="#0f172a" font-size="15" font-weight="500" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">串行 / 通信</text>
+<text x="56" y="322" fill="#0f172a" font-size="15" font-weight="500" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">重叠 / 计算</text>
+<text x="56" y="365" fill="#0f172a" font-size="15" font-weight="500" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">重叠 / 通信</text>
+<line x1="328" y1="179" x2="328" y2="374" stroke="#cbd5e1" stroke-dasharray="3 4"/>
+<text x="328" y="398" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">0</text>
+<line x1="440" y1="179" x2="440" y2="374" stroke="#cbd5e1" stroke-dasharray="3 4"/>
+<text x="440" y="398" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">2</text>
+<line x1="552" y1="179" x2="552" y2="374" stroke="#cbd5e1" stroke-dasharray="3 4"/>
+<text x="552" y="398" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">4</text>
+<line x1="664" y1="179" x2="664" y2="374" stroke="#cbd5e1" stroke-dasharray="3 4"/>
+<text x="664" y="398" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">6</text>
+<line x1="776" y1="179" x2="776" y2="374" stroke="#cbd5e1" stroke-dasharray="3 4"/>
+<text x="776" y="398" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">8</text>
+<line x1="888" y1="179" x2="888" y2="374" stroke="#cbd5e1" stroke-dasharray="3 4"/>
+<text x="888" y="398" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">10</text>
+<text x="940" y="398" fill="#475569" font-size="12" font-weight="400" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">ms</text>
+<rect x="328" y="206" width="112" height="28" fill="#3b82f6" rx="5"/>
+<text x="384" y="225" fill="#ffffff" font-size="15" font-weight="600" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">A</text>
+<rect x="664" y="206" width="224" height="28" fill="#3b82f6" rx="5"/>
+<text x="776" y="225" fill="#ffffff" font-size="15" font-weight="600" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">B</text>
+<rect x="440" y="249" width="224" height="28" fill="#f59e0b" rx="5"/>
+<text x="552" y="268" fill="#ffffff" font-size="15" font-weight="600" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">AllReduce</text>
+<rect x="328" y="305" width="112" height="28" fill="#3b82f6" rx="5"/>
+<text x="384" y="324" fill="#ffffff" font-size="15" font-weight="600" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">A</text>
+<rect x="440" y="305" width="224" height="28" fill="#3b82f6" rx="5"/>
+<text x="552" y="324" fill="#ffffff" font-size="15" font-weight="600" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">B</text>
+<rect x="440" y="348" width="224" height="28" fill="#f59e0b" rx="5"/>
+<text x="552" y="367" fill="#ffffff" font-size="15" font-weight="600" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">AllReduce</text>
+<text x="836" y="112" fill="#0f766e" font-size="16" font-weight="700" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">10ms → 6ms</text>
+<rect x="22" y="427" width="976" height="329" fill="#f8fafc" rx="12" stroke="#dbe3ed"/><text x="46" y="460" fill="#0f172a" font-size="22" font-weight="700" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">02  Memory：释放张量不等于分配器归还缓存</text><text x="46" y="487" fill="#475569" font-size="14" font-weight="400" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">Allocated / Reserved / 总 CUDA 占用是不同口径；差值不能单独证明碎片化</text>
+<line x1="164" y1="700" x2="921" y2="700" stroke="#cbd5e1" stroke-dasharray="3 5"/>
+<text x="147" y="704" fill="#475569" font-size="13" font-weight="400" text-anchor="end" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">0</text>
+<line x1="164" y1="650" x2="921" y2="650" stroke="#cbd5e1" stroke-dasharray="3 5"/>
+<text x="147" y="654" fill="#475569" font-size="13" font-weight="400" text-anchor="end" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">5</text>
+<line x1="164" y1="600" x2="921" y2="600" stroke="#cbd5e1" stroke-dasharray="3 5"/>
+<text x="147" y="604" fill="#475569" font-size="13" font-weight="400" text-anchor="end" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">10</text>
+<line x1="164" y1="550" x2="921" y2="550" stroke="#cbd5e1" stroke-dasharray="3 5"/>
+<text x="147" y="554" fill="#475569" font-size="13" font-weight="400" text-anchor="end" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">15</text>
+<line x1="164" y1="500" x2="921" y2="500" stroke="#cbd5e1" stroke-dasharray="3 5"/>
+<text x="147" y="504" fill="#475569" font-size="13" font-weight="400" text-anchor="end" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">20</text>
+<text x="54" y="570" fill="#475569" font-size="13" font-weight="400" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">GiB</text>
+<text x="190" y="729" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">权重</text>
+<text x="330" y="729" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">前向激活</text>
+<text x="470" y="729" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">临时峰值</text>
+<text x="610" y="729" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">反向释放</text>
+<text x="750" y="729" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">引用释放</text>
+<text x="890" y="729" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">下一步</text>
+<polyline points="190,660 330,620 470,560 610,620 750,660 890,660" fill="none" stroke="#3b82f6" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" />
+<circle cx="190" cy="660" r="5" fill="#3b82f6"/>
+<circle cx="330" cy="620" r="5" fill="#3b82f6"/>
+<circle cx="470" cy="560" r="5" fill="#3b82f6"/>
+<circle cx="610" cy="620" r="5" fill="#3b82f6"/>
+<circle cx="750" cy="660" r="5" fill="#3b82f6"/>
+<circle cx="890" cy="660" r="5" fill="#3b82f6"/>
+<polyline points="190,640 330,600 470,540 610,540 750,540 890,540" fill="none" stroke="#f59e0b" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" />
+<circle cx="190" cy="640" r="5" fill="#f59e0b"/>
+<circle cx="330" cy="600" r="5" fill="#f59e0b"/>
+<circle cx="470" cy="540" r="5" fill="#f59e0b"/>
+<circle cx="610" cy="540" r="5" fill="#f59e0b"/>
+<circle cx="750" cy="540" r="5" fill="#f59e0b"/>
+<circle cx="890" cy="540" r="5" fill="#f59e0b"/>
+<polyline points="190,620 330,580 470,520 610,520 750,520 890,520" fill="none" stroke="#7c3aed" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" />
+<circle cx="190" cy="620" r="5" fill="#7c3aed"/>
+<circle cx="330" cy="580" r="5" fill="#7c3aed"/>
+<circle cx="470" cy="520" r="5" fill="#7c3aed"/>
+<circle cx="610" cy="520" r="5" fill="#7c3aed"/>
+<circle cx="750" cy="520" r="5" fill="#7c3aed"/>
+<circle cx="890" cy="520" r="5" fill="#7c3aed"/>
+<line x1="395" y1="521" x2="421" y2="521" stroke="#3b82f6" stroke-width="3"/>
+<text x="428" y="526" fill="#475569" font-size="13" font-weight="400" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">Allocated</text>
+<line x1="560" y1="521" x2="586" y2="521" stroke="#f59e0b" stroke-width="3"/>
+<text x="593" y="526" fill="#475569" font-size="13" font-weight="400" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">Reserved</text>
+<line x1="723" y1="521" x2="749" y2="521" stroke="#7c3aed" stroke-width="3"/>
+<text x="756" y="526" fill="#475569" font-size="13" font-weight="400" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">CUDA total</text>
+<text x="188" y="749" fill="#475569" font-size="13" font-weight="400" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">示意：Allocated 回落至 4 GiB，但 Reserved 可以保留 16 GiB</text>
+<rect x="22" y="775" width="976" height="329" fill="#f8fafc" rx="12" stroke="#dbe3ed"/><text x="46" y="808" fill="#0f172a" font-size="22" font-weight="700" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">03  Roofline：算得快，还要供得上数据</text><text x="46" y="835" fill="#475569" font-size="14" font-weight="400" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">理想化上界 P ≤ min(Pmax, B×I)；不对应特定 GPU、精度或实测 HBM 流量</text>
+<line x1="194" y1="872" x2="194" y2="1031" stroke="#475569" stroke-width="2"/>
+<line x1="194" y1="1031" x2="926" y2="1031" stroke="#475569" stroke-width="2"/>
+<polyline points="194,1031 363,983 532,935 701,887 870,887" fill="none" stroke="#3b82f6" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" />
+<text x="194" y="1050" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">0.1</text>
+<text x="363" y="1050" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">1</text>
+<text x="532" y="1050" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">10</text>
+<text x="701" y="1050" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">100</text>
+<text x="870" y="1050" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">1000</text>
+<text x="176" y="1035" fill="#475569" font-size="12" font-weight="400" text-anchor="end" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">0.1</text>
+<line x1="194" y1="1031" x2="926" y2="1031" stroke="#cbd5e1" stroke-dasharray="2 8"/>
+<text x="176" y="987" fill="#475569" font-size="12" font-weight="400" text-anchor="end" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">1</text>
+<line x1="194" y1="983" x2="926" y2="983" stroke="#cbd5e1" stroke-dasharray="2 8"/>
+<text x="176" y="939" fill="#475569" font-size="12" font-weight="400" text-anchor="end" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">10</text>
+<line x1="194" y1="935" x2="926" y2="935" stroke="#cbd5e1" stroke-dasharray="2 8"/>
+<text x="176" y="891" fill="#475569" font-size="12" font-weight="400" text-anchor="end" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">100</text>
+<line x1="194" y1="887" x2="926" y2="887" stroke="#cbd5e1" stroke-dasharray="2 8"/>
+<text x="550" y="1073" fill="#475569" font-size="13" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">算术强度 I（FLOP/byte，对数示意）</text>
+<text x="48" y="901" fill="#475569" font-size="14" font-weight="400" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">吞吐 P</text>
+<circle cx="194" cy="1041.648739981585" r="7" fill="#f59e0b"/>
+<text x="241" y="980" fill="#0f172a" font-size="14" font-weight="400" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">低 I：通常更容易受带宽限制</text>
+<circle cx="786.3703463360641" cy="895.9801588811429" r="7" fill="#7c3aed"/>
+<text x="661" y="899" fill="#0f172a" font-size="14" font-weight="400" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">高 I：可能受算力上限限制</text>
+<text x="625" y="1092" fill="#475569" font-size="13" font-weight="400" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">示意上界：100 TFLOP/s、1 TB/s</text>
+<rect x="22" y="1123" width="976" height="329" fill="#f8fafc" rx="12" stroke="#dbe3ed"/><text x="46" y="1156" fill="#0f172a" font-size="22" font-weight="700" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">04  Straggler：NCCL 区间最长，不一定是网络问题</text><text x="46" y="1183" fill="#475569" font-size="14" font-weight="400" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">Rank 2 直到 8 ms 才到 collective；前面两张卡可长期等待</text>
+<line x1="252" y1="1210" x2="252" y2="1412" stroke="#cbd5e1" stroke-dasharray="3 5"/>
+<text x="252" y="1432" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">0</text>
+<line x1="378" y1="1210" x2="378" y2="1412" stroke="#cbd5e1" stroke-dasharray="3 5"/>
+<text x="378" y="1432" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">2</text>
+<line x1="504" y1="1210" x2="504" y2="1412" stroke="#cbd5e1" stroke-dasharray="3 5"/>
+<text x="504" y="1432" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">4</text>
+<line x1="630" y1="1210" x2="630" y2="1412" stroke="#cbd5e1" stroke-dasharray="3 5"/>
+<text x="630" y="1432" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">6</text>
+<line x1="756" y1="1210" x2="756" y2="1412" stroke="#cbd5e1" stroke-dasharray="3 5"/>
+<text x="756" y="1432" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">8</text>
+<line x1="882" y1="1210" x2="882" y2="1412" stroke="#cbd5e1" stroke-dasharray="3 5"/>
+<text x="882" y="1432" fill="#475569" font-size="12" font-weight="400" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">10</text>
+<text x="940" y="1432" fill="#475569" font-size="12" font-weight="400" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">ms</text>
+<text x="69" y="1262" fill="#0f172a" font-size="16" font-weight="600" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">Rank 0</text>
+<text x="69" y="1320" fill="#0f172a" font-size="16" font-weight="600" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">Rank 1</text>
+<text x="69" y="1378" fill="#0f172a" font-size="16" font-weight="600" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">Rank 2</text>
+<rect x="252" y="1244" width="252" height="33" fill="#3b82f6" rx="4"/>
+<text x="378" y="1266" fill="#ffffff" font-size="14" font-weight="600" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">计算 4ms</text>
+<rect x="504" y="1244" width="252" height="33" fill="url(#hatch)" rx="4"/>
+<text x="630" y="1266" fill="#0f172a" font-size="14" font-weight="600" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">等待 4ms</text>
+<rect x="756" y="1244" width="126" height="33" fill="#f59e0b" rx="4"/>
+<text x="819" y="1266" fill="#ffffff" font-size="14" font-weight="600" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">通信</text>
+<rect x="252" y="1302" width="252" height="33" fill="#3b82f6" rx="4"/>
+<text x="378" y="1324" fill="#ffffff" font-size="14" font-weight="600" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">计算 4ms</text>
+<rect x="504" y="1302" width="252" height="33" fill="url(#hatch)" rx="4"/>
+<text x="630" y="1324" fill="#0f172a" font-size="14" font-weight="600" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">等待 4ms</text>
+<rect x="756" y="1302" width="126" height="33" fill="#f59e0b" rx="4"/>
+<text x="819" y="1324" fill="#ffffff" font-size="14" font-weight="600" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">通信</text>
+<rect x="252" y="1360" width="504" height="33" fill="#3b82f6" rx="4"/>
+<text x="504" y="1382" fill="#ffffff" font-size="14" font-weight="600" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">计算 8ms</text>
+<rect x="756" y="1360" width="126" height="33" fill="#f59e0b" rx="4"/>
+<text x="819" y="1382" fill="#ffffff" font-size="14" font-weight="600" text-anchor="middle" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">通信</text>
+<text x="247" y="1454" fill="#475569" font-size="12" font-weight="400" text-anchor="start" font-family="Noto Sans CJK SC, PingFang SC, Microsoft Yahei, sans-serif">真实 NCCL 的等待与通信进展可能交织，图中故意简化</text>
+</svg>
