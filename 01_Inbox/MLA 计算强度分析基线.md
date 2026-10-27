@@ -2,7 +2,7 @@
 type: knowledge
 status: draft
 created: 2026-10-25
-updated: 2026-10-26
+updated: 2026-10-27
 domains: [llm, attention, performance]
 source:
   - https://spaces.ac.cn/archives/10091
@@ -23,7 +23,7 @@ reviewed: false
 | 阶段 | 展开形式 | 吸收形式 |
 |---|---|---|
 | 预填充 | 已推导单位置、单序列及多头多批次的计算量；已在明确中间张量边界和分块复用假设后给出访存量与计算强度 | 已推导 Q 侧变换、潜在空间注意力和后置 V 投影；已给出查询与跨头复用下的访存模型及展开形式对照 |
-| 解码 | 已建立单个解码词元的注意力计算与前向成本；已明确批次扩展的边界 | 待分析 |
+| 解码 | 已建立单个解码词元的注意力计算与前向成本；已明确批次扩展的边界 | 已推导单位置、多头与批次成本；已计入当前词元的缓存写入，并在相同显存边界下与展开形式比较 |
 
 各场景采用相同的推导顺序：从一个词元（token）位置和一个注意力头（head）开始，统计投影与归一化成本；再分析一对查询（query，Q）与键（key，K）的匹配，以及对应值（value，V）的加权；随后扩展到一条序列，最后考虑批次（batch）和多头。单头、单位置、单查询只是分步推导的简化条件，不是文档适用范围的限制。
 
@@ -132,7 +132,7 @@ RMSNorm 与 RoPE 分别属于归一化和位置编码，按独立操作统计；
 - 理论模型统一采用每元素 $b$ 字节，包含 RMSNorm 权重；实际数据类型（dtype）不同时，应按张量分别核算。片上累加可以使用 32 位浮点格式（FP32）。
 - $\boldsymbol x_tW_c'$、$\boldsymbol x_iW_c$、$\mathrm{RMSNorm}(\boldsymbol z_t^Q)$、$\mathrm{RMSNorm}(\boldsymbol z_i^{KV})$ 和 $\boldsymbol k_{i,R}=(\boldsymbol x_iW_{kr})\mathcal R_i$ 由各头共享，按新词元的位置数计数。
 - 分数缩放（score scaling）按每个分数一次乘法计数，$\sigma$ 已预先计算。若计算内核（kernel）将缩放移到 Q 或其他操作中，应按实际执行方式调整。
-- 偏置（bias）、注意力输入端的归一化、残差连接（residual connection）、随机失活（dropout）、掩码（mask）处理、缓存写入和通信不纳入当前合计，见第 7 节。
+- 偏置（bias）、注意力输入端的归一化、残差连接（residual connection）、随机失活（dropout）、掩码（mask）处理和通信不纳入当前合计，见第 7 节。缓存写入按各节边界计数；第 6.4 节显式计入当前词元的缓存写入，不额外复制缓存。
 
 ### 2.4 归一化与位置编码的公式和成本
 
@@ -1149,15 +1149,300 @@ $$
 
 ## 6. 解码 × 吸收
 
-### 6.1 单个解码词元
+本节沿用第 5 节的运行时计算顺序：先计算 $\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top}$，在压缩缓存上完成注意力，再计算 $\boldsymbol u_t^{(s)}W_v^{(s)}$ 和输出投影。各投影权重分别存储，不预先合并为新的矩阵。
 
-待分析。每条序列的查询长度为 Q_len=1；在相同统计范围内，分别统计 $\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top}$、$[\boldsymbol c_i,\boldsymbol k_{i,R}]$ 的读取、$\boldsymbol u_t^{(s)}=\sum_{i\le t}\alpha_{t,i}^{(s)}\boldsymbol c_i$、$\boldsymbol u_t^{(s)}W_v^{(s)}$ 和 $[\boldsymbol o_t^{(1)},\ldots,\boldsymbol o_t^{(h)}]W_O$ 的成本。
+标准解码每条序列只增加一个查询位置，即 $Q_{\mathrm{len}}=1$。可见键值长度 $L$ **包含当前新位置**，因此已有缓存包含 $L-1$ 个位置。历史位置的 $\boldsymbol c_i$、$\boldsymbol k_{i,R}$ 已生成，本步只生成当前位置的表示；不重新执行历史位置的降维投影、RMSNorm 或 RoPE。
 
-### 6.2 扩展到批次与多头
+与第 5 节的无前缀预填充相比，这里的关键变化是查询长度与缓存长度不同。不能将第 5 节公式中的 $S$ 直接替换为 $L$：每个头本步只有 $L$ 对有效 Q–K 位置，而不是 $L(L+1)/2$ 对。
 
-待分析。头数与批大小分别处理。$[\boldsymbol c_i,\boldsymbol k_{i,R}]$ 的实际读取次数取决于内核能否跨头复用，不能将单头访存量直接乘以 $h$，作为该缓存的总流量。
+### 6.1 一个查询位置：Q 变换与潜在空间聚合
 
-得到计算量与访存量之后，再用屋顶线模型比较增加计算和减少访存带来的性能收益。
+固定一条序列和一个头，沿用第 5.1 节的张量与维度：
+
+$$
+\begin{aligned}
+\widehat{\boldsymbol q}_t^{(s)}
+&=[\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top},\ \boldsymbol q_{t,R}^{(s)}]
+\in\mathbb R^{1\times p_a},\\
+\widehat K_{\le t}
+&\in\mathbb R^{L\times p_a},\\
+\widehat V_{\le t}
+&\in\mathbb R^{L\times d_c},\\
+p_a&=d_c+d_r.
+\end{aligned}
+$$
+
+$\widehat K_{\le t}$ 的第 $i$ 行为 $[\boldsymbol c_i,\boldsymbol k_{i,R}]$，$\widehat V_{\le t}$ 的第 $i$ 行直接引用同一份 $\boldsymbol c_i$，不另存一份潜在 V。计算过程为：
+
+$$
+\begin{aligned}
+s_{t,i}^{(s)}
+&=\left[(\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top})\boldsymbol c_i^\top
++\boldsymbol q_{t,R}^{(s)}\boldsymbol k_{i,R}^\top\right]\sigma,
+\qquad \sigma=1/\sqrt p,\\
+\alpha_{t,i}^{(s)}&=\operatorname{softmax}_{i\le t}(s_{t,i}^{(s)}),\\
+\boldsymbol u_t^{(s)}&=\sum_{i\le t}\alpha_{t,i}^{(s)}\boldsymbol c_i
+\in\mathbb R^{1\times d_c},\\
+\boldsymbol o_t^{(s)}&=\boldsymbol u_t^{(s)}W_v^{(s)}
+\in\mathbb R^{1\times d_v},\\
+\boldsymbol y_t&=[\boldsymbol o_t^{(1)},\ldots,\boldsymbol o_t^{(h)}]W_O.
+\end{aligned}
+$$
+
+分数缩放仍使用 $p=d_k+d_r$。$\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top}$、$\boldsymbol u_t^{(s)}W_v^{(s)}$ 和输出投影均按每个查询、每个头一次计数；只有内积和加权累加按 $L$ 个位置累计。
+
+### 6.2 一个历史位置：同一份压缩表示服务两项运算
+
+先假设 $\widehat{\boldsymbol q}_t^{(s)}$ 已生成，查询与输出累加器保留在片上，分数与权重不写回显存。读入的 $\boldsymbol c_i$ 在片上同时用于 QK 内积和 V 聚合；不将它作为两份独立数据重复读取。
+
+| 公式项 | 主项计算量 | 显存读取 | 显存写入 |
+|---|---:|---:|---:|
+| $(\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top})\boldsymbol c_i^\top$ | $2d_c$ FLOPs | $\boldsymbol c_i$：$bd_c$ Bytes | 0 |
+| $\boldsymbol q_{t,R}^{(s)}\boldsymbol k_{i,R}^\top$ | $2d_r$ FLOPs | $\boldsymbol k_{i,R}$：$bd_r$ Bytes | 0 |
+| $s_{t,i}^{(s)}$ 中的分数缩放，仅乘 $\sigma$ | 1 FLOP | 0 | 0 |
+| $\alpha_{t,i}^{(s)}=\operatorname{softmax}_{i\le t}(s_{t,i}^{(s)})$ | 按整组 $L$ 个分数单列，见第 2.4.5 节 | 0 | 0 |
+| $\boldsymbol u_t^{(s)}\mathrel{+}=\alpha_{t,i}^{(s)}\boldsymbol c_i$ | $2d_c$ FLOPs | 复用已读入的 $\boldsymbol c_i$，0 | 0 |
+| **合计，softmax 等额外操作单列** | **$F_{\mathrm{pair,abs}}=2(2d_c+d_r)+1$ FLOPs** | **$bp_a=b(d_c+d_r)$ Bytes** | **0** |
+
+这里将两个分支内积的主项记为 $2(d_c+d_r)$；分支求和已包含在这一主项估算中，不另加一次。Softmax 需要对全部可见位置归一化，不能为一个历史位置独立计算权重。
+
+单个历史位置的数据量为 $b(d_c+d_r)$，而不是 $b(2d_c+d_r)$。后者会将 $\boldsymbol c_i$ 作为 K、V 重复计数。若实际内核分别加载这两次使用的数据，应按实际读取次数补充流量。
+
+对一个头，将上表累计到 $L$ 个位置，并计入 $\widehat{\boldsymbol q}_t^{(s)}$ 读取一次、$\boldsymbol u_t^{(s)}$ 写回一次：
+
+$$
+\begin{aligned}
+F_{\mathrm{core,abs}}^{(B=1,h=1)}
+&\approx L F_{\mathrm{pair,abs}},\\
+D_{\mathrm{core,abs}}^{(B=1,h=1)}
+&\approx b[Lp_a+p_a+d_c],\\
+I_{\mathrm{core,abs}}^{(B=1,h=1)}
+&\approx\frac{L F_{\mathrm{pair,abs}}}{b[Lp_a+p_a+d_c]}.
+\end{aligned}
+$$
+
+$F_{\mathrm{core,abs}}$、$D_{\mathrm{core,abs}}$、$I_{\mathrm{core,abs}}$ 沿用第 5 节的注意力核心范围，本节均指一步解码，不含 Q 生成、Q 侧矩阵变换、后置 V 投影或缓存写入；这些操作在第 6.4 节计入完整前向。
+
+### 6.3 多头与批次：解码可以跨头复用 K/V 读取
+
+沿用第 5.4 节的 $g$ 和 $n_g$：每组最多 $g$ 个头在片上共用一次 K/V 读取，$n_g=\lceil h/g\rceil$ 为头组数量，$1\le g\le h$。最后一组可以少于 $g$ 个头。这里 $g$ 表示实际执行中的跨头复用，不是仅由缓存的共享存储布局决定的常数。
+
+本节假设每个头组对每个可见位置读一次，不同组之间不复用 HBM 读取；同一组内的 $\boldsymbol c_i$ 同时用于各头的内积和加权累加。跨头复用时，K/V 数据不必全部驻留片上，可以逐块读入并由组内各头使用。每个头仍有独立的 Q、分数、softmax 和 $\boldsymbol u_t^{(s)}$，因此计算量不因共享读取而减少。
+
+标准解码只有一个查询位置，无法利用多个查询位置复用同一份 K/V。按本节的单遍读取假设，第 5.4 节“每个头组内的平均读取次数”对应 $\rho_a=1$。增加批大小也不会改变这一点：不同序列的 K/V 不同，本节不假设共享前缀。
+
+设第 $r$ 条序列的可见长度为 $L_r$，所有序列均有相同的头数与头组配置。一步解码的注意力成本为：
+
+| 项目 | 多头、多批次合计 |
+|---|---:|
+| 有效 Q–K 位置对应的主项计算量 | $hF_{\mathrm{pair,abs}}\sum_{r=1}^{B}L_r$ |
+| $\widehat{\boldsymbol q}_t^{(s)}$ 读取 | $bBhp_a$ |
+| $[\boldsymbol c_i,\boldsymbol k_{i,R}]$ 读取，$\boldsymbol c_i$ 同时用于 V 聚合 | $bn_gp_a\sum_{r=1}^{B}L_r$ |
+| $\boldsymbol u_t^{(s)}$ 写回 | $bBhd_c$ |
+
+于是：
+
+$$
+\boxed{
+D_{\mathrm{core,abs}}^{(B,h)}
+\approx b\left[Bh(p_a+d_c)+n_gp_a\sum_{r=1}^{B}L_r\right]
+}
+$$
+
+$$
+\boxed{
+I_{\mathrm{core,abs}}^{(B,h)}
+\approx\frac{hF_{\mathrm{pair,abs}}\sum_{r=1}^{B}L_r}
+{b[Bh(p_a+d_c)+n_gp_a\sum_{r=1}^{B}L_r]}
+}
+$$
+
+当各序列长度相同，均为 $L$ 时，$B$ 从比值中约去：
+
+$$
+I_{\mathrm{core,abs}}^{(B,h)}
+\approx\frac{hL F_{\mathrm{pair,abs}}}
+{b[h(2d_c+d_r)+n_gL(d_c+d_r)]}
+\xrightarrow{L\to\infty}
+\frac{h}{n_g}\frac{F_{\mathrm{pair,abs}}}{b(d_c+d_r)}.
+$$
+
+若 $h$ 可被 $g$ 整除，则 $h/n_g=g$。同一次读取可供 $g$ 个头使用，因而能支撑约 $g$ 倍的注意力计算；$g=1$ 时各头独立读，$g=h$ 时所有头共用一次读。对于不能整除的情况，应保留 $h/n_g$，不能直接用 $g$ 替换。
+
+这里假设 Q 各读一次、输出各写一次。实际内核若反复加载 K/V、将同一份 $\boldsymbol c_i$ 分两次读取，或通过分段并行产生中间输出与合并，应增加对应的读写和计算，见第 7 节。
+
+### 6.4 完整前向：Q 投影、后置 V 投影与缓存写入均计入
+
+在第 6.3 节的注意力计算之前，本步生成 $\boldsymbol c_t'$、$\boldsymbol c_t$、$\boldsymbol k_{t,R}$、$\boldsymbol q_t^{(s)}$ 和 $\widehat{\boldsymbol q}_t^{(s)}$；注意力完成后生成 $\boldsymbol o_t^{(s)}$ 和 $\boldsymbol y_t$。各操作的计算量与权重读取量沿用第 5.2 节表格，本步只有 $N=B$ 个新位置。
+
+特别是，$\boldsymbol q_{t,C}^{(s)}W_{kc}^{(s)\top}$ 每个头执行一次，成本为 $2d_kd_c$；$\boldsymbol u_t^{(s)}W_v^{(s)}$ 每个头执行一次，成本为 $2d_cd_v$。展开形式则为当前新位置执行 $\boldsymbol c_tW_{kc}^{(s)}$ 和 $\boldsymbol c_tW_v^{(s)}$，成本分别相同。两种形式均复用历史缓存，不重复生成历史 K/V。
+
+因此，共享固定成本仍为 $f_{\mathrm{shared}}$，每头固定成本仍为 $f_{\mathrm{head}}$：
+
+$$
+\begin{aligned}
+f_{\mathrm{shared}}&=2[C+dd_r]+4G+2+3d_r,\\
+f_{\mathrm{head}}&=2[d_c'p+d_kd_c+d_cd_v+d_vd]+3d_r.
+\end{aligned}
+$$
+
+用 $F_{\mathrm{decode,absorbed}}^{(B,h)}$ 表示一步解码从输入 $\boldsymbol x_t$ 到输出 $\boldsymbol y_t$ 的主项计算量；下标分别表示解码阶段和吸收形式，上标表示批次与多头范围：
+
+$$
+\boxed{
+F_{\mathrm{decode,absorbed}}^{(B,h)}
+\approx B(f_{\mathrm{shared}}+h f_{\mathrm{head}})
++hF_{\mathrm{pair,abs}}\sum_{r=1}^{B}L_r
+}
+$$
+
+每条序列另有 2 次 rsqrt，每头对 $L_r$ 个分数执行 softmax；在线归一化的额外操作仍按第 7.1 节单列。
+
+为了统计显存流量，采用第 5.5 节相同的阶段边界：$\boldsymbol c_t'$、$\boldsymbol q_t^{(s)}$、$\widehat{\boldsymbol q}_t^{(s)}$、$\boldsymbol u_t^{(s)}$、$\boldsymbol o_t^{(s)}$ 在相邻阶段间各写出、读入一次；前处理内部临时结果留在片上。当前 $[\boldsymbol c_t,\boldsymbol k_{t,R}]$ **直接写入持久 KV Cache**，不再复制一份。假设权重初始未驻留片上，每个元素在本步读一次并在 $B$ 个新位置间复用；共享激活的读取也在各头间复用。
+
+沿用第 5.5 节的权重元素数 $W_h$ 与 $G$：
+
+$$
+W_h=C+dd_r+h[d_c'p+d_cd_k+d_cd_v+d_vd],
+\qquad G=d_c'+d_c.
+$$
+
+| 数据 | 一步解码的显存读写量 |
+|---|---:|
+| 矩阵投影与 RMSNorm 权重 | $b(W_h+G)$ |
+| $\boldsymbol x_t$ 读取、$\boldsymbol y_t$ 写回 | $2bBd$ |
+| $\boldsymbol c_t'$：写出、再读入 | $2bBd_c'$ |
+| 当前 $[\boldsymbol c_t,\boldsymbol k_{t,R}]$ 写入 KV Cache | $bBp_a$ |
+| $\boldsymbol q_t^{(s)}$：写出、再读入 | $2bBhp$ |
+| $\widehat{\boldsymbol q}_t^{(s)}$：写出、再读入 | $2bBhp_a$ |
+| 全部可见 $[\boldsymbol c_i,\boldsymbol k_{i,R}]$ 供注意力读取 | $bn_gp_a\sum_{r=1}^{B}L_r$ |
+| $\boldsymbol u_t^{(s)}$：写出、再读入 | $2bBhd_c$ |
+| $\boldsymbol o_t^{(s)}=\boldsymbol u_t^{(s)}W_v^{(s)}$：写出、再读入 | $2bBhd_v$ |
+
+令 $D_{\mathrm{decode,absorbed}}^{(B,h)}$ 为上表总显存读写量，$I_{\mathrm{decode,absorbed}}^{(B,h)}$ 为该范围内的主项计算强度，则：
+
+$$
+\boxed{
+D_{\mathrm{decode,absorbed}}^{(B,h)}
+\approx b\left\{
+W_h+G+B[2d+2d_c'+p_a+2h(p+p_a+d_c+d_v)]
++n_gp_a\sum_{r=1}^{B}L_r
+\right\}
+}
+$$
+
+$$
+I_{\mathrm{decode,absorbed}}^{(B,h)}
+\approx\frac{F_{\mathrm{decode,absorbed}}^{(B,h)}}
+{D_{\mathrm{decode,absorbed}}^{(B,h)}}.
+$$
+
+$L_r$ 包含当前新位置，因此上表既计当前缓存写入，也计注意力从缓存读入当前数据：这是一次写和一次读，属于两次不同的数据搬运。若当前数据直接留在片上供所有头组使用，可减去 $bBn_gp_a$ 的当前数据读取；若另有缓存复制，则追加复制的读取和写入。
+
+融合可以省去对应的中间往返，例如 $\boldsymbol q_t^{(s)}$ 的 $2bBhp$、$\boldsymbol o_t^{(s)}$ 的 $2bBhd_v$；这不改变上述分步矩阵乘法的 FLOPs。该模型是明确边界下的参考值，不表示所有中间向量能同时驻留片上，也不保证实际权重只加载一次。
+
+### 6.5 与展开形式比较：存储压缩与读取复用分别产生什么收益
+
+为与第 4 节一致，展开形式仍假设持久缓存存储各头完整的 $\boldsymbol k_i^{(s)}$ 和 $\boldsymbol v_i^{(s)}$，其中 $\boldsymbol k_{i,R}$ 复制到各头；吸收形式只存共享 $[\boldsymbol c_i,\boldsymbol k_{i,R}]$。如果展开计算使用压缩持久缓存并临时展开历史 K/V，必须另计历史展开计算及中间流量，不能直接使用本节对照。
+
+先比较相同有效位置范围内的注意力计算与 K/V 读取：
+
+| 项目 | 展开形式 | 吸收形式 |
+|---|---:|---:|
+| 每头、每对有效 Q–K 位置的主项计算量 | $F_{\mathrm{pair,exp}}=2(p+d_v)+1$ | $F_{\mathrm{pair,abs}}=2(2d_c+d_r)+1$ |
+| 当前查询与聚合输出的核心读写 | $bBh(p+d_v)$ | $bBh(p_a+d_c)$ |
+| 全部可见 K/V 的注意力读取 | $bh(p+d_v)\sum_rL_r$ | $bn_gp_a\sum_rL_r$ |
+| 全部可见位置的 KV Cache 数据容量 | $bh(p+d_v)\sum_rL_r$ | $bp_a\sum_rL_r$ |
+| 当前新位置的 KV Cache 写入 | $bBh(p+d_v)$ | $bBp_a$ |
+
+容量按每份数据存一份计数，不含分页空闲空间与元数据。吸收形式的容量不随 $n_g$ 增长，但运行时读取可能由 $n_g$ 个头组分别发生，因此容量比与读取比不同：
+
+$$
+\frac{\text{吸收缓存容量}}{\text{展开缓存容量}}
+=\frac{p_a}{h(p+d_v)},
+\qquad
+\frac{D_{\mathrm{KV,abs}}}{D_{\mathrm{KV,exp}}}
+=\frac{n_gp_a}{h(p+d_v)}.
+$$
+
+在本节的单遍读取模型下，降低注意力 K/V 读取量需要 $n_gp_a<h(p+d_v)$；当 $h$ 可被 $g$ 整除时，等价于 $p_a<g(p+d_v)$。即使缓存容量明显降低，若跨头读取复用不足，也可能没有对应的流量收益。
+
+两种形式当前词元的固定计算量相同，完整前向的主项计算量之差为：
+
+$$
+F_{\mathrm{decode,absorbed}}^{(B,h)}
+-F_{\mathrm{decode,expanded}}^{(B,h)}
+\approx 2h(2d_c-d_k-d_v)\sum_{r=1}^{B}L_r.
+$$
+
+当 $2d_c>d_k+d_v$ 时，吸收形式增加每个有效 Q–K 位置的计算量。计算增加来自更宽的内积与加权累加；缓存读取下降来自压缩存储及实际的跨头复用。这两种变化必须分别计数。
+
+完整前向对照也需要一致的显存边界。令 $D_{\mathrm{decode,expanded}}^{(B,h)}$ 在本节表示：采用第 3.4.4 节的阶段间写回方式，每步只生成 $B$ 个新位置，并将新 K/V 的写出直接作为持久缓存写入。展开形式每个可见位置、每个头读一次。因此：
+
+$$
+\begin{aligned}
+F_{\mathrm{decode,expanded}}^{(B,h)}
+&\approx B(f_{\mathrm{shared}}+h f_{\mathrm{head}})
++hF_{\mathrm{pair,exp}}\sum_{r=1}^{B}L_r,\\
+D_{\mathrm{decode,expanded}}^{(B,h)}
+&\approx b\left\{
+W_h+G+B[2d+2(G+d_r)+3h(p+d_v)]
++h(p+d_v)\sum_{r=1}^{B}L_r
+\right\}.
+\end{aligned}
+$$
+
+其中 $3h(p+d_v)$ 来自 Q 与输出的各一次写出和读入，共 $2h(p+d_v)$，加上当前 K/V 写入的 $h(p+d_v)$。这与第 4.5 节“中间激活留片上、未计缓存写入”的理想边界不同；第 6.6 节统一使用这里的边界，不将两种口径混合比较。
+
+### 6.6 数值例子：增加计算后，显存流量如何变化
+
+沿用第 5.6 节的维度：$d=1024$、$d_c'=d_c=256$、$d_k=d_v=128$、$d_r=64$、$b=2$、$h=8$。改为每条序列一步解码、可见长度 $L=8192$，包含当前新位置。于是：
+
+$$
+\begin{aligned}
+p&=192,&p_a&=320,\\
+F_{\mathrm{pair,exp}}&=641,&F_{\mathrm{pair,abs}}&=1153,\\
+f_{\mathrm{shared}}+h f_{\mathrm{head}}&=5{,}115{,}586,&
+W_h+G&=2{,}556{,}416.
+\end{aligned}
+$$
+
+先固定 $B=1$，仅统计注意力核心。下表计算量单位为 FLOPs，访存量单位为 Bytes，计算强度单位为 FLOPs/Byte；softmax 等额外操作单列：
+
+| 形式 | 主项计算量 | Q 读取与聚合输出写回 | K/V 读取 | 核心总访存量 | 核心计算强度 |
+|---|---:|---:|---:|---:|---:|
+| 展开 | 42,008,576 | 5,120 | 41,943,040 | 41,948,160 | 1.0014 |
+| 吸收，$g=1$，$n_g=8$ | 75,563,008 | 9,216 | 41,943,040 | 41,952,256 | 1.8012 |
+| 吸收，$g=2$，$n_g=4$ | 75,563,008 | 9,216 | 20,971,520 | 20,980,736 | 3.6015 |
+| 吸收，$g=8$，$n_g=1$ | 75,563,008 | 9,216 | 5,242,880 | 5,252,096 | 14.3872 |
+
+本例 $p_a=p+d_v=320$。$g=1$ 时，吸收形式虽然增加计算，K/V 读取量却没有降低；计算强度提高不能单独证明优化有效。$g=8$ 时，压缩 K/V 一次读取由 8 个头共用，K/V 读取从 $40\ \mathrm{MiB}$ 降至 $5\ \mathrm{MiB}$。
+
+两种吸收执行方式的缓存数据容量均为 $5\ \mathrm{MiB}$，区别在于同一份数据实际读了几遍。当前词元的缓存写入量从展开形式的 $5{,}120$ Bytes 降至吸收形式的 $640$ Bytes；这部分与注意力读取分开累计。
+
+再加入全部投影、归一化、RoPE、中间张量读写和当前缓存写入，采用第 6.4、6.5 节的显存边界：
+
+| $B$ | 形式 | 完整前向主项计算量（FLOPs） | 完整前向访存量（Bytes） | 合计计算强度（FLOPs/Byte） |
+|---:|---|---:|---:|---:|
+| 1 | 展开 | 47,124,162 | 47,077,632 | 1.0010 |
+| 1 | 吸收，$g=1$ | 80,678,594 | 47,090,304 | 1.7133 |
+| 1 | 吸收，$g=8$ | 80,678,594 | 10,390,144 | 7.7649 |
+| 4 | 展开 | 188,496,648 | 172,972,032 | 1.0898 |
+| 4 | 吸收，$g=8$ | 322,714,376 | 26,222,080 | 12.3070 |
+
+$B=1,g=8$ 时，完整前向的主项计算量增加约 71.20%，显存访存量减少约 77.93%。K/V 读取降至原来的 $1/8$，但完整前向还要读取相同的投影与 RMSNorm 权重，并处理更宽的中间向量，因此总访存量不会恰好下降 8 倍。
+
+固定 $g=8$，从 $B=1$ 增至 $B=4$，注意力核心的计算强度仍为 $14.3872$ FLOPs/Byte：不同序列没有共用 K/V。完整前向的计算强度提高，是因为本步权重在更多新位置间复用。这里仍依赖“每份权重在整个批次中从显存读一次”的参考假设。
+
+### 6.7 为什么增加计算仍可能缩短解码时间
+
+对注意力核心或具体投影，分别使用第 2.5 节的屋顶线关系 $T\gtrsim\max(F/P,D/B_{\mathrm{HBM}})$。如果展开形式主要受缓存读取带宽限制，吸收形式又能实现跨头读取复用，则更少的 HBM 流量可能抵消增加的计算。需要检验增加计算后的 $F/P$ 是否仍足够小，以及实际的 $D/B_{\mathrm{HBM}}$ 降低了多少。
+
+例如，第 6.6 节全部头共用读取时，注意力主项计算量约增加至 1.80 倍，核心访存量约降至原来的 0.125 倍。这为降低带宽受限的解码延迟提供了条件，但不能直接推导出 8 倍加速：计算吞吐、Q 变换、后置投影、softmax、分段合并和启动开销仍可能限制速度。完整前向包含依次执行的多个算子，合计 $I$ 也不能代替逐算子判断。
+
+该收益与 prefill 的区别是：标准 decode 每条序列的查询长度固定为 1，单头难以通过查询分块复用历史 K/V，因此跨头读取复用尤为重要。长序列 prefill 已可让多个查询共用 K/V 读取，展开形式也能获得较高的计算强度；吸收形式增加的计算更可能成为主要成本。
+
+本节还限定了两点。第一，短缓存下投影权重和固定成本可能占主导，压缩历史读取带来的收益较小。第二，若预先合并 $W_{qc}^{(s)}W_{kc}^{(s)\top}$ 或 $W_v^{(s)}W_O^{(s)}$，矩阵尺寸、权重元素数与运行时 FLOPs 都会改变，不能沿用本节的 $W_h$ 和 $f_{\mathrm{head}}$。本节的结论针对分别存储权重、运行时顺序执行矩阵乘法的路径。
 
 ## 7. 实现相关的额外成本
 
@@ -1182,7 +1467,7 @@ $$
 
 | 项目 | 统计要求 |
 |---|---|
-| 缓存写入 | 单头 $(\boldsymbol k_t^{(s)},\boldsymbol v_t^{(s)})$ 每个新词元写入 $b(p+d_v)$ Bytes；$[\boldsymbol c_t,\boldsymbol k_{t,R}]$ 及单独存储 $\boldsymbol k_{t,R}$ 的布局分别统计 |
+| 缓存写入与复制 | 第 6.4、6.5 节已计入当前词元的直接缓存写入，不再追加同一次写入；其他边界需明确是否包含。展开缓存每个新位置写入 $bh(p+d_v)$ Bytes，共享 $[\boldsymbol c_t,\boldsymbol k_{t,R}]$ 写入 $bp_a$ Bytes；额外复制、独立存储 $\boldsymbol k_{t,R}$ 的布局分别统计 |
 | 压缩缓存与运行时展开 | 按实际展开的历史位置计入 $\boldsymbol c_iW_{kc}^{(s)}$、$\boldsymbol c_iW_v^{(s)}$ 的计算和中间读写 |
 | 中间结果写入显存 | $s_{t,i}^{(s)}$、$\alpha_{t,i}^{(s)}$、$\boldsymbol c_t'$、$\boldsymbol c_i$、$\boldsymbol q_t^{(s)}$、$\boldsymbol k_i^{(s)}$、$\boldsymbol v_i^{(s)}$ 等在独立算子间可能产生额外显存读写 |
 | 物理维度补齐 | 数学维度不一定等于内核实际计算的宽度；参考分块融合注意力算法（FlashAttention）的路径可能将 V 补齐（padding）至 Q/K 维度 |
@@ -1347,7 +1632,7 @@ FlashAttention 保持精确注意力的数学定义，浮点求和顺序可带�
 - 苏剑林：[《Transformer升级之路：2、博采众长的旋转式位置编码》](https://spaces.ac.cn/archives/8265)，2021-03-23，2026-10-26 查阅。第 2.4 节采用二维旋转与多维分块对角构造，明确转换为行向量记法；算术计数按本文统计约定推导。
 - [DeepSeek-V2 技术报告](https://arxiv.org/html/2405.04434v5)与[官方参考实现](https://huggingface.co/deepseek-ai/DeepSeek-V2/blob/main/modeling_deepseek.py)，2026-10-25 查阅。参考实现用于确认 RMSNorm、分数缩放、缓存更新及部分路径的 V 补齐，不代表所有部署内核。
 - 本地代码核对：Megatron-LM/megatron/core/transformer/multi_latent_attention.py 中的降维投影、压缩表示归一化与吸收路径，以及 experimental_attention_variant/ops/tilelang_sparse_mla_fwd.py 中的在线 softmax 更新。核对时仓库 HEAD 为 83392004c81b6e477002ae84d4f0b1271518c1d1。
-- [vLLM MLA 的数据搬运友好路径](https://github.com/vllm-project/vllm/blob/ffcabb8c7ab3e066e1c77b55d7673e5d08cf26cc/vllm/model_executor/layers/attention/mla_attention.py#L93)与[FlashMLA 短预填充路径说明](https://github.com/vllm-project/vllm/blob/ffcabb8c7ab3e066e1c77b55d7673e5d08cf26cc/vllm/v1/attention/backends/mla/flashmla.py#L109)，2026-10-26 核对。版本为 ffcabb8c7ab3e066e1c77b55d7673e5d08cf26cc。第 5 节采用运行时 Q 侧变换、共享潜在 K/V 和后置 V 投影的组织；分块复用与显存边界由本文明确假设，不代表该内核实测流量。
+- [vLLM MLA 的数据搬运友好路径](https://github.com/vllm-project/vllm/blob/ffcabb8c7ab3e066e1c77b55d7673e5d08cf26cc/vllm/model_executor/layers/attention/mla_attention.py#L93)与[FlashMLA 短预填充路径说明](https://github.com/vllm-project/vllm/blob/ffcabb8c7ab3e066e1c77b55d7673e5d08cf26cc/vllm/v1/attention/backends/mla/flashmla.py#L109)，2026-10-26 核对。版本为 ffcabb8c7ab3e066e1c77b55d7673e5d08cf26cc。第 5、6 节采用运行时 Q 侧变换、共享潜在 K/V 和后置 V 投影的组织；分块复用与显存边界由本文明确假设，不代表该内核实测流量。
 - [FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness](https://arxiv.org/html/2205.14135v2)，2022，2026-10-26 查阅。第 8.2 节参考其分块、融合与避免完整注意力矩阵写回显存的机制。
 - [FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning](https://arxiv.org/abs/2307.08691)，2023，2026-10-26 查阅。第 8.3 节参考其摘要对非矩阵乘法成本和并行分工的说明。
 - [Efficient Memory Management for Large Language Model Serving with PagedAttention](https://arxiv.org/abs/2309.06180)，2023，2026-10-26 查阅。第 8.3 节参考其摘要对 KV cache 碎片与缓存共享的说明。
