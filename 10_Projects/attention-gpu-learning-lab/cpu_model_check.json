@@ -1,0 +1,24 @@
+{
+  "shape": [
+    1,
+    8,
+    4096,
+    64
+  ],
+  "storage_bytes_per_element": 2,
+  "X_bytes": 4194304,
+  "A_bytes": 268435456,
+  "two_GEMMs_FLOPs": 34359738368,
+  "eager_ideal_logical_bytes": 1627389952,
+  "scale_fused_ideal_logical_bytes": 1090519040,
+  "Q_resident_BM128_no_cross_tile_cache_bytes": 276824064,
+  "compulsory_cold_input_bytes": 16777216,
+  "eager_peak_live_tensor_bytes": 549453824,
+  "eager_AI_GEMM_FLOPs_per_byte": 21.11340206185567,
+  "virtual_GPU_dense_GEMM_TFLOPs": 100,
+  "virtual_GPU_DRAM_TBps": 1,
+  "eager_model_lower_bound_ms": 1.627389952,
+  "Q_resident_model_lower_bound_ms": 0.34359738368,
+  "CPU_numpy_online_max_abs_error_across_12_tile_settings": 5.551115123125783e-16,
+  "GPU_tests_executed": false
+}
