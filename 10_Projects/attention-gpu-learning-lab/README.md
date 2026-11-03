@@ -2,7 +2,7 @@
 type: knowledge
 status: draft
 created: 2026-11-02
-updated: 2026-11-02
+updated: 2026-11-03
 domains: [GPU, CUDA, PyTorch, Attention]
 ai_generated: true
 reviewed: false
@@ -12,6 +12,8 @@ reviewed: false
 
 > [!warning]
 > 本文包含 AI 生成或改写的实质内容，尚未完成人工核验。数学模型与 CPU 参考算法的验证范围见文末；GPU 实验尚未执行。
+
+**六阶段完整学习路线：** [[10_Projects/attention-gpu-learning-lab/GPU Attention 六阶段学习路线|GPU Attention 六阶段学习路线]]。该文档作为完整 Roadmap，包含 Stage 1～6、统一资源基线、优先级和最终验收；本 README 保留现有入门实验与对应脚本。
 
 项目入口：[[10_Projects/attention-gpu-learning-lab/_Project - Attention GPU Learning Lab|Attention GPU Learning Lab]]。
 

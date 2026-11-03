@@ -2,7 +2,7 @@
 type: project
 status: active
 created: 2026-11-02
-updated: 2026-11-02
+updated: 2026-11-03
 domains: [GPU, CUDA, PyTorch, Attention]
 ai_generated: true
 reviewed: false
@@ -20,6 +20,8 @@ reviewed: false
 第一轮聚焦单 GPU、dense、non-causal、forward-only MHA；先理解数据流、线程协作、访存和数学模型，再进入融合与分块实现。
 
 ## 学习入口
+
+- [[10_Projects/attention-gpu-learning-lab/GPU Attention 六阶段学习路线|GPU Attention 六阶段学习路线]]：正式六阶段 Roadmap、Attention 统一案例、数学符号表与最终验收。
 
 - [[10_Projects/attention-gpu-learning-lab/README|完整学习路线、数学符号表、性能推导与阶段验收]]。
 - GitHub 阅读入口：[README.md](README.md)。
