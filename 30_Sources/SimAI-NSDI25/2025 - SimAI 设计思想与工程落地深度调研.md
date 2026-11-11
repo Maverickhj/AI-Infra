@@ -19,12 +19,12 @@ reviewed: false
 
 **论文**：Xizheng Wang et al., *SimAI: Unifying Architecture Design and Performance Tuning for Large-Scale Large Language Model Training with Scalability and Precision*, NSDI '25, pp. 541–558。  
 **研究日期**：2026-11-11。  
-**原文入口**：[USENIX 论文 PDF](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf) · [论文页面](https://www.usenix.org/conference/nsdi25/presentation/wang-xizheng-simai) · [[SimAI-NSDI25/README|按页码中英对照精读]]。  
+**原文入口**：[USENIX 论文 PDF](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf) · [论文页面](https://www.usenix.org/conference/nsdi25/presentation/wang-xizheng-simai) · [[30_Sources/SimAI-NSDI25/README|按页码中英对照精读]]。  
 **相关工程研究**：[[SimAI 技术架构与 Megatron-LM 训练性能仿真方案]]（模块可替换性、SimuMax 对比、Megatron Core 适配设计，本文不重复全面展开）。
 
 ## 0. 核心结论
 
-SimAI 的主要贡献是**把训练框架的执行语义、计算代价、collective 分解以及网络传输放入统一的离散事件时间线**。它保留决定性能的软件行为，以测量数据库和网络仿真代替昂贵的真实 GPU 执行，从而同时支持训练性能预测、硬件架构设计和通信调优。[论文 `3，PDF 第 4–8 页](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=4)
+SimAI 的主要贡献是**把训练框架的执行语义、计算代价、collective 分解以及网络传输放入统一的离散事件时间线**。它保留决定性能的软件行为，以测量数据库和网络仿真代替昂贵的真实 GPU 执行，从而同时支持训练性能预测、硬件架构设计和通信调优。[论文 §3，PDF 第 4–8 页](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=4)
 
 核心设计可归结为四个工程选择：
 
@@ -113,7 +113,7 @@ SimAI 的直接应用是容量规划、并行配置搜索、CCL/网络优化和�
 
 ### 3.1 为什么选择 mock/hijack，而不是手写 FLOPs 表
 
-论文 `3.2 和 `6 描述了从手写框架模拟逐步转向利用真实框架关键路径的演化。模型规模、TP/PP/DP、参数分片和优化器设置会改变 local tensor shape、collective 类型、执行次序及等待点。单靠模型参数和 FLOPs 公式无法稳定维护这些关系。[论文 `3.2 和 `6](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=4)
+论文 §3.2 和 `6 描述了从手写框架模拟逐步转向利用真实框架关键路径的演化。模型规模、TP/PP/DP、参数分片和优化器设置会改变 local tensor shape、collective 类型、执行次序及等待点。单靠模型参数和 FLOPs 公式无法稳定维护这些关系。[论文 §3.2 和 `6](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=4)
 
 工作负载至少需要包含：
 
@@ -142,7 +142,7 @@ SimAI 的直接应用是容量规划、并行配置搜索、CCL/网络优化和�
 
 ### 4.1 已有 GPU：用真实 kernel/子模块时间作为成本
 
-论文 `3.3 的 SimAI-CP 采用操作时间数据库，必要时从 submodule 细化到 kernel 粒度。这样可以吸收算子实现、实际 GPU 利用率和编译/库差异，避免模拟每条 GPU 指令的高成本。[论文 Table 4，PDF 第 6 页](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=6)
+论文 §3.3 的 SimAI-CP 采用操作时间数据库，必要时从 submodule 细化到 kernel 粒度。这样可以吸收算子实现、实际 GPU 利用率和编译/库差异，避免模拟每条 GPU 指令的高成本。[论文 Table 4，PDF 第 6 页](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=6)
 
 推荐最小数据库键：
 
@@ -172,9 +172,9 @@ t_{\mathrm{new,mem}}
 \frac{B_{\mathrm{eff,known}}}{B_{\mathrm{eff,new}}}.
 $$
 
-论文 `3.3 p.546 所呈现的外推比例为 `new/known × known_time`，与固定工作量的物理反比关系相冲突。本报告给出上述**推导后的工程校验公式**；引用原论文公式时应注明这个疑点，作者勘误状态未核实。[论文 p.546，PDF 第 7 页](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=7)
+论文 §3.3 p.546 所呈现的外推比例为 `new/known × known_time`，与固定工作量的物理反比关系相冲突。本报告给出上述**推导后的工程校验公式**；引用原论文公式时应注明这个疑点，作者勘误状态未核实。[论文 p.546，PDF 第 7 页](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=7)
 
-原论文 `4.3 的比较也说明了两条路径不能混用：**SimAI-CP 实测时间库的总计算时间偏差为 0.5%–3.1%，SimAI-CP-Model 外推为 13%–15%**（该论文的模型、算子、硬件与测试条件）。[论文 `4.3](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=9)
+原论文 §4.3 的比较也说明了两条路径不能混用：**SimAI-CP 实测时间库的总计算时间偏差为 0.5%–3.1%，SimAI-CP-Model 外推为 13%–15%**（该论文的模型、算子、硬件与测试条件）。[论文 §4.3](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=9)
 
 ### 4.3 当前 AIOB 的反向采样近似
 
@@ -205,7 +205,7 @@ Collective(type, group, bytes)
       -> ns-3：发送、排队、链路竞争、完成回调
 ```
 
-SimCCL 可以表示 PXN 之类的中继路径。例如，逻辑 1→8 的传输在中间节点 0 转发时，可被表达为 1→0 与 0→8 两段；这改变了节点内与跨节点资源占用。[论文 `3.4 / Figure 3](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=7)
+SimCCL 可以表示 PXN 之类的中继路径。例如，逻辑 1→8 的传输在中间节点 0 转发时，可被表达为 1→0 与 0→8 两段；这改变了节点内与跨节点资源占用。[论文 §3.4 / Figure 3](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=7)
 
 ### 5.2 历史算法选择逻辑与当前默认实现的区别
 
@@ -239,15 +239,15 @@ $$
 
 ## 6. 设计四：用状态所有权提升细粒度模拟速度
 
-模拟一轮 128 GPU 训练若需要一天，准确率再高也无法支撑大范围配置搜索。论文在 `3.5 中采用 UNISON 多线程并行网络仿真，并通过按模拟节点归属拆分全局状态，减少全局锁与原子操作上的争用。
+模拟一轮 128 GPU 训练若需要一天，准确率再高也无法支撑大范围配置搜索。论文在 §3.5 中采用 UNISON 多线程并行网络仿真，并通过按模拟节点归属拆分全局状态，减少全局锁与原子操作上的争用。
 
-论文报告：改造后的模拟程序相对单线程版本加速 **23×**，相对原先多线程实现再改善约 **15%**。这里提升的是**仿真器 wall-clock 运行速度**，与被模拟的训练吞吐是两个指标。[论文 `3.5](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=8)
+论文报告：改造后的模拟程序相对单线程版本加速 **23×**，相对原先多线程实现再改善约 **15%**。这里提升的是**仿真器 wall-clock 运行速度**，与被模拟的训练吞吐是两个指标。[论文 §3.5](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=8)
 
 工程启示是先解决状态所有权。对每个 thread/模拟节点，明确发送字节数、交换机队列、TX/RX QP 等信息由谁写入，尽量局部化。实现新网络协议后，既测预测误差，也测 simulation wall time、峰值内存和吞吐随线程数的扩展曲线。
 
 ## 7. 论文实验证据：说明了哪些能力
 
-论文 `4 以真实 A100/H100 集群为对照，覆盖 128、512 和 1024 GPU；展示 GPT-3 13B、LLaMA 65B、GPT-3 175B 等代表性 workload。采用了匹配的模型、框架、网络拓扑与 NCCL 参数，ASTRA-sim 比较还使用 SimAI-WG 的 workload adapter。[论文 `4，PDF 第 8–10 页](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=8)
+论文 §4 以真实 A100/H100 集群为对照，覆盖 128、512 和 1024 GPU；展示 GPT-3 13B、LLaMA 65B、GPT-3 175B 等代表性 workload。采用了匹配的模型、框架、网络拓扑与 NCCL 参数，ASTRA-sim 比较还使用 SimAI-WG 的 workload adapter。[论文 §4，PDF 第 8–10 页](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=8)
 
 | 指标 | 论文报告 | 解释范围 |
 | --- | --- | --- |
@@ -258,7 +258,7 @@ $$
 | 跨 GPU 计算外推 | 总计算时间偏差 13%–15% | SimAI-CP-Model |
 | 仿真器运行加速 | 23× | 对单线程版本，非训练加速 |
 
-论文 `5 提供了两个更有工程价值的案例：
+论文 §5 提供了两个更有工程价值的案例：
 
 **网络带宽投资**：在论文的 1024 H100 GPU 设计场景中，从每 GPU 200 Gbps 提高到 400 Gbps，模拟显示约 **19%** 的训练性能提升；H20 从 100→200 Gbps 约 **11%**，200→400 Gbps 约 **6%**。这说明网络边际收益取决于整个训练关键路径，而非 GPU 峰值 FLOPS 比例。[论文 Figure 10](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=10)
 
@@ -362,7 +362,7 @@ MoE 增加 expert token histogram、dispatch/combine AllToAll、grouped GEMM sha
 ## 11. References / 阅读导航
 
 1. **论文**：Wang et al., *SimAI*, NSDI '25, pp. 541–558。 [官方 PDF](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf) · [USENIX 页面](https://www.usenix.org/conference/nsdi25/presentation/wang-xizheng-simai)。
-2. **原文逐页精读**：[[SimAI-NSDI25/README|SimAI（NSDI 2025）中英文对照精读]]，含 Figure 1–11、Table 1–5 的 PDF 定位。
+2. **原文逐页精读**：[[30_Sources/SimAI-NSDI25/README|SimAI（NSDI 2025）中英文对照精读]]，含 Figure 1–11、Table 1–5 的 PDF 定位。
 3. **SimAI 开源**：[aliyun/SimAI](https://github.com/aliyun/SimAI)；[AICB](https://github.com/aliyun/aicb)；[SimCCL](https://github.com/aliyun/SimCCL)；[ns-3-alibabacloud](https://github.com/aliyun/ns-3-alibabacloud)。
 4. **既有大型工程调研**：[[SimAI 技术架构与 Megatron-LM 训练性能仿真方案]]，包括 SimuMax 对照、Canonical IR 草案和 Megatron Core 0.20 适配阶段。
 5. **NCCL 性能术语**：[nccl-tests PERFORMANCE](https://github.com/NVIDIA/nccl-tests/blob/master/doc/PERFORMANCE.md)。
