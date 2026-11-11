@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SimAI NSDI 2025：中英对照精读</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Noto Sans CJK SC","PingFang SC",sans-serif;color:#192536;background:#f5f6f8}
+*{box-sizing:border-box}body{margin:0}header{padding:13px 18px;background:#fff;border-bottom:1px solid #d9dde4;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+header h1{font-size:17px;margin:0 14px 0 0}header small{color:#66778a}a{color:#17639c}
+main{display:grid;grid-template-columns:minmax(380px,44%) minmax(480px,56%);height:calc(100dvh - 72px);min-height:480px}
+aside{overflow:auto;padding:14px 22px 45px;border-right:1px solid #d9dde4}section{background:#fff;border:1px solid #e2e5eb;border-radius:9px;padding:17px;margin-bottom:14px;line-height:1.72}
+h2{font-size:17px;margin:4px 0 12px}h3{font-size:15px}p{margin:10px 0}nav{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+button{border:1px solid #b9c8d8;background:#fff;border-radius:20px;padding:7px 11px;color:#153b61;cursor:pointer}
+button:hover,button:focus{background:#e9f1f8} .tag{color:#68798b;font-size:12px;font-weight:600;letter-spacing:.03em}
+.original{display:flex;flex-direction:column;background:#e4e8ed;min-height:0}
+.bar{padding:9px 14px;background:#fff;border-bottom:1px solid #d9dde4;display:flex;gap:12px;align-items:center}
+iframe{width:100%;height:100%;border:0;flex:1} .warning{background:#fff4e6;border-left:3px solid #bc8546;padding:8px 10px;border-radius:4px}
+@media(max-width:850px){main{display:block;height:auto}aside{padding:12px}section{margin-bottom:10px}.original{height:70vh}}
+@media print{header,.original,nav{display:none!important}main{display:block}aside{overflow:visible;border:0}section{break-inside:avoid}}
+</style>
+</head>
+<body>
+<header><h1>SimAI · NSDI 2025 中英对照精读</h1><small>中文理解（左） · 官方英文论文（右）</small><a href="./README.md">完整中文笔记</a></header>
+<main>
+<aside>
+<section>
+<div class="tag">使用提示 / Reading guide</div>
+<p class="warning">左侧是原创中文精读笔记，并非全文逐句翻译。右侧加载 USENIX 官方 PDF，版权由原论文作者保留。如果浏览器不允许嵌入 PDF，请使用右侧“单独打开原文”。</p>
+<nav>
+<button data-page="2" data-anchor="intro">1 引言</button>
+<button data-page="3" data-anchor="motivation">2 动机</button>
+<button data-page="4" data-anchor="arch">3.1 架构</button>
+<button data-page="5" data-anchor="wg">3.2 WG</button>
+<button data-page="6" data-anchor="cp">3.3 CP</button>
+<button data-page="7" data-anchor="cm">3.4 CM</button>
+<button data-page="8" data-anchor="speed">3.5 加速</button>
+<button data-page="9" data-anchor="eval">4 评估</button>
+<button data-page="10" data-anchor="production">5 生产</button>
+<button data-page="11" data-anchor="experience">6 经验</button>
+<button data-page="12" data-anchor="related">7-8 总结</button>
+</nav>
+</section>
+<section id="intro"><div class="tag">EN: Introduction · PDF p.2</div><h2>1 引言：统一仿真的动机</h2><p>训练性能不是 GPU 理论 FLOPs 的简单函数。训练框架决定事件及 overlap，NCCL 决定 collective 的底层通信模式，真实网络决定传输竞争。把这些环节分开估算，容易错过关键路径。因此，SimAI 选择在统一事件时间线上连接工作负载、计算和通信。</p><button data-page="2">跳转原文第 2 页</button></section>
+<section id="motivation"><div class="tag">EN: Background and Motivation · PDF p.3–4</div><h2>2 四个技术目标</h2><p>高保真 workload、准确的 GPU 计算代价、可还原 NCCL 行为的网络通信、足够快的大规模离散事件模拟。只有同时做到这四项，模拟器才可能用于主机架构选型及反复调参。</p><button data-page="3">跳转原文第 3 页</button></section>
+<section id="arch"><div class="tag">EN: SimAI Overview · Figure 1 · PDF p.4</div><h2>3.1 全局架构</h2><p>SimAI-WG 负责产生计算与通信事件及依赖，Execution Engine 负责推进事件时间；SimAI-CP 给出计算时间，SimAI-CM 在 SimCCL 产生的 P2P flows 基础上计算通信与网络延迟。应特别区分 SimCCL 的 collective 分解与真正的网络模拟。</p><button data-page="4">跳转 Figure 1</button></section>
+<section id="wg"><div class="tag">EN: Workload Generator · Figure 2 / Tables 1–2 · PDF p.4–6</div><h2>3.2 工作负载生成</h2><p>通过单机模拟/截获 Megatron、DeepSpeed 的关键执行路径，生成配置相关的 workload；随后将通信计算之间的阻塞和 overlap 依赖编码。它比固定 trace 更灵活，却要求对 PP rank、优化器、不同并行策略的路径做实际验证。MoE/EP 的 token 分布在论文中采取了平衡假设。</p><button data-page="5">跳转 Figure 2</button></section>
+<section id="cp"><div class="tag">EN: Computation Simulation · Tables 3–4 · PDF p.6–7</div><h2>3.3 计算时间估计</h2><p>现有 GPU 优先使用实测子模块 / kernel 时间库，跨设备预估则按计算受限与带宽受限分组做 Roofline 风格外推。后者属于近似模型，不能继承前者的精度指标。需要对照正式 PDF 核对公式分式顺序。</p><button data-page="6">跳转 Table 4</button></section>
+<section id="cm"><div class="tag">EN: Communication Simulation · Figure 3 / Table 5 · PDF p.7–8</div><h2>3.4 通信仿真</h2><p>SimCCL 通过复用 NCCL 初始化、拓扑发现、算法与 channel 选择，输出高层 collective 对应的 P2P 流，再交给通信模拟器。重点是保留 NCCL 的真实通信控制逻辑，同时跳过实际张量收发。PXN 等路径选择会改变 NIC 负载，简单 Ring 公式无法概括。</p><button data-page="7">跳转 Figure 3</button></section>
+<section id="speed"><div class="tag">EN: Large Scale Simulation Speedup · Figure 4 · PDF p.8</div><h2>3.5 并行仿真加速</h2><p>网络离散事件引擎经 UNISON 并行，并通过按节点归属拆分状态减少全局锁访问。23× 表示模拟器自身的速度改善，不代表训练性能收益。</p><button data-page="8">跳转 Figure 4</button></section>
+<section id="eval"><div class="tag">EN: Evaluation · Figures 5–9 · PDF p.8–10</div><h2>4 评估与准确率</h2><p>论文比较单项 collective、算子计时与端到端 iteration time，并使用 A100/H100 真实集群作为基准。在所选测试中平均相对偏差约为 1.9%，也常被称为 98.1% alignment。它不意味着对每种新模型、MoE 负载或训练框架版本都有同等精度。</p><button data-page="9">跳转 Figures 6–9</button></section>
+<section id="production"><div class="tag">EN: In Production Benefits · Figures 10–11 · PDF p.10–11</div><h2>5 生产应用</h2><p>通过改变 GPU/网卡带宽组合，比较网络成本带来的边际训练收益；通过改变单机 GPU 数和 TP size，观察计算切分与通信争用的交叉影响。这些结论必须在目标 workload 与集群拓扑上重新验证。</p><button data-page="10">跳转 Figure 10</button></section>
+<section id="experience"><div class="tag">EN: Experience · PDF p.11–12</div><h2>6 工程演化与服务化</h2><p>作者经历了粗 workload、手写框架流程、mock 框架、实测 kernel 数据库、NCCL 关键路径模拟、无锁并行优化等阶段。实践上的顺序是先校验工作负载，再校准计算/通信，最后提升模拟速度。服务化需要 GPU 解耦、任务管理与可视化。</p><button data-page="11">跳转原文第 11 页</button></section>
+<section id="related"><div class="tag">EN: Related Work / Conclusion · PDF p.12–13</div><h2>7–8 总结与适用边界</h2><p>SimAI 适合训练迭代时间预测、网络/主机协同设计、集体通信对比及参数搜索；不等同于精度/收敛性模拟，也没有证明对任意数据驱动的 MoE routing 或 RL 动态过程保持同等精度。</p><button data-page="12">跳转原文第 12 页</button></section>
+</aside>
+<div class="original"><div class="bar"><span id="pageLabel">原文 PDF · 第 2 页</span><a id="originalLink" href="https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=2" target="_blank" rel="noopener noreferrer">单独打开原文</a></div><iframe title="USENIX SimAI original paper" src="https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf#page=2"></iframe></div>
+</main>
+<script>
+const url="https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf";
+document.querySelectorAll("button[data-page]").forEach(b=>b.addEventListener("click",()=>{
+const page=Number(b.dataset.page),link=url+"#page="+page;
+document.querySelector("iframe").src=link;
+document.querySelector("#pageLabel").textContent="原文 PDF · 第 "+page+" 页";
+document.querySelector("#originalLink").href=link;
+if(b.dataset.anchor)document.getElementById(b.dataset.anchor)?.scrollIntoView({behavior:"smooth"});
+}));
+</script></body></html>
