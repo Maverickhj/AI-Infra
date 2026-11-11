@@ -21,6 +21,7 @@ reviewed: false
 - 官方 PDF：[打开英文原文](https://www.usenix.org/system/files/nsdi25-wang-xizheng-simai.pdf)。
 - 双栏阅读器：[reader.html](./reader.html)（在本地浏览器打开，左侧中文精读、右侧在线加载官方 PDF）。
 - 已有相关调研：[[SimAI 技术架构与 Megatron-LM 训练性能仿真方案]]。
+- **专题深度调研**：[[2025 - SimAI 设计思想与工程落地深度调研]]（设计取舍、源码映射、定量结果与 Megatron-LM 落地验收）。
 - 版本说明：本文按 2025 年论文描述区分 SimAI-WG、SimAI-CP、SimAI-CM、SimCCL 和模拟执行引擎；**不把论文中的能力直接等同于 2026 年开源仓库任一分支的当前实现**。
 
 ## 阅读方式与原文定位
